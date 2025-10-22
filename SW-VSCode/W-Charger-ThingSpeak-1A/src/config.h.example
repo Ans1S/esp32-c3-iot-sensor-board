@@ -1,0 +1,32 @@
+/**
+ * Configuration Template for W-Charger ThingSpeak 1A
+ * 
+ * Copy this file to 'config.h' and fill in your credentials
+ * IMPORTANT: config.h is ignored by git and will not be uploaded to GitHub
+ */
+
+#ifndef CONFIG_H
+#define CONFIG_H
+
+// ===================================
+// WiFi Configuration
+// ===================================
+#define WIFI_SSID "your-wifi-ssid"
+#define WIFI_PSWD "your-wifi-password"
+#define WIFI_TIMEOUT_MS 2000
+
+// ===================================
+// ThingSpeak Configuration
+// ===================================
+#define CHANNEL_ID 0000000  // Replace with your ThingSpeak Channel ID
+#define CHANNEL_API_KEY "YOUR_API_KEY_HERE"  // Replace with your ThingSpeak Write API Key
+
+// ===================================
+// Hardware Pin Configuration
+// ===================================
+#define rotPin 20      // Red LED pin
+#define gruenPin 6     // Green LED pin
+#define adcPin 3       // ADC pin for battery monitoring
+#define blauPin 21     // Blue LED pin
+
+#endif // CONFIG_H

@@ -1,0 +1,26 @@
+Drill report for ESP32-C3.kicad_pcb
+Created on 2024-06-06T22:58:07+0200
+
+Copper Layer Stackup:
+    =============================================================
+    L1 :  F.Cu                      front
+    L2 :  B.Cu                      back
+
+
+Drill file 'ESP32-C3.drl' contains
+    plated through holes:
+    =============================================================
+    T1  0.300mm  0.0118"  (84 holes)
+    T2  0.300mm  0.0118"  (1 hole)
+    T3  0.600mm  0.0236"  (4 holes)  (with 4 slots)
+    T4  0.750mm  0.0295"  (2 holes)
+
+    Total plated holes count 91
+
+
+Not plated through holes are merged with plated holes
+    unplated through holes:
+    =============================================================
+    T5  0.660mm  0.0260"  (2 holes)
+
+    Total unplated holes count 2

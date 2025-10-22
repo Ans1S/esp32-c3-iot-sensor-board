@@ -1,0 +1,113 @@
+# ===================================
+# ESP32 / Arduino / PlatformIO
+# ===================================
+
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+.vscode/
+.clang_complete
+.gcc-flags.json
+
+# Build directories
+build/
+*.bin
+*.elf
+*.map
+
+# Credentials and sensitive data
+**/config.h
+**/secrets.h
+**/credentials.h
+
+# ===================================
+# KiCad
+# ===================================
+
+# Backup files
+*.bak
+*.bck
+*-bak
+*-backup/
+*-backups/
+
+# KiCad auto-save files
+_autosave-*
+*.kicad_pcb-bak
+*.kicad_sch-bak
+
+# Cache files
+fp-info-cache
+*.kicad_prl
+
+# Gerber and manufacturing output (optional - uncomment if you don't want to track them)
+# gerber/
+# *.gbr
+# *.drl
+
+# ===================================
+# General Development
+# ===================================
+
+# Logs and temporary files
+*.log
+logs/
+*.tmp
+*.temp
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# IDE files
+*.swp
+*.swo
+*~
+.idea/
+
+# ===================================
+# Libraries (optional)
+# ===================================
+
+# Uncomment if you don't want to track Arduino/PlatformIO libraries
+# If these are standard libraries, they can be reinstalled via library manager
+SW-Arduino-IDE/libraries/
+SW/libraries/
+
+# ===================================
+# Project Specific
+# ===================================
+
+# LTspice files and directory
+LTspice/
+*.raw
+*.net
+*.asc
+*.plt
+*.log
+
+# QR-Code directory (may contain personal info)
+QR-Code/
+
+# CSV exports (if auto-generated)
+# *.csv
+
+# Test files and screenshots
+test/
+screenshots/
+
+# Compiled documentation
+*.pdf
+
+# Personal notes and drafts
+notes/
+drafts/
+TODO.md
+NOTES.md
