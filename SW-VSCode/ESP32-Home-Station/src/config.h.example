@@ -1,0 +1,30 @@
+/**
+ * Configuration Template for ESP32 Home Station
+ * 
+ * Copy this file to 'config.h' and fill in your credentials
+ * IMPORTANT: config.h is ignored by git and will not be uploaded to GitHub
+ */
+
+#ifndef CONFIG_H
+#define CONFIG_H
+
+// ===================================
+// WiFi Configuration
+// ===================================
+#define WIFI_SSID "your-wifi-ssid"
+#define WIFI_PSWD "your-wifi-password"
+#define WIFI_TIMEOUT_MS 20000  // Increased timeout for reliable connection
+
+// ===================================
+// ThingSpeak Configuration
+// ===================================
+#define CHANNEL_ID 0000000  // Replace with your ThingSpeak Channel ID
+#define CHANNEL_API_KEY "YOUR_API_KEY_HERE"  // Replace with your ThingSpeak Write API Key
+
+// ===================================
+// Power Management Settings
+// ===================================
+#define CPU_FREQ_MHZ_NORMAL 160    // Normal operation CPU frequency
+#define CPU_FREQ_MHZ_LOW 80        // Low-power CPU frequency for idle periods
+
+#endif // CONFIG_H

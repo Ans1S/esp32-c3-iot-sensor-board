@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"name": "250102-181454-seeed_xiao_esp32c3",
+			"path": "../../../../PlatformIO/Projects/250102-181454-seeed_xiao_esp32c3"
+		},
+		{
+			"name": "W-Charger-Menager",
+			"path": "../W-Charger-Menager"
+		}
+	],
+	"settings": {}
+}

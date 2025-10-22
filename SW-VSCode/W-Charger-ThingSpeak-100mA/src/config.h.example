@@ -1,0 +1,50 @@
+/**
+ * Configuration Template for W-Charger ThingSpeak 100mA
+ * 
+ * Copy this file to 'config.h' and fill in your credentials
+ * IMPORTANT: config.h is ignored by git and will not be uploaded to GitHub
+ */
+
+#ifndef CONFIG_H
+#define CONFIG_H
+
+// ===================================
+// Charger Model Configuration
+// ===================================
+#define A_CHARGER 1 // "0" for 1A and "1" for 100mA W-Charger Model
+
+// ===================================
+// ThingSpeak Configuration
+// ===================================
+// For 100mA Charger (A_CHARGER == 1)
+#define CHANNEL_ID_100MA 0000000
+#define CHANNEL_API_KEY_100MA "YOUR_API_KEY_HERE"
+
+// For 1A Charger (A_CHARGER == 0)
+#define CHANNEL_ID_1A 0000000
+#define CHANNEL_API_KEY_1A "YOUR_API_KEY_HERE"
+
+// Auto-select based on charger model
+#if A_CHARGER == 1
+    #define CHANNEL_ID CHANNEL_ID_100MA
+    #define CHANNEL_API_KEY CHANNEL_API_KEY_100MA
+#else
+    #define CHANNEL_ID CHANNEL_ID_1A
+    #define CHANNEL_API_KEY CHANNEL_API_KEY_1A
+#endif
+
+// ===================================
+// Hardware Pin Configuration
+// ===================================
+#define rotPin 20      // Red LED pin
+#define gruenPin 6     // Green LED pin
+#define adcPin 3       // ADC pin for battery monitoring
+#define blauPin 21     // Blue LED pin
+
+// ===================================
+// ESP32-C3 Optimization Settings
+// ===================================
+#define CONFIG_ESP32C3_DEFAULT_CPU_FREQ_MHZ 160 // Optimale CPU Frequenz
+#define WIFI_PS_MIN_MODEM // Aktiviere WiFi Power Save
+
+#endif // CONFIG_H
