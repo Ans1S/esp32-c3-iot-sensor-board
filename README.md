@@ -72,7 +72,7 @@ A complete open-source hardware and software solution for building **ultra-low-p
 The system architecture consists of **distributed sensor nodes** placed throughout your environment, communicating via ESP-NOW to a **central hub** that aggregates and uploads data to the cloud.
 
 ```
-┌─────────────┐     ESP-NOW      ┌──────────────┐      WiFi       ┌────────────┐
+┌─────────────┐     ESP-NOW       ┌──────────────┐     WiFi        ┌────────────┐
 │ Sensor Node │ ─────────────────→│  Home        │ ───────────────→│ ThingSpeak │
 │ (Battery)   │                   │  Station     │                 │   Cloud    │
 └─────────────┘                   │  (USB)       │                 └────────────┘
