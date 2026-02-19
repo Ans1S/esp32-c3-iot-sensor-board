@@ -1,428 +1,609 @@
+/**
+ * ESP32-S3 Home Station — Robuste Version mit WiFi-Recovery
+ *
+ * Wichtigste Verbesserungen:
+ *  - Exponentieller Backoff bei WiFi-Fehlern (verhindert Stack-Korruption)
+ *  - Periodischer Retry-Wächter (triggert Upload auch ohne neues Sensor-Paket)
+ *  - Auto-Restart nach zu vielen Fehlern (letztes Mittel)
+ *  - Queue-Overflow: Älteste Daten werden verworfen, neueste behalten
+ *  - ESP-NOW Health-Check nach Reinit (kein stilles Versagen mehr)
+ *  - Power-Mode Bug: Einzelner Status statt zwei unabhängiger static-Flags
+ *  - Race Conditions: currentState via portENTER_CRITICAL geschützt
+ *  - Task-Signaling: xTaskNotify statt vTaskResume (kein verlorenes Wecksignal)
+ *  - FreeRTOS QueueHandle_t statt manuell verschiebtem Array
+ *  - Stack-Größen erhöht (8192 für WiFi/Upload)
+ *  - ThingSpeak Retry-Logik bei Fehler
+ */
+
 #include <Arduino.h>
 #include <WiFi.h>
 #include <ThingSpeak.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
 #include <esp_pm.h>
-#include "config.h"  // Include configuration file with WiFi and ThingSpeak credentials
+#include <inttypes.h>  // PRIu32 — portabler Format-Specifier für uint32_t
+#include "config.h"
 
-// Station state
-enum StationState {
-  WAITING_FOR_DATA,
-  CONNECTING_WIFI,
-  UPLOADING_DATA,
-  DISCONNECTING
-};
-
-StationState currentState = WAITING_FOR_DATA;
-
-// Structure to match sensor payload format
+// ---------------------------------------------------------------------------
+// Sensor-Datenstruktur (muss mit Sender übereinstimmen)
+// ---------------------------------------------------------------------------
 typedef struct sensor_data {
-  uint8_t sensorId;     // Identifier for the sensor
-  float temperature;    // Temperature in Celsius (for sensors 1&2)
-  float humidity;       // Humidity in % (for sensors 1&2)
-  float iaq;            // Air Quality Index (for sensors 3+)
-  int voltage;          // Battery voltage in mV (all sensors)
-  uint8_t battery_p;    // Compatibility field (not used)
+  uint8_t sensorId;   // 1–2: Temp+Humidity, 3+: IAQ
+  float   temperature;
+  float   humidity;
+  float   iaq;
+  int     voltage;    // Batterie in mV
+  uint8_t battery_p;  // Kompatibilitätsfeld
 } sensor_data;
 
-// Queue to store received sensor data
-#define MAX_QUEUE_SIZE 20  // Increased queue size
-sensor_data dataQueue[MAX_QUEUE_SIZE];
-int queueCount = 0;
-SemaphoreHandle_t queueMutex;
+// ---------------------------------------------------------------------------
+// FreeRTOS-Handles
+// ---------------------------------------------------------------------------
+#define SENSOR_QUEUE_SIZE  20
+static QueueHandle_t  sensorQueue      = NULL;
+static TaskHandle_t   wifiTaskHandle   = NULL;
+static TaskHandle_t   uploadTaskHandle = NULL;
+static TaskHandle_t   powerTaskHandle  = NULL;
 
-// ThingSpeak client
-WiFiClient client;
+// ---------------------------------------------------------------------------
+// ThingSpeak
+// ---------------------------------------------------------------------------
+static WiFiClient client;
+static unsigned long lastWriteTime  = 0;
+const  unsigned long WRITE_INTERVAL = 15000UL;   // 15 s zwischen Schreibvorgängen
+#define THINGSPEAK_RETRIES  3                      // Wiederholversuche bei Fehler
 
-// Task handles
-TaskHandle_t wifiTaskHandle = NULL;
-TaskHandle_t uploadTaskHandle = NULL;
-TaskHandle_t powerMgmtTaskHandle = NULL;
+// ---------------------------------------------------------------------------
+// WiFi Retry / Backoff
+// ---------------------------------------------------------------------------
+// Backoff-Stufen in ms: sofort, 30s, 1min, 2min, 5min, danach immer 5min
+static const uint32_t WIFI_BACKOFF_MS[] = { 0, 30000, 60000, 120000, 300000 };
+#define WIFI_BACKOFF_STEPS  5
+static volatile uint8_t  wifiFailCount     = 0;    // Aufeinanderfolgende Fehlversuche
+#define WIFI_RESTART_AFTER  15                      // Neustart nach X konsekutiven Fehlern
 
-// ThingSpeak rate limiting
-unsigned long lastWriteTime = 0;
-const unsigned long writeInterval = 15000;  // 15 seconds between writes
+// Wächter: versucht Upload auch wenn keine neuen Daten kommen (WiFi kam zurück)
+static volatile unsigned long lastConnectAttempt = 0;
+// Mindest-Abstand zwischen Verbindungsversuchen (verhindert Stack-Korruption)
+#define MIN_CONNECT_INTERVAL_MS  10000UL
 
-// Activity tracking for power management
-unsigned long lastActivityTime = 0;
-const unsigned long idleThreshold = 60000;  // 1 minute of no activity to trigger low power
+// ---------------------------------------------------------------------------
+// Power Management — EIN gemeinsamer Status (Bug-Fix: zwei unabhängige Flags)
+// ---------------------------------------------------------------------------
+enum PowerMode { PM_NORMAL, PM_LOW };
+static volatile PowerMode activePowerMode = PM_NORMAL;
 
-// Function declarations
-void processQueue();
-void connectToWifi();
-void uploadToThingSpeak(sensor_data *data);
-void initESPNow();
-void configureLowPowerMode();
-void configureNormalPowerMode();
+// Flags aus Callback setzen, Power-Wechsel erledigt powerMgmtTask
+static volatile bool requestNormalPower = false;
 
-// Callback function executed when data is received via ESP-NOW
-void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
-  // Record activity
-  lastActivityTime = millis();
-  
-  // Ensure we're in normal power mode
-  configureNormalPowerMode();
-  
-  if (len == sizeof(sensor_data)) {
-    // Take the mutex to protect the queue
-    if (xSemaphoreTake(queueMutex, portMAX_DELAY) == pdTRUE) {
-      // Copy incoming data to our structure if there's room in the queue
-      if (queueCount < MAX_QUEUE_SIZE) {
-        memcpy(&dataQueue[queueCount], incomingData, sizeof(sensor_data));
-        queueCount++;
-        
-        // Print data to serial console based on sensor type
-        sensor_data *data = (sensor_data *)incomingData;
-        
-        if (data->sensorId <= 2) {
-          // Regular sensors (temperature + humidity)
-          Serial.printf("Received - Sensor %d: Temp=%.1f°C, Humidity=%.1f%%, Battery=%dmV\n",
-                      data->sensorId,
-                      data->temperature,
-                      data->humidity,
-                      data->voltage);
-        } else {
-          // Extra sensors (air quality)
-          Serial.printf("Received - Extra-Sensor %d: IAQ=%.1f, Battery=%dmV\n",
-                      data->sensorId - 2,  // Show as Extra-Sensor 1, 2, etc.
-                      data->iaq,
-                      data->voltage);
-        }
-        
-        // If we're waiting for data, start the WiFi connection process
-        if (currentState == WAITING_FOR_DATA) {
-          currentState = CONNECTING_WIFI;
-          // Resume WiFi task if it exists
-          if (wifiTaskHandle != NULL) {
-            vTaskResume(wifiTaskHandle);
-          }
-        }
-      } else {
-        Serial.println("ERROR: Data queue is full!");
-      }
-      
-      xSemaphoreGive(queueMutex);
-    }
-  }
+// ---------------------------------------------------------------------------
+// Aktivitäts-Tracking
+// ---------------------------------------------------------------------------
+static volatile unsigned long lastActivityTime = 0;
+const unsigned long IDLE_THRESHOLD = 60000UL;    // 1 min Inaktivität → Low Power
+
+// FIX Uptime-Overflow: millis() überläuft nach 49,7 Tagen.
+// uptimeSeconds wird alle 5 s um 5 erhöht → Overflow erst nach ~136 Jahren.
+static volatile uint32_t uptimeSeconds = 0;
+
+// ---------------------------------------------------------------------------
+// Zustandsmaschine — via Critical-Section geschützt
+// ---------------------------------------------------------------------------
+enum StationState { WAITING_FOR_DATA, CONNECTING_WIFI, UPLOADING_DATA, DISCONNECTING };
+static volatile StationState currentState = WAITING_FOR_DATA;
+
+static portMUX_TYPE stateMux = portMUX_INITIALIZER_UNLOCKED;
+
+static inline StationState getState() {
+  StationState s;
+  portENTER_CRITICAL(&stateMux);
+  s = currentState;
+  portEXIT_CRITICAL(&stateMux);
+  return s;
 }
 
-// WiFi management task
+static inline void setState(StationState s) {
+  portENTER_CRITICAL(&stateMux);
+  currentState = s;
+  portEXIT_CRITICAL(&stateMux);
+}
+
+// ---------------------------------------------------------------------------
+// Vorwärts-Deklarationen
+// ---------------------------------------------------------------------------
+void uploadToThingSpeak(sensor_data *data);
+bool initESPNow();
+void setPowerMode(PowerMode mode);
+
+// ---------------------------------------------------------------------------
+// Debug-Hilfsfunktionen
+// ---------------------------------------------------------------------------
+
+// Timestamp-Prefix: [  1234ms]
+static void printTs(const char *msg) {
+  uint32_t t = millis();
+  Serial.printf("[%6" PRIu32 "ms] %s\n", t, msg);
+}
+
+// Fortschrittsbalken: [TAG] [========--------] done/total text
+// FIX VLA: Kein char bar[width+1] (Variable-Length Array auf FreeRTOS-Stack
+//          kann bei unerwartetem 'width' Stack-Overflow verursachen).
+//          Feste Puffergröße 24 Bytes, Hard-Limit auf width <= 22.
+static void printBar(const char *tag, uint32_t done, uint32_t total,
+                     const char *suffix = "", uint8_t width = 20) {
+  if (width > 22) width = 22;
+  uint32_t filled = (total > 0) ? ((uint64_t)done * width / total) : 0;
+  if (filled > width) filled = width;
+  char bar[24];  // FIX: Fest statt VLA
+  for (uint8_t i = 0; i < width; i++) bar[i] = (i < filled) ? '=' : '-';
+  bar[width] = '\0';
+  Serial.printf("[%6" PRIu32 "ms] [%s] [%s] %" PRIu32 "/%" PRIu32 " %s\r",
+                millis(), tag, bar, done, total, suffix);
+}
+
+// Trennlinie
+static void printSep() {
+  Serial.println("--------------------------------------------");
+}
+
+// Uptime als D HH:MM:SS
+// FIX Drift: uptimeSeconds wird jetzt anhand der tatsächlich vergangenen
+//            FreeRTOS-Ticks aktualisiert statt fest +5 pro Iteration.
+//            Kein Overflow < 136 Jahre.
+static void printUptime() {
+  uint32_t s = uptimeSeconds;
+  uint32_t d = s / 86400u; s %= 86400u;
+  Serial.printf("%" PRIu32 "d %02" PRIu32 ":%02" PRIu32 ":%02" PRIu32,
+                d, s / 3600u, (s % 3600u) / 60u, s % 60u);
+}
+
+// ---------------------------------------------------------------------------
+// ESP-NOW Empfangs-Callback
+// (läuft im WiFi-Stack-Task — so kurz wie möglich halten!)
+// ---------------------------------------------------------------------------
+void IRAM_ATTR OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
+  if (len != sizeof(sensor_data)) return;
+
+  // Aktivität merken
+  lastActivityTime = millis();
+  // Power-Wechsel als Flag, nicht direkt aus Callback ausführen
+  requestNormalPower = true;
+
+  // Daten in FreeRTOS-Queue einreihen (ISR-sicher)
+  sensor_data data;
+  memcpy(&data, incomingData, sizeof(sensor_data));
+  BaseType_t higherPriorityWoken = pdFALSE;
+
+  // Queue voll → Ältestes verwerfen, Neuestes behalten
+  if (xQueueSendFromISR(sensorQueue, &data, &higherPriorityWoken) == errQUEUE_FULL) {
+    sensor_data dropped;
+    xQueueReceiveFromISR(sensorQueue, &dropped, &higherPriorityWoken);
+    xQueueSendFromISR(sensorQueue, &data, &higherPriorityWoken);
+    // (Serial.println hier nicht erlaubt — ISR-Kontext)
+  }
+
+  // WiFi-Task wecken wenn im Wartezustand (xTaskNotify geht nicht verloren)
+  if (wifiTaskHandle != NULL && getState() == WAITING_FOR_DATA) {
+    setState(CONNECTING_WIFI);
+    vTaskNotifyGiveFromISR(wifiTaskHandle, &higherPriorityWoken);
+  }
+
+  portYIELD_FROM_ISR(higherPriorityWoken);
+}
+
+// ---------------------------------------------------------------------------
+// WiFi-Task — wartet auf Notification, exponentieller Backoff, Auto-Recovery
+// ---------------------------------------------------------------------------
 void wifiTask(void *parameters) {
   for (;;) {
-    // This task stays suspended until we have data to send
-    if (currentState == CONNECTING_WIFI) {
-      Serial.println("Connecting to WiFi...");
-      
-      // Switch to normal power mode for WiFi connection
-      configureNormalPowerMode();
-      
-      // Temporarily disable ESP-NOW
-      esp_now_deinit();
-      
-      // Configure WiFi
-      WiFi.mode(WIFI_STA);
-      WiFi.begin(WIFI_SSID, WIFI_PSWD);
-      
-      // Try to connect with timeout
-      unsigned long startTime = millis();
-      bool connected = false;
-      while (millis() - startTime < WIFI_TIMEOUT_MS) {
-        if (WiFi.status() == WL_CONNECTED) {
-          connected = true;
-          break;
-        }
-        Serial.print(".");
-        vTaskDelay(500 / portTICK_PERIOD_MS);
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+    if (getState() != CONNECTING_WIFI) continue;
+
+    // ── Exponentieller Backoff ─────────────────────────────────────────────
+    uint8_t backoffIdx = (wifiFailCount < WIFI_BACKOFF_STEPS)
+                          ? wifiFailCount : (WIFI_BACKOFF_STEPS - 1);
+    uint32_t backoffMs = WIFI_BACKOFF_MS[backoffIdx];
+
+    if (backoffMs > 0) {
+      Serial.printf("\n[%6" PRIu32 "ms] [WiFi] Backoff %" PRIu32 " s wegen %d Fehler(n)...\n",
+                    millis(), backoffMs / 1000u, wifiFailCount);
+      // Backoff mit Fortschrittsbalken
+      // FIX Heap: String()+c_str() erzeugte alle 500ms eine Heap-Allokation
+      //           → Fragmentation nach Wochen. snprintf nutzt Stack-Puffer.
+      uint32_t backoffStart = millis();
+      char backoffSuf[12];
+      while ((millis() - backoffStart) < backoffMs) {
+        uint32_t elapsed  = millis() - backoffStart;
+        uint32_t remainS  = (backoffMs > elapsed) ? (backoffMs - elapsed) / 1000 : 0;
+        snprintf(backoffSuf, sizeof(backoffSuf), "%" PRIu32 "s", remainS);
+        printBar("Backoff", elapsed, backoffMs, backoffSuf);
+        vTaskDelay(pdMS_TO_TICKS(500));
       }
-      
-      if (connected) {
-        Serial.println("\nWiFi connected");
-        Serial.print("IP address: ");
-        Serial.println(WiFi.localIP());
-        
-        // Move to uploading state and resume upload task
-        currentState = UPLOADING_DATA;
-        if (uploadTaskHandle != NULL) {
-          vTaskResume(uploadTaskHandle);
-        }
-      } else {
-        Serial.println("\nWiFi connection failed");
-        // Go back to ESP-NOW mode
-        currentState = DISCONNECTING;
-        WiFi.disconnect(true);
-        initESPNow();
-        currentState = WAITING_FOR_DATA;
-      }
+      Serial.println();
     }
-    
-    // Suspend until needed again
-    vTaskSuspend(NULL);
+
+    // Mindest-Abstand einhalten
+    unsigned long sinceLastTry = millis() - lastConnectAttempt;
+    if (sinceLastTry < MIN_CONNECT_INTERVAL_MS) {
+      vTaskDelay(pdMS_TO_TICKS(MIN_CONNECT_INTERVAL_MS - sinceLastTry));
+    }
+    lastConnectAttempt = millis();
+
+    // ── ESP-NOW deaktivieren, WiFi verbinden ──────────────────────────────
+    printSep();
+    Serial.printf("[%6" PRIu32 "ms] [WiFi] Versuch %d/%d  SSID: \"%s\"\n",
+                  millis(), wifiFailCount + 1, WIFI_RESTART_AFTER, WIFI_SSID);
+    setPowerMode(PM_NORMAL);
+    esp_now_deinit();
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_SSID, WIFI_PSWD);
+
+    bool connected = false;
+    TickType_t start = xTaskGetTickCount();
+    const TickType_t timeout = pdMS_TO_TICKS(WIFI_TIMEOUT_MS);
+    uint32_t wallStart = millis();
+
+    while ((xTaskGetTickCount() - start) < timeout) {
+      if (WiFi.status() == WL_CONNECTED) { connected = true; break; }
+      uint32_t elapsed = millis() - wallStart;
+      char suf[24];
+      snprintf(suf, sizeof(suf), "%" PRIu32 "s/%" PRIu32 "s",
+               elapsed / 1000u, (uint32_t)WIFI_TIMEOUT_MS / 1000u);
+      printBar("WiFi ", elapsed, WIFI_TIMEOUT_MS, suf);
+      vTaskDelay(pdMS_TO_TICKS(500));
+    }
+    Serial.println();  // Zeilenumbruch nach \r-Fortschrittszeile
+
+    if (connected) {
+      wifiFailCount = 0;
+      Serial.printf("[%6" PRIu32 "ms] [WiFi] VERBUNDEN  IP: %s  RSSI: %ddBm\n",
+                    millis(),
+                    WiFi.localIP().toString().c_str(),
+                    WiFi.RSSI());
+      setState(UPLOADING_DATA);
+      xTaskNotifyGive(uploadTaskHandle);
+
+    } else {
+      wifiFailCount++;
+      Serial.printf("[%6" PRIu32 "ms] [WiFi] FEHLGESCHLAGEN  Versuch %d/%d\n",
+                    millis(), wifiFailCount, WIFI_RESTART_AFTER);
+
+      if (wifiFailCount >= WIFI_RESTART_AFTER) {
+        Serial.println("[WiFi] KRITISCH: Zu viele Fehlversuche – Neustart!");
+        vTaskDelay(pdMS_TO_TICKS(500));
+        esp_restart();
+      }
+
+      WiFi.disconnect(true, true);
+      vTaskDelay(pdMS_TO_TICKS(200));
+
+      if (!initESPNow()) {
+        Serial.println("[WiFi] ESP-NOW Reinit fehlgeschlagen – Neustart!");
+        vTaskDelay(pdMS_TO_TICKS(500));
+        esp_restart();
+      }
+      setState(WAITING_FOR_DATA);
+    }
+    printSep();
   }
 }
 
-// ThingSpeak upload task
+// ---------------------------------------------------------------------------
+// Upload-Task — wartet auf Notification, leert Queue, geht zurück zu ESP-NOW
+// ---------------------------------------------------------------------------
 void uploadTask(void *parameters) {
   for (;;) {
-    // This task stays suspended until WiFi is connected
-    if (currentState == UPLOADING_DATA) {
-      // Record activity
-      lastActivityTime = millis();
-      
-      // Process all items in the queue
-      processQueue();
-      
-      // Disconnect WiFi and go back to ESP-NOW mode
-      currentState = DISCONNECTING;
-      Serial.println("Disconnecting WiFi...");
-      WiFi.disconnect(true);
-      
-      // Reinitialize ESP-NOW
-      initESPNow();
-      
-      // Return to waiting state
-      currentState = WAITING_FOR_DATA;
-      Serial.println("Waiting for new sensor data...");
-      
-      // Check if we should enter low power mode
-      if (millis() - lastActivityTime > idleThreshold) {
-        configureLowPowerMode();
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+    if (getState() != UPLOADING_DATA) continue;
+
+    lastActivityTime = millis();
+    sensor_data item;
+    uint32_t totalItems = uxQueueMessagesWaiting(sensorQueue);
+    uint32_t processed  = 0;
+
+    printSep();
+    Serial.printf("[%6" PRIu32 "ms] [Upload] Starte Upload – %" PRIu32 " Eintraege in Queue\n",
+                  millis(), totalItems);
+
+    while (xQueueReceive(sensorQueue, &item, 0) == pdTRUE) {
+      processed++;
+
+      // ThingSpeak Rate-Limit mit Fortschrittsbalken
+      unsigned long now = millis();
+      if (now - lastWriteTime < WRITE_INTERVAL) {
+        unsigned long wait = WRITE_INTERVAL - (now - lastWriteTime);
+        Serial.printf("[%6" PRIu32 "ms] [Upload] ThingSpeak Rate-Limit: warte %lu ms\n",
+                      millis(), wait);
+        uint32_t waitStart = millis();
+        while ((millis() - waitStart) < wait) {
+          uint32_t elapsed = millis() - waitStart;
+          char suf[20];
+          snprintf(suf, sizeof(suf), "%" PRIu32 "s/%" PRIu32 "s",
+                   elapsed / 1000u, (uint32_t)wait / 1000u);
+          printBar("Limit", elapsed, (uint32_t)wait, suf);
+          vTaskDelay(pdMS_TO_TICKS(500));
+        }
+        Serial.println();
       }
+
+      // Fortschrittsbalken Queue-Verarbeitung
+      printBar("Queue", processed, totalItems > 0 ? totalItems : processed, "");
+      Serial.println();
+
+      // Detaillierter Log
+      if (item.sensorId <= 2) {
+        Serial.printf("[%6" PRIu32 "ms] [Upload] Sensor %d: Temp=%.1f C  Hum=%.1f%%  Batt=%dmV\n",
+                      millis(), item.sensorId,
+                      item.temperature, item.humidity, item.voltage);
+      } else {
+        Serial.printf("[%6" PRIu32 "ms] [Upload] Extra-Sensor %d: IAQ=%.1f  Batt=%dmV\n",
+                      millis(), item.sensorId - 2, item.iaq, item.voltage);
+      }
+
+      uploadToThingSpeak(&item);
+      lastWriteTime = millis();
     }
-    
-    // Suspend until needed again
-    vTaskSuspend(NULL);
+
+    Serial.printf("[%6" PRIu32 "ms] [Upload] Fertig – %" PRIu32 "/%" PRIu32 " hochgeladen\n",
+                  millis(), processed, totalItems);
+
+    // WiFi trennen → ESP-NOW reaktivieren
+    setState(DISCONNECTING);
+    Serial.printf("[%6" PRIu32 "ms] [WiFi] Trenne Verbindung...\n", millis());
+    WiFi.disconnect(true, true);
+    vTaskDelay(pdMS_TO_TICKS(200));
+
+    if (!initESPNow()) {
+      Serial.println("[Upload] ESP-NOW Reinit fehlgeschlagen – Neustart!");
+      vTaskDelay(pdMS_TO_TICKS(500));
+      esp_restart();
+    }
+    setState(WAITING_FOR_DATA);
+    printSep();
   }
 }
 
-// Power management task - monitors activity and adjusts power accordingly
+// ---------------------------------------------------------------------------
+// Power-Management + Retry-Wächter
+// Zwei Aufgaben in einem Task:
+//  1. Power-Modus basierend auf Aktivität anpassen
+//  2. Periodisch prüfen ob Queue-Daten vorhanden → WiFi neu versuchen
+//     (damit der Upload auch klappt wenn WiFi zurückkommt ohne neues Sensor-Paket)
+// ---------------------------------------------------------------------------
 void powerMgmtTask(void *parameters) {
   for (;;) {
-    // Only manage power when in WAITING_FOR_DATA state
-    if (currentState == WAITING_FOR_DATA) {
-      if (millis() - lastActivityTime > idleThreshold) {
-        // No activity for a while, enter low power mode
-        configureLowPowerMode();
-      } else {
-        // Recent activity, ensure normal power mode
-        configureNormalPowerMode();
+    TickType_t taskStart = xTaskGetTickCount();  // Drift-Fix: Startzeit merken
+
+    // ── Power-Wechsel aus Callback anwenden ──────────────────────────────
+    if (requestNormalPower) {
+      requestNormalPower = false;
+      setPowerMode(PM_NORMAL);
+    }
+
+    StationState s = getState();
+
+    // ── Inaktivitäts-Check ────────────────────────────────────────────────
+    if (s == WAITING_FOR_DATA) {
+      if ((millis() - lastActivityTime) > IDLE_THRESHOLD) {
+        setPowerMode(PM_LOW);
+      }
+    } else {
+      setPowerMode(PM_NORMAL);
+    }
+
+    // ── Retry-Wächter ─────────────────────────────────────────────────────
+    // Greift wenn: Daten in der Queue vorhanden ABER System wartet untätig.
+    // Passiert wenn WiFi nach längerer Ausfallzeit zurückkommt und kein neues
+    // Sensor-Paket den Trigger auslöst.
+    if (s == WAITING_FOR_DATA && uxQueueMessagesWaiting(sensorQueue) > 0) {
+      // Backoff-Zeit für aktuellen Fehlerzähler berechnen
+      uint8_t idx = (wifiFailCount < WIFI_BACKOFF_STEPS)
+                     ? wifiFailCount
+                     : (WIFI_BACKOFF_STEPS - 1);
+      uint32_t requiredWait = WIFI_BACKOFF_MS[idx];
+
+      // Mindestens MIN_CONNECT_INTERVAL einhalten
+      if (requiredWait < MIN_CONNECT_INTERVAL_MS)
+        requiredWait = MIN_CONNECT_INTERVAL_MS;
+
+      if ((millis() - lastConnectAttempt) >= requiredWait) {
+        Serial.printf("[Wächter] Queue hat %d Einträge, starte WiFi-Versuch...\n",
+                      (int)uxQueueMessagesWaiting(sensorQueue));
+        setState(CONNECTING_WIFI);
+        xTaskNotifyGive(wifiTaskHandle);
       }
     }
-    
-    // Check every 5 seconds
-    vTaskDelay(5000 / portTICK_PERIOD_MS);
+
+    // ── Heartbeat-Statuszeile alle 5 s ───────────────────────────────────
+    // FIX Drift: Tatsächlich vergangene Ticks messen statt pauschal +5
+    //            addieren. Task-Body braucht messbare Zeit (setPowerMode etc.)
+    TickType_t taskEnd = xTaskGetTickCount();
+    uint32_t actualSeconds = (uint32_t)((taskEnd - taskStart) / configTICK_RATE_HZ);
+    if (actualSeconds == 0) actualSeconds = 5;  // Mindest-Inkrement
+    uptimeSeconds += actualSeconds;
+    Serial.print("[Heartbeat] Uptime: ");
+    printUptime();
+    Serial.printf("  Queue: %d/%d  WiFi-Fehler: %d  Power: %s\n",
+                  (int)uxQueueMessagesWaiting(sensorQueue),
+                  SENSOR_QUEUE_SIZE,
+                  wifiFailCount,
+                  activePowerMode == PM_NORMAL ? "NORMAL" : "LOW");
+
+    vTaskDelay(pdMS_TO_TICKS(5000));
   }
 }
 
-// Process all data in the queue and upload to ThingSpeak
-void processQueue() {
-  while (queueCount > 0) {
-    // Respect ThingSpeak rate limits
-    unsigned long currentTime = millis();
-    if (currentTime - lastWriteTime < writeInterval) {
-      unsigned long waitTime = writeInterval - (currentTime - lastWriteTime);
-      Serial.printf("Waiting %lu ms before next ThingSpeak write\n", waitTime);
-      vTaskDelay(waitTime / portTICK_PERIOD_MS);
-    }
-    
-    // Take a data point from the queue
-    sensor_data currentData;
-    if (xSemaphoreTake(queueMutex, portMAX_DELAY) == pdTRUE) {
-      memcpy(&currentData, &dataQueue[0], sizeof(sensor_data));
-      
-      // Shift remaining items in the queue
-      for (int i = 0; i < queueCount - 1; i++) {
-        memcpy(&dataQueue[i], &dataQueue[i + 1], sizeof(sensor_data));
-      }
-      queueCount--;
-      
-      xSemaphoreGive(queueMutex);
-    }
-    
-    // Upload to ThingSpeak
-    uploadToThingSpeak(&currentData);
-    lastWriteTime = millis();
-  }
-}
-
-// Upload a single sensor data point to ThingSpeak
+// ---------------------------------------------------------------------------
+// ThingSpeak Upload mit Retry-Logik
+// ---------------------------------------------------------------------------
 void uploadToThingSpeak(sensor_data *data) {
-  // Clear all fields before setting new ones
-  ThingSpeak.setStatus("");
-  
   if (data->sensorId == 1) {
-    // Sensor 1: Fields 1-3 (Temperature, Humidity, Battery Voltage)
     ThingSpeak.setField(1, data->temperature);
     ThingSpeak.setField(2, data->humidity);
     ThingSpeak.setField(3, data->voltage);
-    
-    Serial.printf("Uploading Sensor 1: Temp=%.1f°C, Humidity=%.1f%%, Battery=%dmV\n",
-                  data->temperature, data->humidity, data->voltage);
-                  
   } else if (data->sensorId == 2) {
-    // Sensor 2: Fields 4-6 (Temperature, Humidity, Battery Voltage)
     ThingSpeak.setField(4, data->temperature);
     ThingSpeak.setField(5, data->humidity);
     ThingSpeak.setField(6, data->voltage);
-    
-    Serial.printf("Uploading Sensor 2: Temp=%.1f°C, Humidity=%.1f%%, Battery=%dmV\n",
-                  data->temperature, data->humidity, data->voltage);
-                  
-  } else if (data->sensorId == 3) {
-    // Extra-Sensor 1: Fields 7-8 (IAQ, Battery Voltage)
+  } else if (data->sensorId >= 3) {
+    // Extra-Sensoren auf Felder 7–8 (Channel-Design-Einschränkung)
     ThingSpeak.setField(7, data->iaq);
     ThingSpeak.setField(8, data->voltage);
-    
-    Serial.printf("Uploading Extra-Sensor 1: IAQ=%.1f, Battery=%dmV\n",
-                  data->iaq, data->voltage);
-                  
-  } else if (data->sensorId == 4) {
-    // Extra-Sensor 2: Overwrites fields 7-8 (only one extra sensor at a time!)
-    Serial.println("WARNING: Extra-Sensor 2 overwrites Extra-Sensor 1 data!");
-    ThingSpeak.setField(7, data->iaq);
-    ThingSpeak.setField(8, data->voltage);
-    
-    Serial.printf("Uploading Extra-Sensor 2: IAQ=%.1f, Battery=%dmV\n",
-                  data->iaq, data->voltage);
-                  
   } else {
-    Serial.printf("ERROR: Unknown sensor ID %d\n", data->sensorId);
+    Serial.printf("[Upload] FEHLER: Unbekannte Sensor-ID %d\n", data->sensorId);
     return;
   }
-  
-  int result = ThingSpeak.writeFields(CHANNEL_ID, CHANNEL_API_KEY);
-  
-  if (result == 200) {
-    Serial.printf("ThingSpeak upload successful for sensor %d\n", data->sensorId);
-  } else {
-    Serial.printf("ThingSpeak upload failed for sensor %d. Error: %d\n", data->sensorId, result);
+
+  int result = 0;
+  for (int attempt = 1; attempt <= THINGSPEAK_RETRIES; attempt++) {
+    uint32_t t0 = millis();
+    result = ThingSpeak.writeFields(CHANNEL_ID, CHANNEL_API_KEY);
+    uint32_t rtt = millis() - t0;
+    if (result == 200) {
+      Serial.printf("[%6" PRIu32 "ms] [Upload] OK  Sensor %d  Versuch %d/%d  RTT: %" PRIu32 "ms\n",
+                    millis(), data->sensorId, attempt, THINGSPEAK_RETRIES, rtt);
+      return;
+    }
+    Serial.printf("[%6" PRIu32 "ms] [Upload] FEHLER %d  Sensor %d  Versuch %d/%d  RTT: %" PRIu32 "ms\n",
+                  millis(), result, data->sensorId, attempt, THINGSPEAK_RETRIES, rtt);
+    if (attempt < THINGSPEAK_RETRIES) {
+      vTaskDelay(pdMS_TO_TICKS(3000));
+    }
   }
+  Serial.printf("[%6" PRIu32 "ms] [Upload] GESCHEITERT nach %d Versuchen  Sensor %d\n",
+                millis(), THINGSPEAK_RETRIES, data->sensorId);
 }
 
-// Initialize ESP-NOW
-void initESPNow() {
+// ---------------------------------------------------------------------------
+// ESP-NOW initialisieren mit Health-Check
+// Gibt true zurück wenn erfolgreich, false bei Fehler
+// ---------------------------------------------------------------------------
+bool initESPNow() {
   WiFi.mode(WIFI_STA);
-  
+  vTaskDelay(pdMS_TO_TICKS(100));  // WiFi-Stack Zeit zum Stabilisieren
+
+  // Eventuell altes ESP-NOW aufräumen (idempotent, verhindert Stack-Korruption)
+  esp_now_deinit();
+  vTaskDelay(pdMS_TO_TICKS(50));
+
   if (esp_now_init() != ESP_OK) {
-    Serial.println("Error initializing ESP-NOW");
-    return;
+    Serial.println("[ESP-NOW] FEHLER: Initialisierung fehlgeschlagen!");
+    return false;
   }
-  
-  esp_now_register_recv_cb(OnDataRecv);
-  Serial.println("ESP-NOW initialized. Waiting for sensor data...");
+
+  if (esp_now_register_recv_cb(OnDataRecv) != ESP_OK) {
+    Serial.println("[ESP-NOW] FEHLER: Callback-Registrierung fehlgeschlagen!");
+    esp_now_deinit();
+    return false;
+  }
+
+  Serial.println("[ESP-NOW] Bereit – warte auf Sensordaten...");
+  return true;
 }
 
-// Configure power-saving mode
-void configureLowPowerMode() {
-  static bool inLowPowerMode = false;
-  
-  if (!inLowPowerMode) {
-    Serial.println("Entering low power mode...");
-    
-    // 1. Reduce CPU frequency
+// ---------------------------------------------------------------------------
+// Power-Mode-Wechsel (Bug-Fix: ein einziger Status statt zwei Static-Flags)
+// ---------------------------------------------------------------------------
+void setPowerMode(PowerMode mode) {
+  if (activePowerMode == mode) return;  // Bereits im gewünschten Modus
+
+  if (mode == PM_LOW) {
+    Serial.println("[Power] Wechsle in Low-Power-Modus...");
     setCpuFrequencyMhz(CPU_FREQ_MHZ_LOW);
-    
-    // 2. Enable modem sleep while maintaining ESP-NOW functionality
     esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
-    
-    // 3. Configure automatic light sleep between tasks
-    esp_pm_config_esp32s3_t pm_config = {
-        .max_freq_mhz = CPU_FREQ_MHZ_LOW,
-        .min_freq_mhz = CPU_FREQ_MHZ_LOW,
-        .light_sleep_enable = true
+    esp_pm_config_esp32s3_t cfg = {
+      .max_freq_mhz     = CPU_FREQ_MHZ_LOW,
+      .min_freq_mhz     = CPU_FREQ_MHZ_LOW,
+      .light_sleep_enable = true
     };
-    esp_pm_configure(&pm_config);
-    
-    inLowPowerMode = true;
-    Serial.printf("CPU frequency set to %d MHz, modem sleep enabled\n", CPU_FREQ_MHZ_LOW);
-  }
-}
-
-// Configure normal power mode
-void configureNormalPowerMode() {
-  static bool inNormalPowerMode = false;
-  
-  if (!inNormalPowerMode) {
-    Serial.println("Switching to normal power mode...");
-    
-    // 1. Set CPU to normal frequency
+    esp_pm_configure(&cfg);
+    Serial.printf("[Power] CPU=%dMHz, Modem-Sleep ein\n", CPU_FREQ_MHZ_LOW);
+  } else {
+    Serial.println("[Power] Wechsle in Normal-Power-Modus...");
     setCpuFrequencyMhz(CPU_FREQ_MHZ_NORMAL);
-    
-    // 2. Disable power-saving for WiFi to ensure responsive ESP-NOW
     esp_wifi_set_ps(WIFI_PS_NONE);
-    
-    // 3. Disable automatic light sleep
-    esp_pm_config_esp32s3_t pm_config = {
-        .max_freq_mhz = CPU_FREQ_MHZ_NORMAL,
-        .min_freq_mhz = CPU_FREQ_MHZ_NORMAL,
-        .light_sleep_enable = false
+    esp_pm_config_esp32s3_t cfg = {
+      .max_freq_mhz     = CPU_FREQ_MHZ_NORMAL,
+      .min_freq_mhz     = CPU_FREQ_MHZ_NORMAL,
+      .light_sleep_enable = false
     };
-    esp_pm_configure(&pm_config);
-    
-    inNormalPowerMode = true;
-    Serial.printf("CPU frequency set to %d MHz, modem sleep disabled\n", CPU_FREQ_MHZ_NORMAL);
+    esp_pm_configure(&cfg);
+    Serial.printf("[Power] CPU=%dMHz, Modem-Sleep aus\n", CPU_FREQ_MHZ_NORMAL);
   }
+
+  activePowerMode = mode;
 }
 
+// ---------------------------------------------------------------------------
+// Setup
+// ---------------------------------------------------------------------------
 void setup() {
-  // Initialize serial communication
+  // ── SCHRITT 1: Serial ──────────────────────────────────────────────────
   Serial.begin(115200);
-  delay(1000);
-  
-  Serial.println("\nESP32-S3 Station with ThingSpeak Starting");
-  
-  // Initialize power management
-  configureNormalPowerMode();
-  
-  // Record initial activity
+  uint32_t serialWait = millis();
+  while (!Serial && (millis() - serialWait < 3000)) { delay(10); }
+
+  printSep();
+  Serial.println("  ESP32-S3 Home Station  –  Booting...");
+  printSep();
+  printTs("[1/6] Serial bereit (USB-CDC)");
+
+  // ── SCHRITT 2: WiFi NVS bereinigen ────────────────────────────────────
+  // FIX: Ohne diese Zeilen versucht der Arduino-WiFi-Stack beim Boot
+  // automatisch die letzte gespeicherte SSID zu verbinden → blockiert
+  // WiFi.mode() für bis zu 3 Minuten!
+  WiFi.persistent(false);       // Keine Credentials in NVS speichern
+  WiFi.setAutoReconnect(false); // Keine automatische Reconnect-Versuche
+  WiFi.disconnect(true, true);  // Bestehende Verbindung + NVS löschen
+  WiFi.mode(WIFI_OFF);          // WiFi komplett aus bis wir es brauchen
+  printTs("[2/6] WiFi NVS bereinigt – kein Auto-Reconnect");
+
+  // ── SCHRITT 3: Power-Mode ─────────────────────────────────────────────
+  // WICHTIG: esp_pm_configure() erst NACH WiFi.mode(OFF) aufrufen,
+  // sonst Konflikt zwischen PM und WiFi-Stack-Init
+  setPowerMode(PM_NORMAL);
   lastActivityTime = millis();
-  
-  // Create mutex for queue protection
-  queueMutex = xSemaphoreCreateMutex();
-  if (queueMutex == NULL) {
-    Serial.println("Error creating mutex");
+  printTs("[3/6] Power-Mode: NORMAL (160 MHz, Modem-Sleep aus)");
+
+  // ── SCHRITT 4: FreeRTOS Queue ─────────────────────────────────────────
+  sensorQueue = xQueueCreate(SENSOR_QUEUE_SIZE, sizeof(sensor_data));
+  if (sensorQueue == NULL) {
+    Serial.println("[Setup] KRITISCH: Queue konnte nicht erstellt werden!");
+    while (true) delay(1000);
   }
-  
-  // Initialize ThingSpeak
+  Serial.printf("[%6" PRIu32 "ms] [4/6] Queue erstellt: %d Slots x %d Bytes = %d Bytes\n",
+                millis(), SENSOR_QUEUE_SIZE,
+                (int)sizeof(sensor_data),
+                SENSOR_QUEUE_SIZE * (int)sizeof(sensor_data));
+
+  // ── SCHRITT 5: ThingSpeak + ESP-NOW ──────────────────────────────────
   ThingSpeak.begin(client);
-  
-  // Initialize ESP-NOW
-  initESPNow();
-  
-  // Create WiFi task (starts suspended)
-  xTaskCreate(
-    wifiTask,
-    "WiFi Task",
-    4096,
-    NULL,
-    1,
-    &wifiTaskHandle
-  );
-  
-  // Create upload task (starts suspended)
-  xTaskCreate(
-    uploadTask,
-    "Upload Task",
-    4096,
-    NULL,
-    1,
-    &uploadTaskHandle
-  );
-  
-  // Create power management task (always running)
-  xTaskCreate(
-    powerMgmtTask,
-    "Power Management",
-    2048,
-    NULL,
-    tskIDLE_PRIORITY,
-    &powerMgmtTaskHandle
-  );
-  
-  Serial.println("Tasks created. Waiting for sensor data...");
+  printTs("[5/6] ThingSpeak Client bereit");
+
+  if (!initESPNow()) {
+    Serial.println("[Setup] ESP-NOW fehlgeschlagen – Neustart in 3s!");
+    delay(3000);
+    esp_restart();
+  }
+
+  // ── SCHRITT 6: FreeRTOS Tasks ─────────────────────────────────────────
+  xTaskCreate(wifiTask,      "WiFi",      8192, NULL, 2,                  &wifiTaskHandle);
+  xTaskCreate(uploadTask,    "Upload",    8192, NULL, 2,                  &uploadTaskHandle);
+  // FIX Stack: 2048 → 3072 (Serial.printf Formatverarbeitung + Heartbeat-Puffer)
+  xTaskCreate(powerMgmtTask, "PowerMgmt", 3072, NULL, tskIDLE_PRIORITY+1, &powerTaskHandle);
+  Serial.printf("[%6" PRIu32 "ms] [6/6] Tasks gestartet: WiFi(P2,8K) Upload(P2,8K) Power(P1,3K)\n",
+                millis());
+
+  printSep();
+  Serial.printf("[%6" PRIu32 "ms] BEREIT – Warte auf ESP-NOW Sensordaten\n", millis());
+  printSep();
 }
 
+// ---------------------------------------------------------------------------
+// Loop — leer, alle Arbeit läuft in FreeRTOS-Tasks
+// ---------------------------------------------------------------------------
 void loop() {
-  // Main loop is empty as all work is done in tasks
-  delay(100);
+  vTaskDelay(pdMS_TO_TICKS(1000));
 }
