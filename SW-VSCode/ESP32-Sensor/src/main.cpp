@@ -28,14 +28,14 @@
 #define BATTERY_MAX 4200
 
 // Sleep settings - deep sleep for 1 minute between transmissions
-#define SEND_INTERVAL_MIN 10     // Send data every 10 minutes
+#define SEND_INTERVAL_MIN 5     // Send data every 5 minutes
 #define SEND_INTERVAL_SEC (SEND_INTERVAL_MIN * 60) 
 #define SEND_INTERVAL_US (SEND_INTERVAL_SEC * 1000000ULL) // Convert to microseconds
 
 // Radio configuration
 #define WIFI_CHANNEL 1
-// TX power in quarter-dBm steps (e.g., 84 = 20 dBm). Adjust if you need more/less range.
-#define ESP_NOW_TX_POWER_QDBM 80
+// TX power in quarter-dBm steps. 84 = 21 dBm (API maximum; ESP32-C3 hardware caps at 20 dBm).
+#define ESP_NOW_TX_POWER_QDBM 84
 
 // Send timing
 #define SEND_TIMEOUT_MS 200
@@ -77,7 +77,7 @@ typedef struct sensor_data {
 sensor_data sensorData;
 
 // MAC Address of the receiver (ESP32-S3 Station)
-uint8_t receiverAddress[] = {0x24, 0x58, 0x7C, 0xE4, 0x13, 0xB8}; // ESP32-S3 Station MAC
+uint8_t receiverAddress[] = {}; // ESP32-S3 Station MAC
 
 // ESP-NOW variables
 esp_now_peer_info_t peerInfo;
@@ -94,11 +94,9 @@ const uint8_t SENSOR_ID = 1;  // Change for each sensor (1 = Schlafzimmer, 2 = W
 
 // Store data in RTC memory to persist across sleep cycles
 RTC_DATA_ATTR uint32_t rtcSignature = 0;        // Für Konsistenzprüfung
-RTC_DATA_ATTR int bootCount = 0;
-RTC_DATA_ATTR int transmissionFailures = 0;
-RTC_DATA_ATTR uint32_t lastRandomJitter = 0;
-// Precomputed, persisted values to avoid recomputing each cycle
-RTC_DATA_ATTR uint64_t idOffsetUs = 0;
+RTC_DATA_ATTR uint32_t bootCount = 0;
+RTC_DATA_ATTR uint32_t consecutive_tx_failures = 0; // Consecutive TX failures (for backoff & re-randomization)
+RTC_DATA_ATTR uint32_t persistent_offset_ms = 0; // Stable random phase offset [0, 120 s], survives deep sleep
 
 // ESP-IDF v4 ADC DMA implementation
 static bool initAdcDma() {
@@ -129,7 +127,7 @@ static int readBatteryMvDma(uint16_t min_samples, uint16_t max_samples) {
   for (int i = 0; i < MAX_SAMP; i++) {
     sum += raws[i];
   }
-  uint16_t average = sum / MAX_SAMP;
+  uint32_t average = sum / (uint32_t)MAX_SAMP; // uint32_t to avoid silent narrowing to uint16_t
   
   uint32_t mv = esp_adc_cal_raw_to_voltage(average, &adc_chars);
   return (int)mv;
@@ -175,39 +173,68 @@ void enterDeepSleep() {
 
   DEBUG_PRINTLN("Preparing for deep sleep...");
   
-  // Simplified sleep calculation
+  // =========================================================================
+  // COLLISION AVOIDANCE: persistent-phase-offset strategy
+  //
+  //  1. SEND_INTERVAL_US     – nominal base period
+  //  2. idOffset             – hard deterministic spread: 15 s × (ID-1)
+  //  3. persistent_offset_ms – stable random spread within [0, 120 s],
+  //                            initialized once on first boot; survives sleep
+  //  4. backoffTime          – exponential backoff on consecutive failures
+  //                            (doubles each failure, max 120 s)
+  // =========================================================================
   uint64_t sleepTime = SEND_INTERVAL_US;
 
-  // Larger random jitter (±15 seconds) for better collision avoidance
-  int32_t randomJitter = (esp_random() % 30000 - 15000) * 1000ULL;
-  lastRandomJitter = (uint32_t)(randomJitter / 1000ULL);
-  
-  // Simple linear backoff for failures (3 seconds per failure, max 30 seconds)
+  // 1. ID-based hard offset: ensures minimum separation between sensors
+  uint64_t idOffset = (uint64_t)(SENSOR_ID > 0 ? (SENSOR_ID - 1) : 0) * 15000ULL * 1000ULL;
+
+  // 2. Persistent phase offset
+  const uint8_t RERANDOM_THRESHOLD = 3;
+  if (persistent_offset_ms == 0 || consecutive_tx_failures >= RERANDOM_THRESHOLD) {
+    // First boot OR stuck in collision → pick a new random slot [1, 120000 ms]
+    // Range starts at 1 to ensure persistent_offset_ms != 0 (0 would re-trigger
+    // this branch every cycle, causing infinite re-randomization).
+    persistent_offset_ms = (esp_random() % 119999u) + 1u;
+    if (consecutive_tx_failures >= RERANDOM_THRESHOLD) {
+      consecutive_tx_failures = 0; // Reset after re-randomizing
+      DEBUG_PRINTLN("TX slot re-randomized to escape collision");
+    } else {
+      DEBUG_PRINTLN("TX slot initialized");
+    }
+  }
+  uint64_t persistentOffset = (uint64_t)persistent_offset_ms * 1000ULL;
+
+  // 3. Exponential backoff on consecutive failures (1 s, 2 s, 4 s … max 120 s)
+  // shift = failures-1, clamped to [0,7] → values 1s/2s/4s/8s/16s/32s/64s/128s
+  // Avoids uint32_t underflow by computing shift index explicitly as uint32_t.
   uint64_t backoffTime = 0;
-  if (transmissionFailures > 0) {
-    backoffTime = min(transmissionFailures * 3000ULL, 30000ULL) * 1000ULL;
+  if (consecutive_tx_failures > 0) {
+    const uint32_t shift_idx = (consecutive_tx_failures - 1u) > 7u
+                                 ? 7u
+                                 : (consecutive_tx_failures - 1u);
+    uint32_t backoff_ms = min((uint32_t)1000u << shift_idx, (uint32_t)120000u); // hard cap at 120 s
+    backoffTime = (uint64_t)backoff_ms * 1000ULL;
     DEBUG_PRINT("Backoff time (sec): ");
     DEBUG_PRINTLN(backoffTime / 1000000ULL);
   }
-  
-  // Apply all offsets (use precomputed ID offset)
-  sleepTime += idOffsetUs + randomJitter + backoffTime;
-  
-  // Ensure minimum and maximum sleep times
+
+  sleepTime += idOffset + persistentOffset + backoffTime;
+
+  // Ensure reasonable bounds
   const uint64_t MIN_SLEEP = 30 * 1000 * 1000ULL;     // 30 seconds minimum
   const uint64_t MAX_SLEEP = 20 * 60 * 1000 * 1000ULL; // 20 minutes maximum
-  
+
   sleepTime = max(sleepTime, MIN_SLEEP);
   sleepTime = min(sleepTime, MAX_SLEEP);
-  
+
   #ifdef DEBUG_MODE
-  DEBUG_PRINT("ID offset (sec): ");
-  DEBUG_PRINTLN(idOffsetUs / 1000000ULL);
-    DEBUG_PRINT("Jitter (sec): ");
-    DEBUG_PRINTLN(randomJitter / 1000000.0);
+    DEBUG_PRINT("ID offset (sec): ");
+    DEBUG_PRINTLN(idOffset / 1000000ULL);
+    DEBUG_PRINT("Persistent offset (sec): ");
+    DEBUG_PRINTLN(persistentOffset / 1000000ULL);
     DEBUG_PRINT("Total sleep time (min): ");
     DEBUG_PRINTLN(sleepTime / 60000000.0);
-    energySaveDelay(50); // Reduced debug finish delay
+    energySaveDelay(50);
   #endif
   
   // Clean shutdown of peripherals - improved radio shutdown
@@ -385,9 +412,8 @@ void setup() {
     // RTC memory was reset
     rtcSignature = RTC_SIGNATURE;
     bootCount = 0;
-    transmissionFailures = 0;
-    lastRandomJitter = 0;
-    idOffsetUs = 0;
+    consecutive_tx_failures = 0;
+    persistent_offset_ms = 0; // Will be initialized in enterDeepSleep() on first use
   }
   
   // Increment boot counter
@@ -401,10 +427,11 @@ void setup() {
     Serial.begin(115200);
     energySaveDelay(50); // Reduced debug delay
     Serial.println("\n\nESP32-C3 Sensor Node Starting");
-    Serial.printf("Boot count: %d\n", bootCount);
+    Serial.printf("Boot count: %lu\n", bootCount);
     Serial.printf("Sensor ID: %d\n", SENSOR_ID);
     Serial.printf("RTC memory: %s\n", rtcSignature == RTC_SIGNATURE ? "Valid" : "Reset detected");
-    Serial.printf("Failures: %d\n", transmissionFailures);
+    Serial.printf("Consecutive TX failures: %lu\n", consecutive_tx_failures);
+    Serial.printf("Persistent offset: %lu ms\n", persistent_offset_ms);
   #endif
   
   // Configure pins
@@ -477,15 +504,6 @@ void setup() {
     #endif
   }
 
-  // Precompute static offsets once
-  if (idOffsetUs == 0) {
-    idOffsetUs = (uint64_t)(SENSOR_ID > 0 ? (SENSOR_ID - 1) : 0) * 15000ULL * 1000ULL;
-    #ifdef DEBUG_MODE
-      DEBUG_PRINT("Precomputed ID offset (sec): ");
-      DEBUG_PRINTLN(idOffsetUs / 1000000ULL);
-    #endif
-  }
-  
   // Initialize the sensor data structure
   sensorData.sensorId = SENSOR_ID;
   
@@ -557,11 +575,11 @@ void loop() {
   
   // 5. Update transmission success/failure counters
   if (sendAttemptSuccessful) {
-    transmissionFailures = 0;
+    consecutive_tx_failures = 0;
   } else {
-    transmissionFailures = min(transmissionFailures + 1, 10);
-    DEBUG_PRINT("Total transmission failures: ");
-    DEBUG_PRINTLN(transmissionFailures);
+    consecutive_tx_failures = min(consecutive_tx_failures + 1u, (uint32_t)10u);
+    DEBUG_PRINT("Consecutive transmission failures: ");
+    DEBUG_PRINTLN(consecutive_tx_failures);
   }
   
   // 6. Ensure all serial output is sent (minimal delay in debug)
