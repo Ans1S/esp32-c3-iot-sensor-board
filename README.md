@@ -449,8 +449,8 @@ Ideal for health-conscious monitoring
 #### Step 1: Clone Repository
 
 ```bash
-git clone https://github.com/Ans1S/lil-ESP32-C3.git
-cd lil-ESP32-C3
+git clone https://github.com/Ans1S/esp32-c3-iot-sensor-board.git
+cd esp32-c3-iot-sensor-board
 ```
 
 #### Step 2: Configure Credentials
@@ -498,23 +498,14 @@ pio run --target upload
 pio device monitor
 ```
 
-**Using Arduino IDE:**
-
-1. Open `.ino` file from `SW-Arduino-IDE/`
-2. Select board: "ESP32C3 Dev Module"
-3. Select port
-4. Upload
-
----
-
-📚 **For detailed setup instructions, see [SETUP_GUIDE.md](SETUP_GUIDE.md)**
+**Using Arduino IDE:** Import the PlatformIO source from `SW-VSCode/` into your preferred Arduino workflow if needed.
 
 ---
 
 ## 📁 Project Structure
 
 ```
-lil-ESP32-C3/
+esp32-c3-iot-sensor-board/
 │
 ├── 📂 PCB/                       # Hardware Design Files (KiCad)
 │   ├── Version 1/                # Initial design
@@ -528,13 +519,12 @@ lil-ESP32-C3/
 │   ├── W-Charger-ThingSpeak-1A/  # Standalone WiFi (1A)
 │   └── W-Charger-ThingSpeak-100mA/ # Standalone WiFi (100mA)
 │
-├── 📂 SW-Arduino-IDE/            # Arduino IDE Projects (Legacy)
+├── 📂 SW/                        # Arduino-style libraries and legacy sources
 ├── 📂 Datasheet/                 # Component Datasheets
 ├── 📂 Readme/                    # Documentation Images
 │
 ├── 📄 .gitignore                 # Git ignore rules
 ├── 📄 LICENSE                    # MIT License
-├── � SETUP_GUIDE.md             # Detailed setup instructions
 └── 📄 README.md                  # This file
 ```
 
@@ -643,7 +633,7 @@ We welcome contributions from the community! Here's how you can help:
 
 **Ways to Contribute:**
 
-- 🐛 Report bugs via [Issues](https://github.com/Ans1S/lil-ESP32-C3/issues)
+- 🐛 Report bugs via [Issues](https://github.com/Ans1S/esp32-c3-iot-sensor-board/issues)
 - 💡 Suggest new features
 - 📝 Improve documentation
 - 🔧 Submit pull requests
@@ -711,8 +701,8 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 ## 📧 Contact & Links
 
-[![GitHub](https://img.shields.io/badge/GitHub-Repository-black?style=for-the-badge&logo=github)](https://github.com/Ans1S/lil-ESP32-C3)
-[![Issues](https://img.shields.io/badge/Issues-Report_Bug-red?style=for-the-badge&logo=github)](https://github.com/Ans1S/lil-ESP32-C3/issues)
+[![GitHub](https://img.shields.io/badge/GitHub-Repository-black?style=for-the-badge&logo=github)](https://github.com/Ans1S/esp32-c3-iot-sensor-board)
+[![Issues](https://img.shields.io/badge/Issues-Report_Bug-red?style=for-the-badge&logo=github)](https://github.com/Ans1S/esp32-c3-iot-sensor-board/issues)
 [![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
 
 ---
