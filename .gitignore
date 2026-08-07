@@ -15,13 +15,48 @@ build/
 *.bin
 *.elf
 *.map
+*.hex
+*.uf2
+*.partitions.bin
+*.bootloader.bin
+*.ota
 *.env
 .env.*
+
+# Local IDE/workspace and device artifacts
+*.code-workspace
+*.exe
+*.dll
+*.dmp
+*.trace
+*.pcap
+captures/
+**/captures/
+serial*.log
+monitor*.log
 
 # Credentials and sensitive data
 **/config.h
 **/secrets.h
 **/credentials.h
+**/config.local.*
+**/secrets.*
+**/credentials.*
+**/*secret*
+**/*credential*
+.env
+*.local
+*.local.*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local Codex project guidance and skills (never publish)
+**/AGENTS.md
+**/AGENTS.override.md
+**/.agents/
+**/.codex/
 
 # ===================================
 # KiCad
@@ -42,6 +77,10 @@ _autosave-*
 # Cache files
 fp-info-cache
 *.kicad_prl
+
+# Local KiCad history and active project locks
+**/.history/
+~*.lck
 
 # Gerber and manufacturing output (optional - uncomment if you don't want to track them)
 # gerber/
