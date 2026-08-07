@@ -1,0 +1,1438 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<export version="E">
+  <design>
+    <source>C:\Users\Anselm\Documents\GitHub\Esp32-C3\PCB\ESP32-C3.kicad_sch</source>
+    <date>01.02.2023 14:57:57</date>
+    <tool>Eeschema (6.0.11)</tool>
+    <sheet number="1" name="/" tstamps="/">
+      <title_block>
+        <title/>
+        <company/>
+        <rev/>
+        <date/>
+        <source>ESP32-C3.kicad_sch</source>
+        <comment number="1" value=""/>
+        <comment number="2" value=""/>
+        <comment number="3" value=""/>
+        <comment number="4" value=""/>
+        <comment number="5" value=""/>
+        <comment number="6" value=""/>
+        <comment number="7" value=""/>
+        <comment number="8" value=""/>
+        <comment number="9" value=""/>
+      </title_block>
+    </sheet>
+  </design>
+  <components>
+    <comp ref="AE1">
+      <value>KH-3216-H0209</value>
+      <footprint>Resistor_SMD:R_1206_3216Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/2111261130_Shenzhen-Kinghelm-Elec-KH-3216-H0209_C2925417.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C2925417</field>
+      </fields>
+      <libsource lib="ESP32-C3_Bib" part="KH-3216-H0209" description="1206 Antennas ROHS"/>
+      <property name="LCSC" value="C2925417"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>a4fbe692-83bc-4866-a596-bb2f12258f78</tstamps>
+    </comp>
+    <comp ref="C1">
+      <value>100n_0402_X7R_16V</value>
+      <footprint>Capacitor_SMD:C_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1810191219_Samsung-Electro-Mechanics-CL05B104KO5NNNC_C1525.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C1525</field>
+        <field name="Price1000">0.0006</field>
+      </fields>
+      <libsource lib="capacitor_smd_standard" part="100n_0402_X7R_16V" description="16V 100nF X7R ±10% 0402 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS"/>
+      <property name="LCSC" value="C1525"/>
+      <property name="Price1000" value="0.0006"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>ed22da0c-4c61-4729-b27a-833ecd8dff16</tstamps>
+    </comp>
+    <comp ref="C2">
+      <value>10u_0402_X5R_6V3</value>
+      <footprint>Capacitor_SMD:C_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1810191215_Samsung-Electro-Mechanics-CL05A106MQ5NUNC_C15525.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C15525</field>
+        <field name="Price1000">0.0027</field>
+      </fields>
+      <libsource lib="capacitor_smd_standard" part="10u_0402_X5R_6V3" description="6.3V 10uF X5R ±20% 0402  Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS"/>
+      <property name="LCSC" value="C15525"/>
+      <property name="Price1000" value="0.0027"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>14375414-062e-477a-947f-42563de51088</tstamps>
+    </comp>
+    <comp ref="C3">
+      <value>3p3_0402_C0G_50V</value>
+      <footprint>Capacitor_SMD:C_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1811141710_FH--Guangdong-Fenghua-Advanced-Tech-0402CG3R3C500NT_C1565.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C1565</field>
+        <field name="Price10000">0.0007</field>
+      </fields>
+      <libsource lib="ESP32-C3_Bib" part="3p3_0402_C0G_50V" description="50V 3.3pF C0G ±0.25pF 0402 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS"/>
+      <property name="LCSC" value="C1565"/>
+      <property name="Price10000" value="0.0007"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>7955cd14-12e4-4444-965b-c0f2d9ab8cf7</tstamps>
+    </comp>
+    <comp ref="C4">
+      <value>100n_0402_X7R_16V</value>
+      <footprint>Capacitor_SMD:C_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1810191219_Samsung-Electro-Mechanics-CL05B104KO5NNNC_C1525.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C1525</field>
+        <field name="Price1000">0.0006</field>
+      </fields>
+      <libsource lib="capacitor_smd_standard" part="100n_0402_X7R_16V" description="16V 100nF X7R ±10% 0402 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS"/>
+      <property name="LCSC" value="C1525"/>
+      <property name="Price1000" value="0.0006"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>13a23f17-ee24-4b12-96d1-b1424d5b83a6</tstamps>
+    </comp>
+    <comp ref="C5">
+      <value>100n_0402_X7R_16V</value>
+      <footprint>Capacitor_SMD:C_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1810191219_Samsung-Electro-Mechanics-CL05B104KO5NNNC_C1525.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C1525</field>
+        <field name="Price1000">0.0006</field>
+      </fields>
+      <libsource lib="capacitor_smd_standard" part="100n_0402_X7R_16V" description="16V 100nF X7R ±10% 0402 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS"/>
+      <property name="LCSC" value="C1525"/>
+      <property name="Price1000" value="0.0006"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>d6ceea79-34ac-48bc-b79c-86c64d619f57</tstamps>
+    </comp>
+    <comp ref="C6">
+      <value>3p3_0402_C0G_50V</value>
+      <footprint>Capacitor_SMD:C_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1811141710_FH--Guangdong-Fenghua-Advanced-Tech-0402CG3R3C500NT_C1565.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C1565</field>
+        <field name="Price10000">0.0007</field>
+      </fields>
+      <libsource lib="ESP32-C3_Bib" part="3p3_0402_C0G_50V" description="50V 3.3pF C0G ±0.25pF 0402 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS"/>
+      <property name="LCSC" value="C1565"/>
+      <property name="Price10000" value="0.0007"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>93fc7c39-9153-4ef6-9131-7f7cdcdc2367</tstamps>
+    </comp>
+    <comp ref="C7">
+      <value>100n_0402_X7R_16V</value>
+      <footprint>Capacitor_SMD:C_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1810191219_Samsung-Electro-Mechanics-CL05B104KO5NNNC_C1525.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C1525</field>
+        <field name="Price1000">0.0006</field>
+      </fields>
+      <libsource lib="capacitor_smd_standard" part="100n_0402_X7R_16V" description="16V 100nF X7R ±10% 0402 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS"/>
+      <property name="LCSC" value="C1525"/>
+      <property name="Price1000" value="0.0006"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>da152b9f-04eb-4aca-8bfd-80e4679a2b1f</tstamps>
+    </comp>
+    <comp ref="C8">
+      <value>4u7_0402_X5R_10V</value>
+      <footprint>Capacitor_SMD:C_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1810191211_Samsung-Electro-Mechanics-CL05A475MP5NRNC_C23733.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C23733</field>
+        <field name="Price600">0.0041</field>
+      </fields>
+      <libsource lib="ESP32-C3_Bib" part="4u7_0402_X5R_10V" description="10V 4.7uF X5R ±20% 0402 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS"/>
+      <property name="LCSC" value="C23733"/>
+      <property name="Price600" value="0.0041"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>7b04a48b-3d19-47bc-820a-7b2b30874753</tstamps>
+    </comp>
+    <comp ref="C9">
+      <value>10u_0402_X5R_6V3</value>
+      <footprint>Capacitor_SMD:C_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1810191215_Samsung-Electro-Mechanics-CL05A106MQ5NUNC_C15525.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C15525</field>
+        <field name="Price1000">0.0027</field>
+      </fields>
+      <libsource lib="capacitor_smd_standard" part="10u_0402_X5R_6V3" description="6.3V 10uF X5R ±20% 0402  Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS"/>
+      <property name="LCSC" value="C15525"/>
+      <property name="Price1000" value="0.0027"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>b1ae298e-c085-4719-8857-b6acbc681a13</tstamps>
+    </comp>
+    <comp ref="C10">
+      <value>1u_0402_X5R_25V</value>
+      <footprint>Capacitor_SMD:C_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1811091611_Samsung-Electro-Mechanics-CL05A105KA5NQNC_C52923.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C52923</field>
+        <field name="Price1000">0.0020</field>
+      </fields>
+      <libsource lib="capacitor_smd_standard" part="1u_0402_X5R_25V" description="25V 1uF X5R ±10% 0402 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS"/>
+      <property name="LCSC" value="C52923"/>
+      <property name="Price1000" value="0.0020"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>b5a90ebb-b226-4d0a-925d-2bd952090e5d</tstamps>
+    </comp>
+    <comp ref="C11">
+      <value>100n_0402_X7R_16V</value>
+      <footprint>Capacitor_SMD:C_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1810191219_Samsung-Electro-Mechanics-CL05B104KO5NNNC_C1525.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C1525</field>
+        <field name="Price1000">0.0006</field>
+      </fields>
+      <libsource lib="capacitor_smd_standard" part="100n_0402_X7R_16V" description="16V 100nF X7R ±10% 0402 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS"/>
+      <property name="LCSC" value="C1525"/>
+      <property name="Price1000" value="0.0006"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>657695a6-29cd-4fa5-af42-26c17f2fe43e</tstamps>
+    </comp>
+    <comp ref="C12">
+      <value>10n_0402_X7R_50V</value>
+      <footprint>Capacitor_SMD:C_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1810191223_Samsung-Electro-Mechanics-CL05B103KB5NNNC_C15195.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C15195</field>
+        <field name="Price1000">0.0009</field>
+      </fields>
+      <libsource lib="capacitor_smd_standard" part="10n_0402_X7R_50V" description="50V 10nF X7R ±10% 0402 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS"/>
+      <property name="LCSC" value="C15195"/>
+      <property name="Price1000" value="0.0009"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>ab604c28-0a3a-4ae8-9c9d-044c0e7e3dfd</tstamps>
+    </comp>
+    <comp ref="C13">
+      <value>10n_0402_X7R_50V</value>
+      <footprint>Capacitor_SMD:C_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1810191223_Samsung-Electro-Mechanics-CL05B103KB5NNNC_C15195.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C15195</field>
+        <field name="Price1000">0.0009</field>
+      </fields>
+      <libsource lib="capacitor_smd_standard" part="10n_0402_X7R_50V" description="50V 10nF X7R ±10% 0402 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS"/>
+      <property name="LCSC" value="C15195"/>
+      <property name="Price1000" value="0.0009"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>6cb2df32-331c-4499-83de-39345fc2506d</tstamps>
+    </comp>
+    <comp ref="C14">
+      <value>1u_0402_X5R_25V</value>
+      <footprint>Capacitor_SMD:C_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1811091611_Samsung-Electro-Mechanics-CL05A105KA5NQNC_C52923.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C52923</field>
+        <field name="Price1000">0.0020</field>
+      </fields>
+      <libsource lib="capacitor_smd_standard" part="1u_0402_X5R_25V" description="25V 1uF X5R ±10% 0402 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS"/>
+      <property name="LCSC" value="C52923"/>
+      <property name="Price1000" value="0.0020"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>2d12a0e0-4259-4957-b991-b85bbe91dc2a</tstamps>
+    </comp>
+    <comp ref="C15">
+      <value>1u_0402_X5R_25V</value>
+      <footprint>Capacitor_SMD:C_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1811091611_Samsung-Electro-Mechanics-CL05A105KA5NQNC_C52923.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C52923</field>
+        <field name="Price1000">0.0020</field>
+      </fields>
+      <libsource lib="capacitor_smd_standard" part="1u_0402_X5R_25V" description="25V 1uF X5R ±10% 0402 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS"/>
+      <property name="LCSC" value="C52923"/>
+      <property name="Price1000" value="0.0020"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>9a7cc1ff-8352-47cb-b295-a5d3543f505c</tstamps>
+    </comp>
+    <comp ref="C16">
+      <value>10p_0402_C0G_50V</value>
+      <footprint>Capacitor_SMD:C_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1810261513_Samsung-Electro-Mechanics-CL10C100JB8NNNC_C1634.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C1634</field>
+        <field name="Price800">0.0037</field>
+      </fields>
+      <libsource lib="ESP32-C3_Bib" part="10p_0402_C0G_50V" description="50V 12pF C0G ±5% 0402  Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS"/>
+      <property name="LCSC" value="C1634"/>
+      <property name="Price800" value="0.0037"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>048b82b4-ca7c-46ac-814e-9132f5866def</tstamps>
+    </comp>
+    <comp ref="C17">
+      <value>10p_0402_C0G_50V</value>
+      <footprint>Capacitor_SMD:C_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1810261513_Samsung-Electro-Mechanics-CL10C100JB8NNNC_C1634.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C1634</field>
+        <field name="Price800">0.0037</field>
+      </fields>
+      <libsource lib="ESP32-C3_Bib" part="10p_0402_C0G_50V" description="50V 12pF C0G ±5% 0402  Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS"/>
+      <property name="LCSC" value="C1634"/>
+      <property name="Price800" value="0.0037"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>55e99e22-808b-4c17-bdf1-23d702073130</tstamps>
+    </comp>
+    <comp ref="C18">
+      <value>1u_0402_X5R_25V</value>
+      <footprint>Capacitor_SMD:C_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1811091611_Samsung-Electro-Mechanics-CL05A105KA5NQNC_C52923.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C52923</field>
+        <field name="Price1000">0.0020</field>
+      </fields>
+      <libsource lib="capacitor_smd_standard" part="1u_0402_X5R_25V" description="25V 1uF X5R ±10% 0402 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS"/>
+      <property name="LCSC" value="C52923"/>
+      <property name="Price1000" value="0.0020"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>b8b88889-d007-4c09-9784-d31f50211ce9</tstamps>
+    </comp>
+    <comp ref="D1">
+      <value>0603_RED</value>
+      <footprint>LED_SMD:LED_0603_1608Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1811101510_Everlight-Elec-19-217-GHC-YR1S2-3T_C72043.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C2286</field>
+        <field name="Partnumber">KT-0603R</field>
+        <field name="Price1000">0.0035</field>
+      </fields>
+      <libsource lib="led" part="0603_RED" description="Red 615~630nm 1.9~2.2V 0603 Light Emitting Diodes (LED) RoHS"/>
+      <property name="LCSC" value="C2286"/>
+      <property name="Partnumber" value="KT-0603R"/>
+      <property name="Price1000" value="0.0035"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>d0da2089-babd-4ce1-8abd-71f48dc900ee</tstamps>
+    </comp>
+    <comp ref="D2">
+      <value>1N5819WS(Basic)</value>
+      <footprint>Diode_SMD:D_SOD-323_HandSoldering</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1810202112_Guangdong-Hottech-1N5819WS_C191023.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C191023</field>
+        <field name="Price1000">0.013</field>
+      </fields>
+      <libsource lib="1_diodes" part="1N5819WS(Basic)" description="40V 1A Schottky Barrier Rectifier Diode, DO-41"/>
+      <property name="LCSC" value="C191023"/>
+      <property name="Price1000" value="0.013"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>b2b0f77e-4989-4933-a8bf-5878f877c342</tstamps>
+    </comp>
+    <comp ref="D3">
+      <value>1N5819WS(Basic)</value>
+      <footprint>Diode_SMD:D_SOD-323_HandSoldering</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1810202112_Guangdong-Hottech-1N5819WS_C191023.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C191023</field>
+        <field name="Price1000">0.013</field>
+      </fields>
+      <libsource lib="1_diodes" part="1N5819WS(Basic)" description="40V 1A Schottky Barrier Rectifier Diode, DO-41"/>
+      <property name="LCSC" value="C191023"/>
+      <property name="Price1000" value="0.013"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>e993cd89-1f3a-43df-b81c-7800c5b10003</tstamps>
+    </comp>
+    <comp ref="J1">
+      <value>BattConn+</value>
+      <footprint>Connector_PinSocket_2.54mm:PinSocket_1x01_P2.54mm_Vertical</footprint>
+      <libsource lib="Connector_Generic" part="Conn_01x01" description="Generic connector, single row, 01x01, script generated (kicad-library-utils/schlib/autogen/connector/)"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>a0edd6d1-38bd-44e6-8bdc-4ac8271accb0</tstamps>
+    </comp>
+    <comp ref="J2">
+      <value>BattConn-</value>
+      <footprint>Connector_PinSocket_2.54mm:PinSocket_1x01_P2.54mm_Vertical</footprint>
+      <libsource lib="Connector_Generic" part="Conn_01x01" description="Generic connector, single row, 01x01, script generated (kicad-library-utils/schlib/autogen/connector/)"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>18bdb9af-3ef9-43b1-a332-23b3874702bf</tstamps>
+    </comp>
+    <comp ref="L1">
+      <value>2n2H_0403_500mA</value>
+      <footprint>Resistor_SMD:R_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1809051312_TDK-MLK1005S2N2ST000_C76790.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C76790</field>
+      </fields>
+      <libsource lib="ESP32-C3_Bib" part="2n2H_0403_500mA" description="500mA 2.2nH ±0.3nH 80mΩ 0402 Inductors (SMD) ROHS"/>
+      <property name="LCSC" value="C76790"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>43273186-4cb6-415d-a510-013ca54ea1a9</tstamps>
+    </comp>
+    <comp ref="L2">
+      <value>2nH_0403_900mA</value>
+      <footprint>Resistor_SMD:R_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1810201309_Murata-Electronics-LQG15HS2N0S02D_C18216.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C18216</field>
+      </fields>
+      <libsource lib="ESP32-C3_Bib" part="2nH_0403_900mA" description="900mA 2nH ±0.3nH 90mΩ 0402 Inductors (SMD) ROHS"/>
+      <property name="LCSC" value="C18216"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>3d93e0dd-e2cb-4e49-bf68-891688b921a1</tstamps>
+    </comp>
+    <comp ref="R1">
+      <value>5k1_0402</value>
+      <footprint>Resistor_SMD:R_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/2110260030_UNI-ROYAL-Uniroyal-Elec-0402WGF5101TCE_C25905.pdf</datasheet>
+      <fields>
+        <field name="Description">±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS</field>
+        <field name="LCSC">C25905</field>
+        <field name="Tollerance">1%</field>
+        <field name="Voltage">50V</field>
+      </fields>
+      <libsource lib="resistor_smd_standard" part="5k1_0402" description="±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS"/>
+      <property name="LCSC" value="C25905"/>
+      <property name="Tollerance" value="1%"/>
+      <property name="Description" value="±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS"/>
+      <property name="Voltage" value="50V"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>5f65e9a9-cdb2-4e2a-8931-616a3623ac29</tstamps>
+    </comp>
+    <comp ref="R2">
+      <value>5k1_0402</value>
+      <footprint>Resistor_SMD:R_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/2110260030_UNI-ROYAL-Uniroyal-Elec-0402WGF5101TCE_C25905.pdf</datasheet>
+      <fields>
+        <field name="Description">±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS</field>
+        <field name="LCSC">C25905</field>
+        <field name="Tollerance">1%</field>
+        <field name="Voltage">50V</field>
+      </fields>
+      <libsource lib="resistor_smd_standard" part="5k1_0402" description="±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS"/>
+      <property name="LCSC" value="C25905"/>
+      <property name="Tollerance" value="1%"/>
+      <property name="Description" value="±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS"/>
+      <property name="Voltage" value="50V"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>94a27662-e601-46d4-a628-1053294669b0</tstamps>
+    </comp>
+    <comp ref="R3">
+      <value>5k1_0402</value>
+      <footprint>Resistor_SMD:R_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/2110260030_UNI-ROYAL-Uniroyal-Elec-0402WGF5101TCE_C25905.pdf</datasheet>
+      <fields>
+        <field name="Description">±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS</field>
+        <field name="LCSC">C25905</field>
+        <field name="Tollerance">1%</field>
+        <field name="Voltage">50V</field>
+      </fields>
+      <libsource lib="resistor_smd_standard" part="5k1_0402" description="±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS"/>
+      <property name="LCSC" value="C25905"/>
+      <property name="Tollerance" value="1%"/>
+      <property name="Description" value="±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS"/>
+      <property name="Voltage" value="50V"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>584299c8-43a6-4fb7-bd45-877ddf46e941</tstamps>
+    </comp>
+    <comp ref="R4">
+      <value>3k3_0402</value>
+      <footprint>Resistor_SMD:R_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/2110260030_UNI-ROYAL-Uniroyal-Elec-0402WGF5101TCE_C25905.pdf</datasheet>
+      <fields>
+        <field name="Description">±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS</field>
+        <field name="LCSC">C25890</field>
+        <field name="Tollerance">1%</field>
+        <field name="Voltage">50V</field>
+      </fields>
+      <libsource lib="resistor_smd_standard" part="3k3_0402" description="±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS"/>
+      <property name="LCSC" value="C25890"/>
+      <property name="Description" value="±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS"/>
+      <property name="Tollerance" value="1%"/>
+      <property name="Voltage" value="50V"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>71b566a6-7426-4470-810d-6d639ef7b4d6</tstamps>
+    </comp>
+    <comp ref="R5">
+      <value>3k3_0402</value>
+      <footprint>Resistor_SMD:R_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/2110260030_UNI-ROYAL-Uniroyal-Elec-0402WGF5101TCE_C25905.pdf</datasheet>
+      <fields>
+        <field name="Description">±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS</field>
+        <field name="LCSC">C25890</field>
+        <field name="Tollerance">1%</field>
+        <field name="Voltage">50V</field>
+      </fields>
+      <libsource lib="resistor_smd_standard" part="3k3_0402" description="±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS"/>
+      <property name="LCSC" value="C25890"/>
+      <property name="Description" value="±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS"/>
+      <property name="Tollerance" value="1%"/>
+      <property name="Voltage" value="50V"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>93927ac6-1d73-479a-9937-314922b82b21</tstamps>
+    </comp>
+    <comp ref="R6">
+      <value>5k1_0402</value>
+      <footprint>Resistor_SMD:R_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/2110260030_UNI-ROYAL-Uniroyal-Elec-0402WGF5101TCE_C25905.pdf</datasheet>
+      <fields>
+        <field name="Description">±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS</field>
+        <field name="LCSC">C25905</field>
+        <field name="Tollerance">1%</field>
+        <field name="Voltage">50V</field>
+      </fields>
+      <libsource lib="resistor_smd_standard" part="5k1_0402" description="±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS"/>
+      <property name="LCSC" value="C25905"/>
+      <property name="Tollerance" value="1%"/>
+      <property name="Description" value="±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS"/>
+      <property name="Voltage" value="50V"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>5eaf1e64-ee80-42c8-b3e3-b850f13018f0</tstamps>
+    </comp>
+    <comp ref="R7">
+      <value>5k1_0402</value>
+      <footprint>Resistor_SMD:R_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/2110260030_UNI-ROYAL-Uniroyal-Elec-0402WGF5101TCE_C25905.pdf</datasheet>
+      <fields>
+        <field name="Description">±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS</field>
+        <field name="LCSC">C25905</field>
+        <field name="Tollerance">1%</field>
+        <field name="Voltage">50V</field>
+      </fields>
+      <libsource lib="resistor_smd_standard" part="5k1_0402" description="±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS"/>
+      <property name="LCSC" value="C25905"/>
+      <property name="Tollerance" value="1%"/>
+      <property name="Description" value="±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS"/>
+      <property name="Voltage" value="50V"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>230fcc76-8c0a-4343-b6e3-5db1a119345b</tstamps>
+    </comp>
+    <comp ref="R8">
+      <value>5k1_0402</value>
+      <footprint>Resistor_SMD:R_0402_1005Metric</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/2110260030_UNI-ROYAL-Uniroyal-Elec-0402WGF5101TCE_C25905.pdf</datasheet>
+      <fields>
+        <field name="Description">±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS</field>
+        <field name="LCSC">C25905</field>
+        <field name="Tollerance">1%</field>
+        <field name="Voltage">50V</field>
+      </fields>
+      <libsource lib="resistor_smd_standard" part="5k1_0402" description="±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS"/>
+      <property name="LCSC" value="C25905"/>
+      <property name="Tollerance" value="1%"/>
+      <property name="Description" value="±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS"/>
+      <property name="Voltage" value="50V"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>49feaa25-a9fe-4a6c-9877-2948c7803eb7</tstamps>
+    </comp>
+    <comp ref="SW1">
+      <value>TAK_6mm_THT</value>
+      <footprint>Button_Switch_THT:SW_PUSH_6mm_H5mm</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/2108252230_BZCN-TSD001A05018A_C2888545.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C2888545</field>
+      </fields>
+      <libsource lib="1_switch" part="TAK_6mm_THT" description=" 6mm 5mm 50mA Round Button Straight 6mm 12V Plugin Tactile Switches ROHS "/>
+      <property name="LCSC" value="C2888545"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>20a9c9ca-bd41-4a77-8e98-ae0b448680d5</tstamps>
+    </comp>
+    <comp ref="U1">
+      <value>USB-C-16P-SMD</value>
+      <footprint>DPSConnector:USB-C-MC-311D</footprint>
+      <datasheet>https://lcsc.com/product-detail/USB-Connectors_SOFNG-MC-311D_C136423.html</datasheet>
+      <fields>
+        <field name="Description">1 12 Female Type-C SMD USB Connectors ROHS </field>
+        <field name="LCSC">C136423</field>
+      </fields>
+      <libsource lib="DPS_connectors" part="USB-C-16P-SMD" description=""/>
+      <property name="LCSC" value="C136423"/>
+      <property name="Description" value="1 12 Female Type-C SMD USB Connectors ROHS "/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>d4014fe3-5176-4593-992d-fec71c90a112</tstamps>
+    </comp>
+    <comp ref="U2">
+      <value>XT4052K421MR-G</value>
+      <footprint>Package_TO_SOT_SMD:TSOT-23-5</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1809140418_NATLINEAR-XT4052K421MR-G_C219048.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C219048</field>
+      </fields>
+      <libsource lib="ESP32-C3_Bib" part="XT4052K421MR-G" description="SOT-23-5 Battery Management ICs ROHS"/>
+      <property name="LCSC" value="C219048"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>c213c8f0-5963-41cb-abb0-04c2690ab26b</tstamps>
+    </comp>
+    <comp ref="U3">
+      <value>ESP32-C3</value>
+      <footprint>ESP32-C3:ESP32-C3</footprint>
+      <datasheet>https://www.espressif.com/sites/default/files/documentation/esp32-c3_datasheet_en.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C2848860</field>
+      </fields>
+      <libsource lib="ESP32-C3" part="ESP32-C3" description="400KB 1 2 -40℃~+105℃ 3V~3.6V RISC-V 2@x12bit 160MHz 3 22 1 QFN-32(5x5) Microcontroller Units (MCUs/MPUs/SOCs) ROHS"/>
+      <property name="LCSC" value="C2848860"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>ff2998e1-0ee0-4d08-8a7e-f6f886232385</tstamps>
+    </comp>
+    <comp ref="U4">
+      <value>RS3236-3.3YF5</value>
+      <footprint>Package_TO_SOT_SMD:SOT-23-5</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/2202251530_Jiangsu-RUNIC-Tech-RS3236-3-3YF5_C379349.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C379349</field>
+      </fields>
+      <libsource lib="ESP32-C3_Bib" part="RS3236-3.3YF5" description="500mA 70dB@(1kHz) 550mV@(300mA) Fixed 3.3V~3.3V Positive 1 7.5V SOT-23-5 Linear Voltage Regulators (LDO) ROHS"/>
+      <property name="LCSC" value="C379349"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>321a416e-8a1e-4acd-a94d-c053be7465e7</tstamps>
+    </comp>
+    <comp ref="X1">
+      <value>DPS_I2C</value>
+      <footprint>Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/2009131335_CAX-PH-4A_C722775.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C722775</field>
+      </fields>
+      <libsource lib="DPS_connectors" part="DPS_I2C" description="Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)"/>
+      <property name="LCSC" value="C722775"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>dec8301c-2558-4292-ad58-1d6c5e666965</tstamps>
+    </comp>
+    <comp ref="Y1">
+      <value>40MHz_S3240000151040</value>
+      <footprint>Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm</footprint>
+      <datasheet>https://datasheet.lcsc.com/lcsc/1912111437_JGHC-S3240000151040_C426990.pdf</datasheet>
+      <fields>
+        <field name="LCSC">C426990</field>
+        <field name="Price500">0.0399</field>
+      </fields>
+      <libsource lib="ESP32-C3_Bib" part="40MHz_S3240000151040" description="40MHz SMD Crystal Resonator 15pF 40Ω ±10ppm -40℃~+85℃ SMD3225-4P Crystals ROHS"/>
+      <property name="LCSC" value="C426990"/>
+      <property name="Price500" value="0.0399"/>
+      <property name="Sheetname" value=""/>
+      <property name="Sheetfile" value="ESP32-C3.kicad_sch"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>8fa450c3-31b4-44e5-b47c-bc70761282fb</tstamps>
+    </comp>
+  </components>
+  <libparts>
+    <libpart lib="1_diodes" part="1N5819WS(Basic)">
+      <description>40V 1A Schottky Barrier Rectifier Diode, DO-41</description>
+      <docs>https://datasheet.lcsc.com/lcsc/1810202112_Guangdong-Hottech-1N5819WS_C191023.pdf</docs>
+      <footprints>
+        <fp>D*DO?41*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">D</field>
+        <field name="Value">1N5819WS(Basic)</field>
+        <field name="Footprint">Diode_SMD:D_SOD-323_HandSoldering</field>
+        <field name="Datasheet">https://datasheet.lcsc.com/lcsc/1810202112_Guangdong-Hottech-1N5819WS_C191023.pdf</field>
+        <field name="LCSC">C191023</field>
+        <field name="Price1000">0.013</field>
+      </fields>
+      <pins>
+        <pin num="1" name="K" type="passive"/>
+        <pin num="2" name="A" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="1_switch" part="TAK_6mm_THT">
+      <description> 6mm 5mm 50mA Round Button Straight 6mm 12V Plugin Tactile Switches ROHS </description>
+      <docs>https://datasheet.lcsc.com/lcsc/2108252230_BZCN-TSD001A05018A_C2888545.pdf</docs>
+      <fields>
+        <field name="Reference">SW</field>
+        <field name="Value">TAK_6mm_THT</field>
+        <field name="Footprint">Button_Switch_THT:SW_PUSH_6mm_H5mm</field>
+        <field name="Datasheet">https://datasheet.lcsc.com/lcsc/2108252230_BZCN-TSD001A05018A_C2888545.pdf</field>
+        <field name="LCSC">C2888545</field>
+      </fields>
+      <pins>
+        <pin num="1" name="2" type="passive"/>
+        <pin num="2" name="4" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="Connector_Generic" part="Conn_01x01">
+      <description>Generic connector, single row, 01x01, script generated (kicad-library-utils/schlib/autogen/connector/)</description>
+      <docs>~</docs>
+      <footprints>
+        <fp>Connector*:*_1x??_*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">J</field>
+        <field name="Value">Conn_01x01</field>
+        <field name="Datasheet">~</field>
+      </fields>
+      <pins>
+        <pin num="1" name="Pin_1" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="DPS_connectors" part="DPS_I2C">
+      <description>Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)</description>
+      <docs>https://datasheet.lcsc.com/lcsc/2009131335_CAX-PH-4A_C722775.pdf</docs>
+      <footprints>
+        <fp>Connector*:*_1x??_*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">J</field>
+        <field name="Value">DPS_I2C</field>
+        <field name="Footprint">Connector_JST:JST_PH_B4B-PH-K_1x04_P2.00mm_Vertical</field>
+        <field name="Datasheet">https://datasheet.lcsc.com/lcsc/2009131335_CAX-PH-4A_C722775.pdf</field>
+        <field name="LCSC">C722775</field>
+      </fields>
+      <pins>
+        <pin num="1" name="Pin_1" type="passive"/>
+        <pin num="2" name="Pin_2" type="passive"/>
+        <pin num="3" name="Pin_3" type="passive"/>
+        <pin num="4" name="Pin_4" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="DPS_connectors" part="USB-C-16P-SMD">
+      <docs>https://lcsc.com/product-detail/USB-Connectors_SOFNG-MC-311D_C136423.html</docs>
+      <fields>
+        <field name="Reference">U</field>
+        <field name="Value">USB-C-16P-SMD</field>
+        <field name="Footprint">DPSConnector:USB-C-MC-311D</field>
+        <field name="Datasheet">https://lcsc.com/product-detail/USB-Connectors_SOFNG-MC-311D_C136423.html</field>
+        <field name="Partnumber">SOFNG MC-311D</field>
+        <field name="Description">1 12 Female Type-C SMD USB Connectors ROHS </field>
+      </fields>
+      <pins>
+        <pin num="A1" name="GND" type="passive"/>
+        <pin num="A2" name="TX1+" type="bidirectional"/>
+        <pin num="A3" name="TX1-" type="bidirectional"/>
+        <pin num="A4" name="VBUS" type="passive"/>
+        <pin num="A5" name="CC1" type="bidirectional"/>
+        <pin num="A6" name="D+" type="bidirectional"/>
+        <pin num="A7" name="D-" type="bidirectional"/>
+        <pin num="A8" name="SBU1" type="bidirectional"/>
+        <pin num="A9" name="VBUS" type="passive"/>
+        <pin num="A10" name="RX2-" type="bidirectional"/>
+        <pin num="A11" name="RX2+" type="bidirectional"/>
+        <pin num="A12" name="GND" type="passive"/>
+        <pin num="B1" name="GND" type="passive"/>
+        <pin num="B2" name="TX2+" type="bidirectional"/>
+        <pin num="B3" name="TX2-" type="bidirectional"/>
+        <pin num="B4" name="VBUS" type="passive"/>
+        <pin num="B5" name="CC2" type="bidirectional"/>
+        <pin num="B6" name="D+" type="bidirectional"/>
+        <pin num="B7" name="D-" type="bidirectional"/>
+        <pin num="B8" name="SBU2" type="bidirectional"/>
+        <pin num="B9" name="VBUS" type="passive"/>
+        <pin num="B10" name="RX1-" type="bidirectional"/>
+        <pin num="B11" name="RX1+" type="bidirectional"/>
+        <pin num="B12" name="GND" type="passive"/>
+        <pin num="S1" name="SHIELD" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="ESP32-C3" part="ESP32-C3">
+      <description>400KB 1 2 -40℃~+105℃ 3V~3.6V RISC-V 2@x12bit 160MHz 3 22 1 QFN-32(5x5) Microcontroller Units (MCUs/MPUs/SOCs) ROHS</description>
+      <docs>https://datasheet.lcsc.com/lcsc/2108071730_Espressif-Systems-ESP32-C3_C2838500.pdf</docs>
+      <footprints>
+        <fp>QFN32_5X5_EXP</fp>
+        <fp>QFN32_5X5_EXP-M</fp>
+        <fp>QFN32_5X5_EXP-L</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">U</field>
+        <field name="Value">ESP32-C3</field>
+        <field name="Footprint">ESP32-C3:ESP32-C3</field>
+        <field name="Datasheet">https://datasheet.lcsc.com/lcsc/2108071730_Espressif-Systems-ESP32-C3_C2838500.pdf</field>
+        <field name="LCSC">C2838500</field>
+      </fields>
+      <pins>
+        <pin num="1" name="LNA_IN" type="bidirectional"/>
+        <pin num="2" name="VDD3P3" type="power_in"/>
+        <pin num="3" name="VDD3P3" type="power_in"/>
+        <pin num="4" name="XTAL_32K_P" type="bidirectional"/>
+        <pin num="5" name="XTAL_32K_N" type="bidirectional"/>
+        <pin num="6" name="GPIO2" type="bidirectional"/>
+        <pin num="7" name="CHIP_EN" type="input"/>
+        <pin num="8" name="GPIO3" type="bidirectional"/>
+        <pin num="9" name="MTMS" type="bidirectional"/>
+        <pin num="10" name="MTDI" type="bidirectional"/>
+        <pin num="11" name="VDD3P3_RTC" type="power_in"/>
+        <pin num="12" name="MTCK" type="bidirectional"/>
+        <pin num="13" name="MTDO" type="bidirectional"/>
+        <pin num="14" name="GPIO8" type="bidirectional"/>
+        <pin num="15" name="GPIO9" type="bidirectional"/>
+        <pin num="16" name="GPIO10" type="bidirectional"/>
+        <pin num="17" name="VDD3P3_CPU" type="power_in"/>
+        <pin num="18" name="VDD_SPI" type="power_in"/>
+        <pin num="19" name="SPIHD" type="bidirectional"/>
+        <pin num="20" name="SPIWP" type="bidirectional"/>
+        <pin num="21" name="SPICS0" type="bidirectional"/>
+        <pin num="22" name="SPICLK" type="bidirectional"/>
+        <pin num="23" name="SPID" type="bidirectional"/>
+        <pin num="24" name="SPIQ" type="bidirectional"/>
+        <pin num="25" name="GPIO18" type="bidirectional"/>
+        <pin num="26" name="GPIO19" type="bidirectional"/>
+        <pin num="27" name="U0RXD" type="bidirectional"/>
+        <pin num="28" name="U0TXD" type="bidirectional"/>
+        <pin num="29" name="XTAL_N" type="output"/>
+        <pin num="30" name="XTAL_P" type="input"/>
+        <pin num="31" name="VDDA" type="power_in"/>
+        <pin num="32" name="VDDA" type="power_in"/>
+        <pin num="33" name="GND" type="power_in"/>
+      </pins>
+    </libpart>
+    <libpart lib="ESP32-C3_Bib" part="10p_0402_C0G_50V">
+      <description>50V 12pF C0G ±5% 0402  Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS</description>
+      <docs>https://datasheet.lcsc.com/lcsc/1810261513_Samsung-Electro-Mechanics-CL10C100JB8NNNC_C1634.pdf</docs>
+      <footprints>
+        <fp>C_*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">C</field>
+        <field name="Value">10p_0402_C0G_50V</field>
+        <field name="Footprint">Capacitor_SMD:C_0402_1005Metric</field>
+        <field name="Datasheet">https://datasheet.lcsc.com/lcsc/1810261513_Samsung-Electro-Mechanics-CL10C100JB8NNNC_C1634.pdf</field>
+        <field name="LCSC">C1634</field>
+        <field name="Price800">0.0037</field>
+      </fields>
+      <pins>
+        <pin num="1" name="" type="passive"/>
+        <pin num="2" name="" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="ESP32-C3_Bib" part="2n2H_0403_500mA">
+      <description>500mA 2.2nH ±0.3nH 80mΩ 0402 Inductors (SMD) ROHS</description>
+      <docs>https://datasheet.lcsc.com/lcsc/1809051312_TDK-MLK1005S2N2ST000_C76790.pdf</docs>
+      <footprints>
+        <fp>Choke_*</fp>
+        <fp>*Coil*</fp>
+        <fp>Inductor_*</fp>
+        <fp>L_*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">L</field>
+        <field name="Value">2n2H_0403_500mA</field>
+        <field name="Footprint">Resistor_SMD:R_0402_1005Metric</field>
+        <field name="Datasheet">https://datasheet.lcsc.com/lcsc/1809051312_TDK-MLK1005S2N2ST000_C76790.pdf</field>
+        <field name="LCSC">C76790</field>
+      </fields>
+      <pins>
+        <pin num="1" name="1" type="passive"/>
+        <pin num="2" name="2" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="ESP32-C3_Bib" part="2nH_0403_900mA">
+      <description>900mA 2nH ±0.3nH 90mΩ 0402 Inductors (SMD) ROHS</description>
+      <docs>https://datasheet.lcsc.com/lcsc/1810201309_Murata-Electronics-LQG15HS2N0S02D_C18216.pdf</docs>
+      <footprints>
+        <fp>Choke_*</fp>
+        <fp>*Coil*</fp>
+        <fp>Inductor_*</fp>
+        <fp>L_*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">L</field>
+        <field name="Value">2nH_0403_900mA</field>
+        <field name="Footprint">Resistor_SMD:R_0402_1005Metric</field>
+        <field name="Datasheet">https://datasheet.lcsc.com/lcsc/1810201309_Murata-Electronics-LQG15HS2N0S02D_C18216.pdf</field>
+        <field name="LCSC">C18216</field>
+      </fields>
+      <pins>
+        <pin num="1" name="1" type="passive"/>
+        <pin num="2" name="2" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="ESP32-C3_Bib" part="3p3_0402_C0G_50V">
+      <description>50V 3.3pF C0G ±0.25pF 0402 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS</description>
+      <docs>https://datasheet.lcsc.com/lcsc/1811141710_FH--Guangdong-Fenghua-Advanced-Tech-0402CG3R3C500NT_C1565.pdf</docs>
+      <footprints>
+        <fp>C_*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">C</field>
+        <field name="Value">3p3_0402_C0G_50V</field>
+        <field name="Footprint">Capacitor_SMD:C_0402_1005Metric</field>
+        <field name="Datasheet">https://datasheet.lcsc.com/lcsc/1811141710_FH--Guangdong-Fenghua-Advanced-Tech-0402CG3R3C500NT_C1565.pdf</field>
+        <field name="LCSC">C1565</field>
+        <field name="Price10000">0.0007</field>
+      </fields>
+      <pins>
+        <pin num="1" name="" type="passive"/>
+        <pin num="2" name="" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="ESP32-C3_Bib" part="40MHz_S3240000151040">
+      <description>40MHz SMD Crystal Resonator 15pF 40Ω ±10ppm -40℃~+85℃ SMD3225-4P Crystals ROHS</description>
+      <docs>https://datasheet.lcsc.com/lcsc/1912111437_JGHC-S3240000151040_C426990.pdf</docs>
+      <footprints>
+        <fp>Crystal*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">Y</field>
+        <field name="Value">40MHz_S3240000151040</field>
+        <field name="Footprint">Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm</field>
+        <field name="Datasheet">https://datasheet.lcsc.com/lcsc/1912111437_JGHC-S3240000151040_C426990.pdf</field>
+        <field name="LCSC">C426990</field>
+        <field name="Price500">0.0399</field>
+      </fields>
+      <pins>
+        <pin num="1" name="OSC1" type="bidirectional"/>
+        <pin num="2" name="GND" type="power_in"/>
+        <pin num="3" name="OSC2" type="bidirectional"/>
+        <pin num="4" name="GND" type="power_in"/>
+      </pins>
+    </libpart>
+    <libpart lib="ESP32-C3_Bib" part="4u7_0402_X5R_10V">
+      <description>10V 4.7uF X5R ±20% 0402 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS</description>
+      <docs>https://datasheet.lcsc.com/lcsc/1810191211_Samsung-Electro-Mechanics-CL05A475MP5NRNC_C23733.pdf</docs>
+      <footprints>
+        <fp>C_*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">C</field>
+        <field name="Value">4u7_0402_X5R_10V</field>
+        <field name="Footprint">Capacitor_SMD:C_0402_1005Metric</field>
+        <field name="Datasheet">https://datasheet.lcsc.com/lcsc/1810191211_Samsung-Electro-Mechanics-CL05A475MP5NRNC_C23733.pdf</field>
+        <field name="LCSC">C23733</field>
+        <field name="Price600">0.0041</field>
+      </fields>
+      <pins>
+        <pin num="1" name="" type="passive"/>
+        <pin num="2" name="" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="ESP32-C3_Bib" part="KH-3216-H0209">
+      <description>1206 Antennas ROHS</description>
+      <docs>https://datasheet.lcsc.com/lcsc/2111261130_Shenzhen-Kinghelm-Elec-KH-3216-H0209_C2925417.pdf</docs>
+      <fields>
+        <field name="Reference">AE</field>
+        <field name="Value">KH-3216-H0209</field>
+        <field name="Footprint">Resistor_SMD:R_1206_3216Metric</field>
+        <field name="Datasheet">https://datasheet.lcsc.com/lcsc/2111261130_Shenzhen-Kinghelm-Elec-KH-3216-H0209_C2925417.pdf</field>
+        <field name="LCSC">C2925417</field>
+      </fields>
+      <pins>
+        <pin num="1" name="A" type="input"/>
+        <pin num="2" name="GND" type="power_in"/>
+      </pins>
+    </libpart>
+    <libpart lib="ESP32-C3_Bib" part="RS3236-3.3YF5">
+      <description>500mA 70dB@(1kHz) 550mV@(300mA) Fixed 3.3V~3.3V Positive 1 7.5V SOT-23-5 Linear Voltage Regulators (LDO) ROHS</description>
+      <docs>https://datasheet.lcsc.com/lcsc/2202251530_Jiangsu-RUNIC-Tech-RS3236-3-3YF5_C379349.pdf</docs>
+      <footprints>
+        <fp>SOT*353*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">U</field>
+        <field name="Value">RS3236-3.3YF5</field>
+        <field name="Footprint">Package_TO_SOT_SMD:SOT-23-5</field>
+        <field name="Datasheet">https://datasheet.lcsc.com/lcsc/2202251530_Jiangsu-RUNIC-Tech-RS3236-3-3YF5_C379349.pdf</field>
+        <field name="LCSC">C379349</field>
+      </fields>
+      <pins>
+        <pin num="1" name="IN" type="power_in"/>
+        <pin num="2" name="GND" type="power_in"/>
+        <pin num="3" name="EN" type="input"/>
+        <pin num="4" name="BP" type="output"/>
+        <pin num="5" name="OUT" type="power_out"/>
+      </pins>
+    </libpart>
+    <libpart lib="ESP32-C3_Bib" part="XT4052K421MR-G">
+      <description>SOT-23-5 Battery Management ICs ROHS</description>
+      <docs>https://datasheet.lcsc.com/lcsc/1809140418_NATLINEAR-XT4052K421MR-G_C219048.pdf</docs>
+      <footprints>
+        <fp>TSOT?23*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">U</field>
+        <field name="Value">XT4052K421MR-G</field>
+        <field name="Footprint">Package_TO_SOT_SMD:TSOT-23-5</field>
+        <field name="Datasheet">https://datasheet.lcsc.com/lcsc/1809140418_NATLINEAR-XT4052K421MR-G_C219048.pdf</field>
+        <field name="LCSC">C219048</field>
+      </fields>
+      <pins>
+        <pin num="1" name="~{CHRG}" type="open_collector"/>
+        <pin num="2" name="GND" type="power_in"/>
+        <pin num="3" name="BAT" type="power_out"/>
+        <pin num="4" name="VCC" type="power_in"/>
+        <pin num="5" name="PROG" type="bidirectional"/>
+      </pins>
+    </libpart>
+    <libpart lib="capacitor_smd_standard" part="100n_0402_X7R_16V">
+      <description>16V 100nF X7R ±10% 0402 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS</description>
+      <docs>https://datasheet.lcsc.com/lcsc/1810191219_Samsung-Electro-Mechanics-CL05B104KO5NNNC_C1525.pdf</docs>
+      <footprints>
+        <fp>C_*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">C</field>
+        <field name="Value">100n_0402_X7R_16V</field>
+        <field name="Footprint">Capacitor_SMD:C_0402_1005Metric</field>
+        <field name="Datasheet">https://datasheet.lcsc.com/lcsc/1810191219_Samsung-Electro-Mechanics-CL05B104KO5NNNC_C1525.pdf</field>
+        <field name="LCSC">C1525</field>
+        <field name="Price1000">0.0006</field>
+      </fields>
+      <pins>
+        <pin num="1" name="" type="passive"/>
+        <pin num="2" name="" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="capacitor_smd_standard" part="10n_0402_X7R_50V">
+      <description>50V 10nF X7R ±10% 0402 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS</description>
+      <docs>https://datasheet.lcsc.com/lcsc/1810191223_Samsung-Electro-Mechanics-CL05B103KB5NNNC_C15195.pdf</docs>
+      <footprints>
+        <fp>C_*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">C</field>
+        <field name="Value">10n_0402_X7R_50V</field>
+        <field name="Footprint">Capacitor_SMD:C_0402_1005Metric</field>
+        <field name="Datasheet">https://datasheet.lcsc.com/lcsc/1810191223_Samsung-Electro-Mechanics-CL05B103KB5NNNC_C15195.pdf</field>
+        <field name="LCSC">C15195</field>
+        <field name="Price1000">0.0009</field>
+      </fields>
+      <pins>
+        <pin num="1" name="" type="passive"/>
+        <pin num="2" name="" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="capacitor_smd_standard" part="10u_0402_X5R_6V3">
+      <description>6.3V 10uF X5R ±20% 0402  Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS</description>
+      <docs>https://datasheet.lcsc.com/lcsc/1810191215_Samsung-Electro-Mechanics-CL05A106MQ5NUNC_C15525.pdf</docs>
+      <footprints>
+        <fp>C_*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">C</field>
+        <field name="Value">10u_0402_X5R_6V3</field>
+        <field name="Footprint">Capacitor_SMD:C_0402_1005Metric</field>
+        <field name="Datasheet">https://datasheet.lcsc.com/lcsc/1810191215_Samsung-Electro-Mechanics-CL05A106MQ5NUNC_C15525.pdf</field>
+        <field name="LCSC">C15525</field>
+        <field name="Price1000">0.0027</field>
+      </fields>
+      <pins>
+        <pin num="1" name="" type="passive"/>
+        <pin num="2" name="" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="capacitor_smd_standard" part="1u_0402_X5R_25V">
+      <description>25V 1uF X5R ±10% 0402 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS</description>
+      <docs>https://datasheet.lcsc.com/lcsc/1811091611_Samsung-Electro-Mechanics-CL05A105KA5NQNC_C52923.pdf</docs>
+      <footprints>
+        <fp>C_*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">C</field>
+        <field name="Value">1u_0402_X5R_25V</field>
+        <field name="Footprint">Capacitor_SMD:C_0402_1005Metric</field>
+        <field name="Datasheet">https://datasheet.lcsc.com/lcsc/1811091611_Samsung-Electro-Mechanics-CL05A105KA5NQNC_C52923.pdf</field>
+        <field name="LCSC">C52923</field>
+        <field name="Price1000">0.0020</field>
+      </fields>
+      <pins>
+        <pin num="1" name="" type="passive"/>
+        <pin num="2" name="" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="led" part="0603_RED">
+      <description>Red 615~630nm 1.9~2.2V 0603 Light Emitting Diodes (LED) RoHS</description>
+      <docs>https://datasheet.lcsc.com/lcsc/1811101510_Everlight-Elec-19-217-GHC-YR1S2-3T_C72043.pdf</docs>
+      <footprints>
+        <fp>LED*</fp>
+        <fp>LED_SMD:*</fp>
+        <fp>LED_THT:*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">D</field>
+        <field name="Value">0603_RED</field>
+        <field name="Footprint">LED_SMD:LED_0603_1608Metric</field>
+        <field name="Datasheet">https://datasheet.lcsc.com/lcsc/1811101510_Everlight-Elec-19-217-GHC-YR1S2-3T_C72043.pdf</field>
+        <field name="LCSC">C2286</field>
+        <field name="Partnumber">KT-0603R</field>
+        <field name="Price1000">0.0035</field>
+      </fields>
+      <pins>
+        <pin num="1" name="K" type="passive"/>
+        <pin num="2" name="A" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="resistor_smd_standard" part="3k3_0402">
+      <description>±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS</description>
+      <docs>https://datasheet.lcsc.com/lcsc/2110260030_UNI-ROYAL-Uniroyal-Elec-0402WGF5101TCE_C25905.pdf</docs>
+      <footprints>
+        <fp>R_*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">R</field>
+        <field name="Value">3k3_0402</field>
+        <field name="Footprint">Resistor_SMD:R_0402_1005Metric</field>
+        <field name="Datasheet">https://datasheet.lcsc.com/lcsc/2110260030_UNI-ROYAL-Uniroyal-Elec-0402WGF5101TCE_C25905.pdf</field>
+        <field name="LCSC">C25890</field>
+        <field name="Description">±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS</field>
+        <field name="Tollerance">1%</field>
+        <field name="Voltage">50V</field>
+      </fields>
+      <pins>
+        <pin num="1" name="" type="passive"/>
+        <pin num="2" name="" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="resistor_smd_standard" part="5k1_0402">
+      <description>±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS</description>
+      <docs>https://datasheet.lcsc.com/lcsc/2110260030_UNI-ROYAL-Uniroyal-Elec-0402WGF5101TCE_C25905.pdf</docs>
+      <footprints>
+        <fp>R_*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">R</field>
+        <field name="Value">5k1_0402</field>
+        <field name="Footprint">Resistor_SMD:R_0402_1005Metric</field>
+        <field name="Datasheet">https://datasheet.lcsc.com/lcsc/2110260030_UNI-ROYAL-Uniroyal-Elec-0402WGF5101TCE_C25905.pdf</field>
+        <field name="LCSC">C25905</field>
+        <field name="Tollerance">1%</field>
+        <field name="Description">±1% 1/16W Thick Film Resistors 50V ±100ppm/℃ -55℃~+155℃ 5.1kΩ 0402 Chip Resistor - Surface Mount ROHS</field>
+        <field name="Voltage">50V</field>
+      </fields>
+      <pins>
+        <pin num="1" name="" type="passive"/>
+        <pin num="2" name="" type="passive"/>
+      </pins>
+    </libpart>
+  </libparts>
+  <libraries>
+    <library logical="1_diodes">
+      <uri>C:/Users/Anselm/Documents/KIT/BA/dps101/PCB/components/1_diodes.kicad_sym</uri>
+    </library>
+    <library logical="1_switch">
+      <uri>C:/Users/Anselm/Documents/KIT/BA/dps101/PCB/components/1_switch.kicad_sym</uri>
+    </library>
+    <library logical="Connector_Generic">
+      <uri>C:\Program Files\KiCad\6.0\share\kicad\symbols\/Connector_Generic.kicad_sym</uri>
+    </library>
+    <library logical="DPS_connectors">
+      <uri>C:/Users/Anselm/Documents/KIT/BA/dps101/PCB/components/DPS_connectors.kicad_sym</uri>
+    </library>
+    <library logical="ESP32-C3">
+      <uri>C:/Users/Anselm/Downloads/ul_ESP32-C3/KiCAD/2023-01-08_16-06-34/2023-01-08_16-06-34.kicad_sym</uri>
+    </library>
+    <library logical="ESP32-C3_Bib">
+      <uri>C:\Users\Anselm\Documents\GitHub\Esp32-C3\PCB/ESP32-C3_Bib.kicad_sym</uri>
+    </library>
+    <library logical="capacitor_smd_standard">
+      <uri>C:/Users/Anselm/Documents/KIT/BA/dps101/PCB/components/capacitor_smd_standard.kicad_sym</uri>
+    </library>
+    <library logical="led">
+      <uri>C:/Users/Anselm/Documents/KIT/BA/dps101/PCB/components/led.kicad_sym</uri>
+    </library>
+    <library logical="resistor_smd_standard">
+      <uri>C:/Users/Anselm/Documents/KIT/BA/dps101/PCB/components/resistor_smd_standard.kicad_sym</uri>
+    </library>
+  </libraries>
+  <nets>
+    <net code="1" name="+3.3V">
+      <node ref="C11" pin="1" pintype="passive"/>
+      <node ref="C12" pin="1" pintype="passive"/>
+      <node ref="C14" pin="1" pintype="passive"/>
+      <node ref="C15" pin="1" pintype="passive"/>
+      <node ref="C18" pin="1" pintype="passive"/>
+      <node ref="C2" pin="2" pintype="passive"/>
+      <node ref="C4" pin="2" pintype="passive"/>
+      <node ref="C5" pin="2" pintype="passive"/>
+      <node ref="L2" pin="1" pinfunction="1" pintype="passive"/>
+      <node ref="R1" pin="2" pintype="passive"/>
+      <node ref="R6" pin="2" pintype="passive"/>
+      <node ref="R7" pin="2" pintype="passive"/>
+      <node ref="R8" pin="2" pintype="passive"/>
+      <node ref="U3" pin="11" pinfunction="VDD3P3_RTC" pintype="power_in"/>
+      <node ref="U3" pin="17" pinfunction="VDD3P3_CPU" pintype="power_in"/>
+      <node ref="U3" pin="31" pinfunction="VDDA" pintype="power_in"/>
+      <node ref="U3" pin="32" pinfunction="VDDA" pintype="power_in"/>
+      <node ref="U4" pin="5" pinfunction="OUT" pintype="power_out"/>
+      <node ref="X1" pin="1" pinfunction="Pin_1" pintype="passive"/>
+    </net>
+    <net code="2" name="+BATT">
+      <node ref="C9" pin="1" pintype="passive"/>
+      <node ref="D2" pin="2" pinfunction="A" pintype="passive"/>
+      <node ref="J1" pin="1" pinfunction="Pin_1" pintype="passive"/>
+      <node ref="U2" pin="3" pinfunction="BAT" pintype="power_out"/>
+    </net>
+    <net code="3" name="CHIP_EN">
+      <node ref="R6" pin="1" pintype="passive"/>
+      <node ref="U3" pin="7" pinfunction="CHIP_EN" pintype="input"/>
+    </net>
+    <net code="4" name="EXTI">
+      <node ref="C1" pin="2" pintype="passive"/>
+      <node ref="R1" pin="1" pintype="passive"/>
+      <node ref="SW1" pin="2" pinfunction="4" pintype="passive"/>
+      <node ref="U3" pin="6" pinfunction="GPIO2" pintype="bidirectional"/>
+    </net>
+    <net code="5" name="GND">
+      <node ref="AE1" pin="2" pinfunction="GND" pintype="power_in"/>
+      <node ref="C1" pin="1" pintype="passive"/>
+      <node ref="C10" pin="2" pintype="passive"/>
+      <node ref="C11" pin="2" pintype="passive"/>
+      <node ref="C12" pin="2" pintype="passive"/>
+      <node ref="C13" pin="2" pintype="passive"/>
+      <node ref="C14" pin="2" pintype="passive"/>
+      <node ref="C15" pin="2" pintype="passive"/>
+      <node ref="C16" pin="2" pintype="passive"/>
+      <node ref="C17" pin="2" pintype="passive"/>
+      <node ref="C18" pin="2" pintype="passive"/>
+      <node ref="C2" pin="1" pintype="passive"/>
+      <node ref="C3" pin="2" pintype="passive"/>
+      <node ref="C4" pin="1" pintype="passive"/>
+      <node ref="C5" pin="1" pintype="passive"/>
+      <node ref="C6" pin="2" pintype="passive"/>
+      <node ref="C7" pin="1" pintype="passive"/>
+      <node ref="C8" pin="2" pintype="passive"/>
+      <node ref="C9" pin="2" pintype="passive"/>
+      <node ref="J2" pin="1" pinfunction="Pin_1" pintype="passive"/>
+      <node ref="R2" pin="2" pintype="passive"/>
+      <node ref="R3" pin="2" pintype="passive"/>
+      <node ref="R5" pin="2" pintype="passive"/>
+      <node ref="SW1" pin="1" pinfunction="1" pintype="passive"/>
+      <node ref="U1" pin="A1" pinfunction="GND" pintype="passive"/>
+      <node ref="U1" pin="A12" pinfunction="GND" pintype="passive"/>
+      <node ref="U1" pin="B1" pinfunction="GND" pintype="passive"/>
+      <node ref="U1" pin="B12" pinfunction="GND" pintype="passive"/>
+      <node ref="U1" pin="S1" pinfunction="SHIELD" pintype="passive"/>
+      <node ref="U2" pin="2" pinfunction="GND" pintype="power_in"/>
+      <node ref="U3" pin="33" pinfunction="GND" pintype="power_in"/>
+      <node ref="U4" pin="2" pinfunction="GND" pintype="power_in"/>
+      <node ref="X1" pin="4" pinfunction="Pin_4" pintype="passive"/>
+      <node ref="Y1" pin="2" pinfunction="GND" pintype="power_in"/>
+      <node ref="Y1" pin="4" pinfunction="GND" pintype="power_in"/>
+    </net>
+    <net code="6" name="MCU_SCL">
+      <node ref="R7" pin="1" pintype="passive"/>
+      <node ref="U3" pin="9" pinfunction="MTMS" pintype="bidirectional"/>
+      <node ref="X1" pin="3" pinfunction="Pin_3" pintype="passive"/>
+    </net>
+    <net code="7" name="MCU_SDA">
+      <node ref="R8" pin="1" pintype="passive"/>
+      <node ref="U3" pin="10" pinfunction="MTDI" pintype="bidirectional"/>
+      <node ref="X1" pin="2" pinfunction="Pin_2" pintype="passive"/>
+    </net>
+    <net code="8" name="Net-(AE1-Pad1)">
+      <node ref="AE1" pin="1" pinfunction="A" pintype="input"/>
+      <node ref="C3" pin="1" pintype="passive"/>
+      <node ref="L1" pin="1" pinfunction="1" pintype="passive"/>
+    </net>
+    <net code="9" name="Net-(C6-Pad1)">
+      <node ref="C6" pin="1" pintype="passive"/>
+      <node ref="L1" pin="2" pinfunction="2" pintype="passive"/>
+      <node ref="U3" pin="1" pinfunction="LNA_IN" pintype="bidirectional"/>
+    </net>
+    <net code="10" name="Net-(C7-Pad2)">
+      <node ref="C7" pin="2" pintype="passive"/>
+      <node ref="L2" pin="2" pinfunction="2" pintype="passive"/>
+      <node ref="U3" pin="2" pinfunction="VDD3P3" pintype="power_in"/>
+      <node ref="U3" pin="3" pinfunction="VDD3P3" pintype="power_in"/>
+    </net>
+    <net code="11" name="Net-(C10-Pad1)">
+      <node ref="C10" pin="1" pintype="passive"/>
+      <node ref="D2" pin="1" pinfunction="K" pintype="passive"/>
+      <node ref="D3" pin="1" pinfunction="K" pintype="passive"/>
+      <node ref="U4" pin="1" pinfunction="IN" pintype="power_in"/>
+      <node ref="U4" pin="3" pinfunction="EN" pintype="input"/>
+    </net>
+    <net code="12" name="Net-(C13-Pad1)">
+      <node ref="C13" pin="1" pintype="passive"/>
+      <node ref="U4" pin="4" pinfunction="BP" pintype="output"/>
+    </net>
+    <net code="13" name="Net-(C16-Pad1)">
+      <node ref="C16" pin="1" pintype="passive"/>
+      <node ref="U3" pin="30" pinfunction="XTAL_P" pintype="input"/>
+      <node ref="Y1" pin="1" pinfunction="OSC1" pintype="bidirectional"/>
+    </net>
+    <net code="14" name="Net-(C17-Pad1)">
+      <node ref="C17" pin="1" pintype="passive"/>
+      <node ref="U3" pin="29" pinfunction="XTAL_N" pintype="output"/>
+      <node ref="Y1" pin="3" pinfunction="OSC2" pintype="bidirectional"/>
+    </net>
+    <net code="15" name="Net-(D1-Pad1)">
+      <node ref="D1" pin="1" pinfunction="K" pintype="passive"/>
+      <node ref="R4" pin="1" pintype="passive"/>
+    </net>
+    <net code="16" name="Net-(R2-Pad1)">
+      <node ref="R2" pin="1" pintype="passive"/>
+      <node ref="U1" pin="A5" pinfunction="CC1" pintype="bidirectional"/>
+    </net>
+    <net code="17" name="Net-(R3-Pad1)">
+      <node ref="R3" pin="1" pintype="passive"/>
+      <node ref="U1" pin="B5" pinfunction="CC2" pintype="bidirectional"/>
+    </net>
+    <net code="18" name="Net-(R4-Pad2)">
+      <node ref="R4" pin="2" pintype="passive"/>
+      <node ref="U2" pin="1" pinfunction="~{CHRG}" pintype="open_collector"/>
+    </net>
+    <net code="19" name="Net-(R5-Pad1)">
+      <node ref="R5" pin="1" pintype="passive"/>
+      <node ref="U2" pin="5" pinfunction="PROG" pintype="bidirectional"/>
+    </net>
+    <net code="20" name="USB_D+">
+      <node ref="U1" pin="A6" pinfunction="D+" pintype="bidirectional"/>
+      <node ref="U1" pin="B6" pinfunction="D+" pintype="bidirectional"/>
+      <node ref="U3" pin="26" pinfunction="GPIO19" pintype="bidirectional"/>
+    </net>
+    <net code="21" name="USB_D-">
+      <node ref="U1" pin="A7" pinfunction="D-" pintype="bidirectional"/>
+      <node ref="U1" pin="B7" pinfunction="D-" pintype="bidirectional"/>
+      <node ref="U3" pin="25" pinfunction="GPIO18" pintype="bidirectional"/>
+    </net>
+    <net code="22" name="VCC">
+      <node ref="C8" pin="1" pintype="passive"/>
+      <node ref="D1" pin="2" pinfunction="A" pintype="passive"/>
+      <node ref="D3" pin="2" pinfunction="A" pintype="passive"/>
+      <node ref="U1" pin="A4" pinfunction="VBUS" pintype="passive"/>
+      <node ref="U1" pin="A9" pinfunction="VBUS" pintype="passive"/>
+      <node ref="U1" pin="B4" pinfunction="VBUS" pintype="passive"/>
+      <node ref="U1" pin="B9" pinfunction="VBUS" pintype="passive"/>
+      <node ref="U2" pin="4" pinfunction="VCC" pintype="power_in"/>
+    </net>
+    <net code="23" name="unconnected-(U1-PadA2)">
+      <node ref="U1" pin="A2" pinfunction="TX1+" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="24" name="unconnected-(U1-PadA3)">
+      <node ref="U1" pin="A3" pinfunction="TX1-" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="25" name="unconnected-(U1-PadA8)">
+      <node ref="U1" pin="A8" pinfunction="SBU1" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="26" name="unconnected-(U1-PadA10)">
+      <node ref="U1" pin="A10" pinfunction="RX2-" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="27" name="unconnected-(U1-PadA11)">
+      <node ref="U1" pin="A11" pinfunction="RX2+" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="28" name="unconnected-(U1-PadB2)">
+      <node ref="U1" pin="B2" pinfunction="TX2+" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="29" name="unconnected-(U1-PadB3)">
+      <node ref="U1" pin="B3" pinfunction="TX2-" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="30" name="unconnected-(U1-PadB8)">
+      <node ref="U1" pin="B8" pinfunction="SBU2" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="31" name="unconnected-(U1-PadB10)">
+      <node ref="U1" pin="B10" pinfunction="RX1-" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="32" name="unconnected-(U1-PadB11)">
+      <node ref="U1" pin="B11" pinfunction="RX1+" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="33" name="unconnected-(U3-Pad4)">
+      <node ref="U3" pin="4" pinfunction="XTAL_32K_P" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="34" name="unconnected-(U3-Pad5)">
+      <node ref="U3" pin="5" pinfunction="XTAL_32K_N" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="35" name="unconnected-(U3-Pad8)">
+      <node ref="U3" pin="8" pinfunction="GPIO3" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="36" name="unconnected-(U3-Pad12)">
+      <node ref="U3" pin="12" pinfunction="MTCK" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="37" name="unconnected-(U3-Pad13)">
+      <node ref="U3" pin="13" pinfunction="MTDO" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="38" name="unconnected-(U3-Pad14)">
+      <node ref="U3" pin="14" pinfunction="GPIO8" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="39" name="unconnected-(U3-Pad15)">
+      <node ref="U3" pin="15" pinfunction="GPIO9" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="40" name="unconnected-(U3-Pad16)">
+      <node ref="U3" pin="16" pinfunction="GPIO10" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="41" name="unconnected-(U3-Pad18)">
+      <node ref="U3" pin="18" pinfunction="VDD_SPI" pintype="power_in+no_connect"/>
+    </net>
+    <net code="42" name="unconnected-(U3-Pad19)">
+      <node ref="U3" pin="19" pinfunction="SPIHD" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="43" name="unconnected-(U3-Pad20)">
+      <node ref="U3" pin="20" pinfunction="SPIWP" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="44" name="unconnected-(U3-Pad21)">
+      <node ref="U3" pin="21" pinfunction="SPICS0" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="45" name="unconnected-(U3-Pad22)">
+      <node ref="U3" pin="22" pinfunction="SPICLK" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="46" name="unconnected-(U3-Pad23)">
+      <node ref="U3" pin="23" pinfunction="SPID" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="47" name="unconnected-(U3-Pad24)">
+      <node ref="U3" pin="24" pinfunction="SPIQ" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="48" name="unconnected-(U3-Pad27)">
+      <node ref="U3" pin="27" pinfunction="U0RXD" pintype="bidirectional+no_connect"/>
+    </net>
+    <net code="49" name="unconnected-(U3-Pad28)">
+      <node ref="U3" pin="28" pinfunction="U0TXD" pintype="bidirectional+no_connect"/>
+    </net>
+  </nets>
+</export>
