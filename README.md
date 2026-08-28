@@ -91,9 +91,11 @@ The system architecture consists of **distributed sensor nodes** placed througho
 
 ---
 
-## � Hardware
+## 🔧 Hardware
 
-### Custom ESP32-C3 PCB Design - Version 3
+### Custom ESP32-C3 PCB Design - Version 4
+
+Version 4 focuses on higher battery efficiency and lower deep-sleep consumption while retaining the compact ESP32-C3, USB-C and four-layer board architecture.
 
 <div align="center">
 
@@ -101,11 +103,11 @@ The system architecture consists of **distributed sensor nodes** placed througho
 <tr>
 <td align="center" width="50%">
 <img src="Readme/V3.webp" alt="PCB V3 Front" width="450"><br>
-<b>Front Side - Component Layout</b>
+<b>Version 3 Front - Previous Layout</b>
 </td>
 <td align="center" width="50%">
 <img src="Readme/V3B.webp" alt="PCB V3 Back" width="450"><br>
-<b>Back Side - Ground Plane</b>
+<b>Version 3 Back - Previous Layout</b>
 </td>
 </tr>
 </table>
@@ -134,23 +136,26 @@ The system architecture consists of **distributed sensor nodes** placed througho
 <td width="40%" valign="top">
 
 **Power System:**
-- ✅ LiPo charging IC (100mA/1A)
-- ✅ Power path controller
-- ✅ 3.3V LDO regulator
+- ✅ TP4056 LiPo charger (~130mA)
+- ✅ Automatic USB/battery selection
+- ✅ TPS63900 3.3V buck-boost converter
 - ✅ Battery protection circuit
-- ✅ USB-C input (5V)
-- ⚠️ No buck-boost converter
+- ✅ Switchable sensor and ADC power paths
 
-**Version 3 Improvements:**
-- Enhanced ground plane
-- Optimized power path
-- Better thermal management
+**Version 4 Key Improvements:**
+- Extended usable battery-voltage range
+- Sensor and I²C rail fully switchable
+- Battery divider active only while measuring
+- More reliable USB-to-battery transition
+- Defined antenna and improved production data
 
 </td>
 </tr>
 </table>
 
-**PCB Evolution:** Three design iterations available in `PCB/` directory with progressive improvements in power management, I2C connectivity, and EMI shielding.
+**Additional Version 4 updates:** Thermal-pad charger package, lower-current charge LEDs, revised RF antenna and crystal loading, smaller button, low-profile SMD battery connector and clearer charging silkscreen symbols.
+
+**PCB Evolution:** Four design iterations are available in the `PCB/` directory. Version 4 replaces the Version 3 LDO supply with a buck-boost architecture and adds hardware-controlled power gating for the sensor rail and battery measurement circuit.
 
 ### 🌡️ Supported Sensors
 
@@ -276,19 +281,24 @@ Ideal for health-conscious monitoring
 
 2️⃣ **Charging IC**
    - CC/CV LiPo charging
-   - 100mA or 1A variants
+   - Approximately 130mA charge current
    - 4.2V cutoff protection
-   - LED status indicator
+   - Charging and full-charge LEDs
 
-3️⃣ **Power Path Controller**
-   - Seamless USB/battery switching
-   - Load sharing capability
-   - Back-feed prevention
+3️⃣ **Automatic Source Selection**
+   - USB priority when connected
+   - Automatic return to battery power
+   - Revised diode and discharge path
 
-4️⃣ **3.3V LDO Regulator**
-   - Efficient voltage regulation
-   - Low dropout design
-   - Stable output for MCU
+4️⃣ **TPS63900 Buck-Boost Converter**
+   - Stable 3.3V across the LiPo discharge curve
+   - Better use of available battery capacity
+   - Additional capacitance for radio-current peaks
+
+5️⃣ **Switched Loads**
+   - PMOS-controlled sensor and I²C rail
+   - Switchable battery-voltage divider
+   - Reduced current consumption during deep sleep
 
 </td>
 <td width="50%" valign="top">
@@ -298,7 +308,6 @@ Ideal for health-conscious monitoring
 🛡️ Over-discharge protection  
 🛡️ Over-current protection  
 🛡️ Short-circuit protection  
-🛡️ Temperature monitoring
 
 <br>
 
@@ -313,20 +322,17 @@ Ideal for health-conscious monitoring
 </tr>
 </table>
 
-### ⚠️ Design Trade-off: No Buck-Boost Converter
+### 🔋 Version 4 Low-Power Improvements
 
-**Current Implementation (LDO only):**
+| Improvement | Benefit |
+|-------------|---------|
+| **Buck-boost regulation** | Uses more of the LiPo discharge range while maintaining 3.3V |
+| **Switched sensor rail** | Disconnects the sensor and I²C pull-ups during deep sleep |
+| **Switched ADC divider** | Eliminates continuous divider current between measurements |
+| **Revised source selection** | Reduces sensitivity to leakage during USB/battery transitions |
+| **Larger supply buffers** | Improves stability during short ESP32-C3 radio-current peaks |
 
-| Aspect | Impact |
-|--------|--------|
-| ❌ Battery usable range | 4.2V → 3.3V only (~75% capacity) |
-| ❌ Lost capacity | ~25% (below 3.3V unusable) |
-| ✅ Circuit complexity | Simple, reliable |
-| ✅ Cost | Lower BOM cost |
-| ✅ Efficiency | High at normal voltage |
-| ✅ Runtime | Still 12+ months achieved |
-
-**Rationale:** The LDO-only design provides sufficient runtime for most use cases while keeping the design simple and cost-effective. Future versions may incorporate buck-boost for maximum battery utilization.
+> **Note:** Version 4 is the current prototype design. Final battery runtime, RF performance, charging behavior and USB/battery transitions must be validated on assembled hardware before serial production.
 
 ---
 
@@ -510,7 +516,8 @@ esp32-c3-iot-sensor-board/
 ├── 📂 PCB/                       # Hardware Design Files (KiCad)
 │   ├── Version 1/                # Initial design
 │   ├── Version 2/                # Enhanced I2C + protection
-│   └── Version 3/                # Optimized power path
+│   ├── Version 3/                # Optimized LDO power path
+│   └── Version 4/                # Buck-boost + switched low-power loads
 │
 ├── 📂 SW-VSCode/                 # PlatformIO Projects
 │   ├── ESP32-Sensor/             # BME280 sensor node
