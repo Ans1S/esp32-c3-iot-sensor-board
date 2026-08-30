@@ -1,0 +1,9 @@
+# Keep executable scripts portable across Windows, macOS and Linux.
+.githooks/* text eol=lf
+*.py text eol=lf
+
+# Documentation assets and manufacturing archives are binary.
+*.png binary
+*.webp binary
+*.zip binary
+*.exe binary
