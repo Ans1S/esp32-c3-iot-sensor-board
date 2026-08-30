@@ -1,727 +1,303 @@
 <div align="center">
 
-# 🔋 lil-ESP32-C3
+# W-Charger
 
-### Compact ESP32-C3 IoT Board with Sustainable Battery Recycling
+### Give disposable-vape batteries a second life as low-power sensor nodes
 
-<img src="Readme/esp32_pcb.webp" alt="ESP32-C3 PCB" width="800">
+<img src="Readme/esp32_pcb.webp" alt="W-Charger ESP32-C3 prototype powered by a recovered single-cell lithium battery" width="680">
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Platform](https://img.shields.io/badge/Platform-ESP32--C3-blue.svg)](https://www.espressif.com/en/products/socs/esp32-c3)
-[![Framework](https://img.shields.io/badge/Framework-PlatformIO-orange.svg)](https://platformio.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-1f6f50.svg)](LICENSE)
+![Sensor](https://img.shields.io/badge/Sensor-ESP32--C3-1f6f50.svg)
+![Station](https://img.shields.io/badge/Station-ESP32--S3-1f6f50.svg)
+![Build](https://img.shields.io/badge/Build-PlatformIO-f5822a.svg)
 
-**[Features](#-key-features)** • 
-**[Hardware](#-hardware)** • 
-**[Software](#-software-architecture)** • 
-**[Getting Started](#-getting-started)** • 
-**[Documentation](#-project-structure)**
-
----
+**[Purpose](#why-w-charger)** · **[Hardware](#hardware)** ·
+**[Software](#software)** · **[Upload](#upload-the-firmware)** ·
+**[Security](#security-and-privacy)**
 
 </div>
 
-## 📖 Overview
+## Why W-Charger?
 
-A complete open-source hardware and software solution for building **ultra-low-power IoT sensor networks** using the ESP32-C3 microcontroller. This project transforms discarded vape batteries into sustainable power sources for distributed environmental monitoring systems.
+Disposable vapes often reach the waste stream while their small single-cell
+lithium batteries can still store useful energy. W-Charger gives suitable,
+carefully recovered cells a practical second life: they power compact
+ESP32-C3 nodes that measure the environment instead of becoming immediate
+electronic waste.
 
-### 🎯 Key Features
+The goal is bigger than reusing one battery. This project makes a complete,
+understandable sensor system available—from the PCB and low-power firmware to
+automatic discovery, a local dashboard and optional cloud export. Connect a
+BME280 or BME680, place multiple nodes around a room, and turn discarded energy
+into useful temperature, humidity, pressure and air-quality data.
 
-<table align="center">
-<tr>
-<td width="50%" valign="top">
+> [!CAUTION]
+> Recovering lithium cells is not a beginner task. Never use swollen, punctured,
+> corroded, hot or deeply discharged cells. Prevent short circuits, verify
+> polarity and voltage before connection, and take damaged cells to an approved
+> battery recycler. W-Charger is a prototype, not a certified consumer product.
 
-**♻️ Sustainable & Eco-Friendly**
-- Recycle discarded vape batteries
-- Prevent e-waste, extend battery life
-- Second life for 300-900mAh LiPo cells
+## How it works
 
-**📡 Ultra-Low Power Design**
-- ESP-NOW wireless protocol
-- Deep sleep: ~10µA consumption
-- 12+ months on single charge
-
-</td>
-<td width="50%" valign="top">
-
-**🌡️ Environmental Monitoring**
-- BME280/BME680 sensor support
-- Temperature, humidity, pressure, IAQ
-- I2C interface for easy expansion
-
-**☁️ Cloud Connected**
-- ThingSpeak integration
-- Real-time data visualization
-- Multi-sensor aggregation
-
-</td>
-</tr>
-</table>
-
----
-
-## 💡 Use Case
-
-<div align="center">
-<img src="https://img.shields.io/badge/Sensor_Nodes-3--5_units-success?style=for-the-badge" alt="Sensor Nodes">
-<img src="https://img.shields.io/badge/Central_Hub-1_unit-blue?style=for-the-badge" alt="Central Hub">
-<img src="https://img.shields.io/badge/Cloud-ThingSpeak-orange?style=for-the-badge" alt="Cloud">
-</div>
-
-<br>
-
-The system architecture consists of **distributed sensor nodes** placed throughout your environment, communicating via ESP-NOW to a **central hub** that aggregates and uploads data to the cloud.
-
-```
-┌─────────────┐     ESP-NOW       ┌──────────────┐     WiFi        ┌────────────┐
-│ Sensor Node │ ─────────────────→│  Home        │ ───────────────→│ ThingSpeak │
-│ (Battery)   │                   │  Station     │                 │   Cloud    │
-└─────────────┘                   │  (USB)       │                 └────────────┘
-                                  └──────────────┘
-       ↓                                ↑
-  Deep Sleep                      Data Queue
-  10 minutes                      Buffering
+```text
+Recovered 1-cell battery
+          │
+          ▼
+ESP32-C3 sensor board + BME280/BME680
+          │  ESP-NOW
+          ▼
+USB-powered ESP32-S3 station
+          ├── Local responsive dashboard + 24 h history
+          └── Optional HTTPS upload to ThingSpeak
 ```
 
-**Typical Deployment:**
-- 🏠 **Living Room**: Temperature + Humidity monitoring
-- 🛏️ **Bedroom**: Air quality (IAQ) tracking
-- 🍳 **Kitchen**: VOC detection for cooking
-- 🖥️ **Office**: Climate control optimization
-- 📊 **Dashboard**: Real-time visualization on any device
+| Part | Current implementation |
+|---|---|
+| Sensor node | Custom ESP32-C3 PCB V3 or V4, battery powered and mostly in deep sleep |
+| Home station | Seeed Studio XIAO ESP32-S3, continuously powered by USB |
+| Radio | ESP-NOW with automatic station and Wi-Fi-channel discovery |
+| Sensors | BME280 or BME680 over I²C; operation without an environmental sensor is also possible |
+| Configuration | Browser-based setup—no Wi-Fi password, MAC address or API key in source code |
+| Data | Local readings and history; ThingSpeak is optional |
 
----
+## Hardware
 
-## 🔧 Hardware
+### PCB V3 and V4
 
-### Custom ESP32-C3 PCB Design - Version 4
-
-Version 4 focuses on higher battery efficiency and lower deep-sleep consumption while retaining the compact ESP32-C3, USB-C and four-layer board architecture.
-
-<div align="center">
+PCB V4 is the current design. Its most important change is not cosmetic: the
+power path now combines a buck-boost regulator with switchable sensor and
+battery-measurement paths. This is intended to use more of the cell's discharge
+range and reduce avoidable deep-sleep losses.
 
 <table>
 <tr>
-<td align="center" width="50%">
-<img src="Readme/V3.webp" alt="PCB V3 Front" width="450"><br>
-<b>Version 3 Front - Previous Layout</b>
-</td>
-<td align="center" width="50%">
-<img src="Readme/V3B.webp" alt="PCB V3 Back" width="450"><br>
-<b>Version 3 Back - Previous Layout</b>
-</td>
+<th align="center">PCB V3 · previous design</th>
+<th align="center">PCB V4 · current design</th>
+</tr>
+<tr>
+<td align="center"><img src="Readme/V3.webp" alt="PCB V3 front render" width="320"><br><sub>Front</sub></td>
+<td align="center"><img src="Readme/FrontV4.webp" alt="PCB V4 front render" width="320"><br><sub>Front</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="Readme/pcb-v3-back.png" alt="PCB V3 back render" width="320"><br><sub>Back</sub></td>
+<td align="center"><img src="Readme/pcb-v4-back.png" alt="PCB V4 back render" width="320"><br><sub>Back</sub></td>
 </tr>
 </table>
 
-</div>
-
-<br>
-
-<table align="center">
-<tr>
-<td width="60%" valign="top">
-
-**Core Specifications:**
-
-| Component | Specification |
-|-----------|--------------|
-| **MCU** | ESP32-C3 @ 160MHz (RISC-V) |
-| **Wireless** | WiFi 4 (802.11 b/g/n) + BLE 5.0 |
-| **Memory** | 400KB SRAM, 4MB Flash |
-| **GPIO** | 22 programmable pins |
-| **ADC** | 12-bit for battery monitoring |
-| **Interface** | USB-C for power & programming |
-| **PCB** | 4-layer design for EMI reduction |
-
-</td>
-<td width="40%" valign="top">
-
-**Power System:**
-- ✅ TP4056 LiPo charger (~130mA)
-- ✅ Automatic USB/battery selection
-- ✅ TPS63900 3.3V buck-boost converter
-- ✅ Battery protection circuit
-- ✅ Switchable sensor and ADC power paths
-
-**Version 4 Key Improvements:**
-- Extended usable battery-voltage range
-- Sensor and I²C rail fully switchable
-- Battery divider active only while measuring
-- More reliable USB-to-battery transition
-- Defined antenna and improved production data
-
-</td>
-</tr>
-</table>
-
-**Additional Version 4 updates:** Thermal-pad charger package, lower-current charge LEDs, revised RF antenna and crystal loading, smaller button, low-profile SMD battery connector and clearer charging silkscreen symbols.
-
-**PCB Evolution:** Four design iterations are available in the `PCB/` directory. Version 4 replaces the Version 3 LDO supply with a buck-boost architecture and adds hardware-controlled power gating for the sensor rail and battery measurement circuit.
-
-### 🌡️ Supported Sensors
-
-All sensors connect via **I2C interface** (SDA: GPIO5, SCL: GPIO4)
-
-<table align="center">
-<tr>
-<td align="center" width="50%" valign="top">
-
-**BME280**
-
-*Climate Monitoring*
-
-📊 Temperature ±1°C  
-💧 Humidity ±3% RH  
-🌡️ Pressure ±1 hPa  
-⚡ Ultra-low power (~3.6µA)
-
-<br>
-
-Perfect for basic environmental monitoring
-
-</td>
-<td align="center" width="50%" valign="top">
-
-**BME680**
-
-*Air Quality Analysis*
-
-📊 Temperature ±1°C  
-💧 Humidity ±3% RH  
-🌡️ Pressure ±1 hPa  
-🌬️ **IAQ Index** (VOC detection)
-
-<br>
-
-Ideal for health-conscious monitoring
-
-</td>
-</tr>
-</table>
-
-<br>
-
-**Why I2C?**
-- Simple 2-wire interface (SDA + SCL)
-- Multiple sensors on same bus
-- Standardized protocol
-- Minimal GPIO usage
-
----
-
-## 🔋 Battery Technology
-
-### Sustainable Power: Recycled Vape Batteries
-
-<table align="center">
-<tr>
-<td width="50%" valign="top">
-
-#### ✅ Advantages
-
-- ♻️ **Environmental Impact**: Prevents e-waste
-- 💰 **Cost-Effective**: Free or very cheap
-- ⚡ **High Capacity**: 300-900mAh tested range
-- 📦 **Compact Size**: Perfect for IoT devices
-- 🔌 **Ready to Deploy**: Standard LiPo format
-
-</td>
-<td width="50%" valign="top">
-
-#### ⚠️ Considerations
-
-- Safety risk during extraction
-- Unknown battery health/cycles
-- Inconsistent capacity by brand
-- No manufacturer warranty
-- Requires voltage testing
-
-</td>
-</tr>
-</table>
-
-### 📊 Real-World Performance
-
-<div align="center">
-
-| Configuration | Result |
-|--------------|--------|
-| **Battery** | 550mAh (recycled vape) |
-| **Sensor** | ESP32-C3 + BME280 |
-| **Interval** | 10 minutes |
-| **Runtime** | ⚡ **12+ months** without recharge |
-
-</div>
-
-> 💡 **Note:** Various battery capacities tested (300mAh - 900mAh) with proportional runtime results. Actual performance depends on battery condition and usage pattern.
-
-#### Safety Guidelines
-
-⚠️ **Important:** Always follow proper safety procedures
-- Inspect for physical damage before use
-- Test voltage (3.0-4.2V acceptable range)
-- Never use swollen batteries
-- Use protective equipment during extraction
-- Dispose of damaged cells properly
-
----
-
-## 🎛️ Power Management System
-
-### Intelligent Power Architecture
-
-<table align="center">
-<tr>
-<td width="50%" valign="top">
-
-**Components:**
-
-1️⃣ **USB-C Input**
-   - 5V programming & charging
-   - Automatic source detection
-
-2️⃣ **Charging IC**
-   - CC/CV LiPo charging
-   - Approximately 130mA charge current
-   - 4.2V cutoff protection
-   - Charging and full-charge LEDs
-
-3️⃣ **Automatic Source Selection**
-   - USB priority when connected
-   - Automatic return to battery power
-   - Revised diode and discharge path
-
-4️⃣ **TPS63900 Buck-Boost Converter**
-   - Stable 3.3V across the LiPo discharge curve
-   - Better use of available battery capacity
-   - Additional capacitance for radio-current peaks
-
-5️⃣ **Switched Loads**
-   - PMOS-controlled sensor and I²C rail
-   - Switchable battery-voltage divider
-   - Reduced current consumption during deep sleep
-
-</td>
-<td width="50%" valign="top">
-
-**Protection Features:**
-
-🛡️ Over-discharge protection  
-🛡️ Over-current protection  
-🛡️ Short-circuit protection  
-
-<br>
-
-**Performance:**
-
-⚡ Deep sleep: ~10µA  
-⚡ Active (sensing): ~80mA  
-⚡ TX (ESP-NOW): ~120mA  
-⚡ Duration: 2-3 sec/cycle
-
-</td>
-</tr>
-</table>
-
-### 🔋 Version 4 Low-Power Improvements
-
-| Improvement | Benefit |
-|-------------|---------|
-| **Buck-boost regulation** | Uses more of the LiPo discharge range while maintaining 3.3V |
-| **Switched sensor rail** | Disconnects the sensor and I²C pull-ups during deep sleep |
-| **Switched ADC divider** | Eliminates continuous divider current between measurements |
-| **Revised source selection** | Reduces sensitivity to leakage during USB/battery transitions |
-| **Larger supply buffers** | Improves stability during short ESP32-C3 radio-current peaks |
-
-> **Note:** Version 4 is the current prototype design. Final battery runtime, RF performance, charging behavior and USB/battery transitions must be validated on assembled hardware before serial production.
-
----
-
-## 💻 Software Architecture
-
-### Five Firmware Implementations for Different Use Cases
-
-<table align="center">
-<tr>
-<td width="33%" valign="top">
-
-#### 1️⃣ ESP32-Sensor
-**BME280 Basic Node**
-
-📍 `SW-VSCode/ESP32-Sensor/`
-
-- Temperature, humidity, pressure
-- 10-min deep sleep cycles
-- ESP-NOW transmission
-- 3-6 months battery life
-- Configurable sensor ID
-
-</td>
-<td width="33%" valign="top">
-
-#### 2️⃣ ESP32-Extra-Sensor
-**BME680 Air Quality**
-
-📍 `SW-VSCode/ESP32-Extra-Sensor/`
-
-- IAQ (Indoor Air Quality)
-- Multi-temp calibration
-- Professional gas sensing
-- ESP-NOW with retry
-- 10-min deep sleep
-
-</td>
-<td width="33%" valign="top">
-
-#### 3️⃣ ESP32-Home-Station
-**Central Hub**
-
-📍 `SW-VSCode/ESP32-Home-Station/`
-
-- ESP-NOW receiver
-- Data queue (20 readings)
-- Dynamic WiFi
-- FreeRTOS tasks
-- ThingSpeak upload
-- USB-powered
-
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-#### 4️⃣ W-Charger-ThingSpeak-1A
-**WiFi Monitor (1A)**
-
-📍 `SW-VSCode/W-Charger-ThingSpeak-1A/`
-
-- Direct WiFi (no ESP-NOW)
-- Battery monitoring
-- RSSI reporting
-- 10-min upload interval
-- Deep sleep
-- 1A charging
-
-</td>
-<td width="50%" valign="top">
-
-#### 5️⃣ W-Charger-ThingSpeak-100mA
-**Low-Power WiFi**
-
-📍 `SW-VSCode/W-Charger-ThingSpeak-100mA/`
-
-- WiFiManager config
-- Calibrated ADC
-- ThingSpeak upload
-- 100mA charging
-- Deep sleep optimized
-
-</td>
-</tr>
-</table>
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-<table align="center">
-<tr>
-<td width="50%" valign="top">
-
-**🔧 Hardware Requirements**
-
-- ✅ ESP32-C3 board (custom or dev board)
-- ✅ Vape battery (3.7V LiPo, 300-900mAh)
-- ✅ I2C sensor (BME280 or BME680)
-- ✅ USB-C cable
-
-</td>
-<td width="50%" valign="top">
-
-**💾 Software Requirements**
-
-- ✅ [PlatformIO](https://platformio.org/) (recommended)
-- ✅ [Git](https://git-scm.com/)
-- ✅ [ThingSpeak](https://thingspeak.com/) account (free)
-- ✅ Arduino IDE (alternative)
-
-</td>
-</tr>
-</table>
-
-### Quick Start Guide
-
-#### Step 1: Clone Repository
+| Focus | PCB V3 | **PCB V4** |
+|---|---|---|
+| 3.3 V supply | DS8561-33S5 LDO | TPS63900 buck-boost regulator |
+| Usable battery range | Limited by LDO headroom | Designed to maintain 3.3 V across more of the Li-ion discharge curve |
+| Sensor rail | GPIO10, active-high switching | PMOS power gate on GPIO10, active-low; sensor and I²C pull-ups are off during sleep |
+| Battery measurement | ADC on GPIO3; divider remains connected | ADC on GPIO3 plus GPIO6 enable; divider is powered only for a reading |
+| Battery connector | Earlier vertical connector layout | Low-profile, side-entry two-pin SMD connector |
+| Charging/status | TC4056A-based layout | Revised TP4056 thermal-pad layout with clearer power/charge indicators |
+| Firmware target | `sensor_pcb_v3` | `sensor_pcb_v4` |
+| Status | Existing prototype | **Current prototype; complete electrical, thermal, RF and runtime validation is still required** |
+
+Both revisions expose the same four-pin I²C interface:
+`3V3 · SDA (GPIO5) · SCL (GPIO4) · GND`. The shared sensor firmware selects
+the correct pin polarity and battery-measurement behavior through its build
+profile.
+
+The KiCad sources, BOM and production files are in [`PCB/`](PCB/). For V4,
+the manufacturing package is under
+[`PCB/Version 4/ESP32-C3-V4/production/`](PCB/Version%204/ESP32-C3-V4/production/).
+
+## Software
+
+There is one maintained firmware implementation under [`Firmware/`](Firmware/):
+
+| Module | Role |
+|---|---|
+| [`station/`](Firmware/station/) | ESP32-S3 setup portal, local dashboard, sensor registry, history and optional ThingSpeak integration |
+| [`sensor/`](Firmware/sensor/) | One ESP32-C3 codebase for PCB V3/V4 and BME280/BME680 |
+| [`shared/`](Firmware/shared/) | Versioned ESP-NOW protocol shared by station and sensor |
+
+Old experiments are intentionally excluded from Git. The `Firmware/`
+directory is the single source of truth.
+
+### Station dashboard
+
+The station opens a browser-based setup flow on first boot. Afterwards the
+overview shows connection state, discovered sensors, latest readings, battery
+voltage, radio strength, ThingSpeak status and a local rolling 24-hour history.
+
+<p align="center">
+<img src="Readme/station-dashboard.png" alt="Anonymized W-Charger station overview" width="760">
+<br><sub>Station overview with anonymized demo identifiers.</sub>
+</p>
+
+Each sensor can be named and configured independently. Measurements can be
+mapped to ThingSpeak fields 1–8 or kept local. BME680 nodes also show Static
+IAQ, BSEC accuracy and gas resistance.
+
+<p align="center">
+<img src="Readme/station-sensors.png" alt="Anonymized W-Charger dashboard with BME280 and BME680 sensor cards" width="520">
+<br><sub>Multiple sensor cards, local history and optional cloud field mapping. All device and channel identifiers are demo values.</sub>
+</p>
+
+Key behavior:
+
+- New sensors discover the station automatically across all 13 ESP-NOW
+  channels; no receiver MAC or channel is compiled into the sensor.
+- BME280 nodes wake only for their configured measurement interval.
+- BME680 nodes use Bosch BSEC2 in ULP mode. Internal measurements run every
+  five minutes while radio reports follow the configured longer interval.
+- Initial BME680 stabilization takes roughly 20 minutes; background learning
+  continues afterwards.
+- The station retains 48 local half-hour windows per sensor, creating a rolling
+  24-hour history without an open browser or ThingSpeak.
+- ThingSpeak channels and field mappings are optional and configured centrally
+  in the station UI.
+
+## Upload the firmware
+
+### What you need
+
+- VS Code with the PlatformIO IDE extension, or standalone PlatformIO Core
+- Git and Python
+- A USB data cable
+- One connected board at a time
+
+For the first USB upload, disconnect the recovered battery and power the board
+from USB. Confirm the sensor PCB revision before flashing: V3 and V4 use
+different power-control logic.
+
+### Simplest method
+
+Clone or download this repository, open a terminal in its root directory, then
+run:
 
 ```bash
-git clone https://github.com/Ans1S/esp32-c3-iot-sensor-board.git
-cd esp32-c3-iot-sensor-board
+python Firmware/upload.py
 ```
 
-#### Step 2: Configure Credentials
+Choose the connected station, V3 sensor or V4 sensor from the menu. The helper
+finds a standard PlatformIO installation and runs the correct project and build
+environment.
 
-Each project includes a `config.h.example` template:
+For a direct, repeatable command:
 
 ```bash
-cd SW-VSCode/ESP32-Sensor/src
-cp config.h.example config.h
-# Edit config.h with your WiFi/ThingSpeak credentials
+python Firmware/upload.py station
+python Firmware/upload.py sensor-v4
+# For an existing V3 board:
+python Firmware/upload.py sensor-v3
 ```
 
-#### Step 3: ThingSpeak Setup
+On Windows, `py` can be used instead of `python`; on macOS or Linux the
+command may be `python3`. If multiple serial devices are connected, add
+`--port COM5` or the matching `/dev/...` device.
 
-1. Create free account at [thingspeak.com](https://thingspeak.com/)
-2. Create new channel
-3. Add fields:
-   - Field 1: Temperature (°C)
-   - Field 2: Humidity (%)
-   - Field 3: Pressure/IAQ
-   - Field 4: Battery (mV)
-4. Copy **Channel ID** and **Write API Key**
-
-#### Step 4: Get Receiver MAC Address
-
-Flash this to your home station:
-
-```cpp
-#include <WiFi.h>
-void setup() {
-  Serial.begin(115200);
-  WiFi.mode(WIFI_STA);
-  Serial.println(WiFi.macAddress());
-}
-void loop() {}
-```
-
-#### Step 5: Build & Upload
-
-**Using PlatformIO:**
-
-```bash
-cd SW-VSCode/ESP32-Sensor
-pio run --target upload
-pio device monitor
-```
-
-**Using Arduino IDE:** Import the PlatformIO source from `SW-VSCode/` into your preferred Arduino workflow if needed.
-
----
-
-## 📁 Project Structure
-
-```
-esp32-c3-iot-sensor-board/
-│
-├── 📂 PCB/                       # Hardware Design Files (KiCad)
-│   ├── Version 1/                # Initial design
-│   ├── Version 2/                # Enhanced I2C + protection
-│   ├── Version 3/                # Optimized LDO power path
-│   └── Version 4/                # Buck-boost + switched low-power loads
-│
-├── 📂 SW-VSCode/                 # PlatformIO Projects
-│   ├── ESP32-Sensor/             # BME280 sensor node
-│   ├── ESP32-Extra-Sensor/       # BME680 air quality node
-│   ├── ESP32-Home-Station/       # Central hub + WiFi gateway
-│   ├── W-Charger-ThingSpeak-1A/  # Standalone WiFi (1A)
-│   └── W-Charger-ThingSpeak-100mA/ # Standalone WiFi (100mA)
-│
-├── 📂 SW/                        # Arduino-style libraries and legacy sources
-├── 📂 Datasheet/                 # Component Datasheets
-├── 📂 Readme/                    # Documentation Images
-│
-├── 📄 .gitignore                 # Git ignore rules
-├── 📄 LICENSE                    # MIT License
-└── 📄 README.md                  # This file
-```
-
----
-
-## 📊 Performance Metrics
-
-<div align="center">
-
-### Sensor Node (Battery-Powered)
-
-| Metric | Value |
-|--------|-------|
-| ⏱️ **Active Time** | ~2-3 seconds per reading |
-| 😴 **Sleep Time** | 1200 seconds (20 min, configurable) |
-| 🔋 **Battery Life** | 3-12+ months (500mAh typical) |
-| ⚡ **Deep Sleep Power** | ~10µA |
-| 📡 **Active Power** | ~80mA (sensing) |
-| 📤 **TX Power** | ~120mA (ESP-NOW) |
-
-### Home Station (USB-Powered)
-
-| Metric | Value |
-|--------|-------|
-| 📥 **ESP-NOW Listening** | ~80mA |
-| 📶 **WiFi Upload** | ~120mA (brief) |
-| 🔌 **Power Source** | USB 5V (always-on) |
-| 💾 **Queue Capacity** | 20 readings |
-
-</div>
-
----
-
-## 🔐 Security & Privacy
-
-> **🔒 This repository does NOT contain sensitive credentials.**
-
-All WiFi passwords, API keys, and MAC addresses must be configured locally in `config.h` files, which are:
-
-- ✅ Excluded via `.gitignore`
-- ✅ Never committed to repository
-- ✅ Documented via `config.h.example` templates
-
-**Before pushing to GitHub:**
-1. Verify `config.h` files are git-ignored
-2. Only commit `config.h.example` templates
-3. Never hardcode credentials in source files
-
----
-
-## 🛠️ Troubleshooting
+> [!IMPORTANT]
+> Every station upload performs a full flash erase by design. Saved Wi-Fi
+> settings, website password, ThingSpeak keys, sensors and local history are
+> removed. Sensor firmware updates also start a fresh pairing state for a new
+> firmware image.
 
 <details>
-<summary><b>🔴 Sensor Node Not Sending Data</b></summary>
+<summary><strong>Upload with the PlatformIO button instead</strong></summary>
 
-- Check battery voltage (> 3.0V)
-- Verify I2C sensor connections (SDA/SCL)
-- Confirm receiver MAC address in `config.h`
-- Monitor serial output for error messages
-- Test sensor with I2C scanner
+1. Open `Firmware/station` as a PlatformIO project.
+2. Connect the ESP32-S3 station and select **PlatformIO: Upload**.
+3. Open `Firmware/sensor` as a PlatformIO project.
+4. Select `sensor_pcb_v3` or `sensor_pcb_v4` in the PlatformIO environment
+   selector, connect the matching ESP32-C3 board and choose **Upload**.
 
 </details>
 
 <details>
-<summary><b>🔴 Home Station Not Receiving</b></summary>
+<summary><strong>If no upload port is found</strong></summary>
 
-- Ensure ESP-NOW on same WiFi channel
-- Verify MAC address matches sender config
-- Check distance between devices (< 100m)
-- Confirm station is powered and running
-- Review serial logs for ESP-NOW errors
-
-</details>
-
-<details>
-<summary><b>🔴 ThingSpeak Not Updating</b></summary>
-
-- Verify API key and Channel ID correct
-- Check WiFi connection status
-- Respect 15-second minimum upload interval
-- Monitor ThingSpeak rate limits
-- Check network firewall settings
+- Confirm that the cable supports data, not charging only.
+- Disconnect other ESP boards or pass `--port` explicitly.
+- Put the board into download mode: hold **BOOT**, tap **RESET** (or reconnect
+  USB), then release **BOOT** when the upload begins.
+- On Windows, a short clone path can avoid toolchain problems when long-path
+  support is disabled.
 
 </details>
 
-<details>
-<summary><b>🔴 Battery Drains Quickly</b></summary>
+All three release targets currently compile successfully:
+`station_s3`, `sensor_pcb_v3` and `sensor_pcb_v4`.
 
-- Verify deep sleep is working (check serial)
-- Increase sleep interval in configuration
-- Check for sensor power leakage
-- Test battery capacity with multimeter
-- Ensure proper power path operation
+### First start
 
-</details>
+1. Flash the station.
+2. Join `W-Charger-XXXXXX` with the initial setup password
+   `W-Charger-Setup`. This is a public bootstrap password, not a personal
+   credential.
+3. If the captive portal does not open, browse to
+   [`http://192.168.4.1/`](http://192.168.4.1/). Select a 2.4 GHz home network,
+   configure optional ThingSpeak access and set the recommended website
+   password.
+4. After the station joins the home network, open
+   [`http://w-charger.local/`](http://w-charger.local/) or the LAN address
+   shown during setup.
+5. Flash and power the matching sensor board. Open **Find sensors**, name the
+   detected node, select BME280/BME680 (or automatic detection), choose its
+   interval and save.
 
----
+No serial monitor and no source-code credential file are required. Firmware
+updates are currently USB-only; OTA update slots are reserved but the OTA flow
+is not implemented.
 
-## 🤝 Contributing
+## Security and privacy
 
-We welcome contributions from the community! Here's how you can help:
+This repository is designed to be public:
 
-<table align="center">
-<tr>
-<td width="50%" valign="top">
+- Wi-Fi passwords, website credentials and ThingSpeak API keys are never
+  compiled into the firmware. They are entered in the station UI and stored in
+  ESP32 NVS.
+- Documentation screenshots use anonymized MAC addresses, local IPs, entry
+  numbers and ThingSpeak channel IDs.
+- Local credential files, build output, compiler databases, private keys,
+  machine-local KiCad exports and the retired firmware tree are ignored.
+- Optional Git hooks block common credential files and likely secrets before a
+  commit or push:
 
-**Ways to Contribute:**
+  ```bash
+  git config core.hooksPath .githooks
+  ```
 
-- 🐛 Report bugs via [Issues](https://github.com/Ans1S/esp32-c3-iot-sensor-board/issues)
-- 💡 Suggest new features
-- 📝 Improve documentation
-- 🔧 Submit pull requests
-- ⭐ Star the project
-- 📢 Share your builds
+Set a station website password before using ThingSpeak. Without it, another
+device on the same trusted LAN could view configuration and API keys. The local
+dashboard uses HTTP, so its password protects access but does not encrypt local
+traffic. ThingSpeak requests use HTTPS.
 
-</td>
-<td width="50%" valign="top">
+ESP-NOW packets currently have protocol versioning, length checks and CRC32,
+but no per-device cryptographic authentication. Treat the current system as a
+trusted-home-network prototype.
 
-**Development Areas:**
+## Repository structure
 
-- 📐 PCB design improvements
-- 💻 Code optimization
-- 🔋 Power management
-- 🌡️ New sensor support
-- 🐛 Bug fixes
-- 🌐 Translations
+```text
+.
+├── Firmware/
+│   ├── station/        # ESP32-S3 station
+│   ├── sensor/         # ESP32-C3 sensor, PCB V3 and V4
+│   └── shared/         # Common ESP-NOW protocol
+├── PCB/
+│   ├── Version 1–3/    # Earlier hardware revisions
+│   └── Version 4/      # Current KiCad and production files
+├── Readme/             # Public documentation images
+├── .githooks/          # Optional secret guards
+├── .gitignore
+├── LICENSE
+└── README.md
+```
 
-</td>
-</tr>
-</table>
+Detailed references:
 
-**Contribution Process:**
+- [Firmware overview](Firmware/README.md)
+- [Station behavior and security model](Firmware/station/README.md)
+- [Sensor behavior, BME680 and hardware profiles](Firmware/sensor/README.md)
+- [System architecture](Firmware/ARCHITECTURE.md)
+- [Hardware test plan](Firmware/HARDWARE_TESTPLAN.md)
 
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit changes (`git commit -m 'Add AmazingFeature'`)
-4. Push to branch (`git push origin feature/AmazingFeature`)
-5. Open Pull Request
+## License
 
----
-
-## 📄 License
-
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
-
-**Third-Party Components:**
-- Component datasheets © respective manufacturers
-- ThingSpeak © MathWorks
-- ESP32-C3 © Espressif Systems
-
----
-
-## 🙏 Acknowledgments
-
-<div align="center">
-
-**Special thanks to:**
-
-[![Espressif](https://img.shields.io/badge/Espressif-ESP32--C3-red?style=for-the-badge&logo=espressif)](https://www.espressif.com/)
-[![Bosch](https://img.shields.io/badge/Bosch-Sensortec-blue?style=for-the-badge)](https://www.bosch-sensortec.com/)
-[![ThingSpeak](https://img.shields.io/badge/MathWorks-ThingSpeak-orange?style=for-the-badge)](https://thingspeak.com/)
-
-- **Espressif Systems** - ESP32-C3 platform and excellent documentation
-- **Bosch Sensortec** - High-quality BME280/BME680 environmental sensors
-- **MathWorks** - ThingSpeak IoT cloud platform
-- **Open Source Community** - Libraries, tools, and inspiration
-- **Contributors** - Everyone who has helped improve this project
-
-</div>
-
----
-
-<div align="center">
-
-## 📧 Contact & Links
-
-[![GitHub](https://img.shields.io/badge/GitHub-Repository-black?style=for-the-badge&logo=github)](https://github.com/Ans1S/esp32-c3-iot-sensor-board)
-[![Issues](https://img.shields.io/badge/Issues-Report_Bug-red?style=for-the-badge&logo=github)](https://github.com/Ans1S/esp32-c3-iot-sensor-board/issues)
-[![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
-
----
-
-### ⭐ Star this project if you find it useful!
-
-### ♻️ Made with sustainability in mind for a greener future
-
----
-
-**Built with ❤️ using ESP32-C3 and recycled batteries**
-
-[Back to Top ↑](#-lil-esp32-c3)
-
-</div>
+Project-owned source and hardware files are released under the [MIT License](LICENSE).
+The optional BME680 path downloads Bosch BSEC2 during the build; that dependency
+is distributed under Bosch's separate BSEC license.

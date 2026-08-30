@@ -1,0 +1,18 @@
+#!/usr/bin/env sh
+# Last guard before a push: scan all tracked text files in the checkout.
+set -eu
+
+if git grep -n -I -E 'x-oss-(security-token|credential|signature)=|X-Amz-(Credential|Signature|Security-Token)=|-----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|gh[pousr]_[A-Za-z0-9_]{30,}|github_pat_[A-Za-z0-9_]{20,}|sk-(proj-)?[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}' -- . ':!.githooks/**'; then
+  echo 'Push blocked: remove the signed access URL above first.' >&2
+  exit 1
+fi
+
+if git grep -n -I -E '((api|read|write)[_-]?(key)|wifi[_-]?(password|ssid)|secret|token)([^[:alnum:]_]|$)[^=:]{0,24}[:=][[:space:]]*"[^"]{8,}"' -- . ':!.githooks/**' ':!*.kicad_sch' ':!*.kicad_sym' ':!*.kicad_pcb' | grep -Ev 'YOUR_(API_)?KEY|W-Charger-Setup'; then
+  echo 'Push blocked: remove the credential above first.' >&2
+  exit 1
+fi
+
+if git grep -n -I -E '([[:alpha:]]:[\\/]+Users[\\/]+|/Users/[^/]+/|/home/[^/]+/)' -- . ':!.githooks/**'; then
+  echo 'Push blocked: remove the absolute user-home path above first.' >&2
+  exit 1
+fi

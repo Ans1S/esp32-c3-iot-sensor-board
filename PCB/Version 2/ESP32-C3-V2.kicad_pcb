@@ -15044,7 +15044,7 @@
 			(justify left bottom mirror)
 		)
 	)
-	(gr_text "A.S.            V2\nW-Charger  07.24"
+	(gr_text "                V2\nW-Charger  07.24"
 		(at 153.7 93.3 -90)
 		(layer "B.SilkS" knockout)
 		(uuid "adeca6a9-d5e4-479f-a97c-f8ba6b3d3240")

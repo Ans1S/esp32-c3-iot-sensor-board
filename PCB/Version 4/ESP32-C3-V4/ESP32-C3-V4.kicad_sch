@@ -408,7 +408,7 @@
 					)
 				)
 			)
-			(property "Datasheet" ""
+			(property "Datasheet" "https://www.lcsc.com/search?q=C720477"
 				(at 0.508 12.446 0)
 				(show_name no)
 				(do_not_autoplace no)
@@ -2217,7 +2217,7 @@
 					)
 				)
 			)
-			(property "Datasheet" ""
+			(property "Datasheet" "https://www.lcsc.com/search?q=C293767"
 				(at 0 0 0)
 				(show_name no)
 				(do_not_autoplace no)
@@ -2373,7 +2373,7 @@
 					)
 				)
 			)
-			(property "Datasheet" ""
+			(property "Datasheet" "https://www.lcsc.com/search?q=C1554"
 				(at 0 0 0)
 				(show_name no)
 				(do_not_autoplace no)
@@ -11888,7 +11888,7 @@
 				)
 			)
 		)
-		(property "Datasheet" ""
+		(property "Datasheet" "https://www.lcsc.com/search?q=C293767"
 			(at 265.43 102.87 0)
 			(hide yes)
 			(show_name no)
@@ -12461,7 +12461,7 @@
 				)
 			)
 		)
-		(property "Datasheet" ""
+		(property "Datasheet" "https://www.lcsc.com/search?q=C1554"
 			(at 153.67 140.97 0)
 			(hide yes)
 			(show_name no)
@@ -13673,7 +13673,7 @@
 				)
 			)
 		)
-		(property "Datasheet" ""
+		(property "Datasheet" "https://www.lcsc.com/search?q=C1554"
 			(at 163.83 152.4 0)
 			(hide yes)
 			(show_name no)
@@ -13980,7 +13980,7 @@
 				)
 			)
 		)
-		(property "Datasheet" ""
+		(property "Datasheet" "https://www.lcsc.com/search?q=C720477"
 			(at 124.714 143.002 0)
 			(hide yes)
 			(show_name no)
