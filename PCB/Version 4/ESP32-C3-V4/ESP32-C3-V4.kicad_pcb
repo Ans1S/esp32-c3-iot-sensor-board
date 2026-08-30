@@ -839,7 +839,7 @@
 				)
 			)
 		)
-		(property "Datasheet" "https://jlc-prod-smt.oss-eu-central-1.aliyuncs.com/smtDataManualFile/8588879072448925696-C16581.pdf?response-content-disposition=attachment%3B%20filename%3DC16581.pdf%3B%20filename%2A%3DUTF-8%27%27C16581.pdf&x-oss-date=20260827T163026Z&x-oss-expires=1800&x-oss-security-token=CAISgAN1q6Ft5B2yfSjIr5rBf46Dm%2BkUjoffTmfrj0RmZt0VlZbIgDz2IHhMdHJsAOodtv0%2FmmhT6PkclqRLcbhpcmfjV%2BZHzLB8qd9020Et557b16cNrbH4M4H6aXeirtuwDsz9SNTCALjPD3nPii50x5bjaDymRCbLGJaViJlhHLN1Ow6jdmhpCctxLAlvo9NgFxm3D%2Fu2NQPwiWf9FVdhvhEG6Vly8qOi2MaRmFy8yFTx0b0SvJ%2BjYMrmPctoN9JnSdC5mfdzau3a1TJ84gRD0a5wkaVA1zbDs5bfISEIuUzebreLqY03dV4mOvdqIcMe8qigz88fk%2FfIioH6xyxKOexoSCnFTOiiupCcQLPyao9jLu6iayqViY7QaIOTqQohZmkAMwVOasAsI3Ngh4zF97Qt0cVNkXO9gWfLI8DtuMleWirPm07BHjvyAFpORa%2Bb5wchMHn6pr9EWOXuJZUIn3b%2FstWNupKq5ldctHSeoXq108CXVnU5PXYIAZogK6KWD5sagAEnYLRsdocKCbShdrg6Em3EA2acJQBrbyyBHCOtElBp9beg8NNhTqR5xZeFT8DMqT6kWMnQve6qTx3ZGWBk%2FxPyBnI4814DWDTC4OWLRLnxv%2F0HQewLCqXu%2Fgs87wJ76yDIDikMlXcfffQ%2Fqpq085YVdFxjTRx9EW5S%2B6H7Qi26qCAA&x-oss-signature-version=OSS4-HMAC-SHA256&x-oss-credential=STS.NYt447v659E4LAZkD3jR9zScb%2F20260827%2Feu-central-1%2Foss%2Faliyun_v4_request&x-oss-signature=17b97b44dbc536833d9b4d26c6cf068abcea089a23d957063c857d5a73daacaf"
+		(property "Datasheet" "https://www.lcsc.com/search?q=C16581"
 			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
@@ -1574,7 +1574,7 @@
 				)
 			)
 		)
-		(property "Datasheet" "https://jlc-prod-smt.oss-eu-central-1.aliyuncs.com/smtDataManualFile/8603187355956498432-C22463806.pdf?response-content-disposition=attachment%3B%20filename%3DC22463806.pdf%3B%20filename%2A%3DUTF-8%27%27C22463806.pdf&x-oss-date=20260807T100900Z&x-oss-expires=1800&x-oss-security-token=CAISgAN1q6Ft5B2yfSjIr5nDDvz6uItM4YndZU3mslYbNMNWtoPPgTz2IHhMdHJsAOodtv0%2FmmhT6PkclqRLcbhpcmfjV%2BZHzLB8qcA7pwJU4J7b16cNrbH4M4H6aXeirtuwDsz9SNTCALjPD3nPii50x5bjaDymRCbLGJaViJlhHLN1Ow6jdmhpCctxLAlvo9NgFxm3D%2Fu2NQPwiWf9FVdhvhEG6Vly8qOi2MaRmFy8yFTx0b0SvJ%2BjYMrmPctoN9JnSdC5mfdzau3a1TJ84gRD0a5wkaVA1zbDs5bfISEIuUzebreLqY03dV4mOvdqIcMe8qigz88fk%2FfIioH6xyxKOexoSCnFTOiiupCcQLPyao9jLu6iayqViY7QaIOTqQohZmkAMwVOasAsI3Ngh4zF97Qt0cVNkXO9gWfLI8DtuMleWqqgRNYdKnSgc5lCkRRYwGs1287ugXlSQzo890KPDAEovaKCnZ2ZSfh7Y4sNknI6i%2Bfc2Se2MIkIY%2B29Z6KWD5sagAGWg45Iji%2BV3hgY9ElPCTFh587%2BOojLKDXKMtS9Nk9lwcpifYXBl96MJe8jdm5uVMywn8d%2FQPhAVcWNwBKzLggV8JTQXyQ%2B4nNdpqrXdnMHf2HzYQGqKGZLKbR95p2QD0y61q1nNtiK4rxOOIXr70%2Fns%2BkdxGz%2BxOG5vPB%2FDzP9OCAA&x-oss-signature-version=OSS4-HMAC-SHA256&x-oss-credential=STS.NZvEFNUTmVK6gkWVVN8LzYFdc%2F20260807%2Feu-central-1%2Foss%2Faliyun_v4_request&x-oss-signature=bc4bdd77c586b763c7d20e30311730a1b17e9144b9f7639b977086e8807a9043"
+		(property "Datasheet" "https://www.lcsc.com/search?q=C22463806"
 			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
@@ -1919,7 +1919,7 @@
 				)
 			)
 		)
-		(property "Datasheet" "https://jlc-prod-smt.oss-eu-central-1.aliyuncs.com/smtDataManualFile/8588893956994174976-C47647.pdf?response-content-disposition=attachment%3B%20filename%3DC47647.pdf%3B%20filename%2A%3DUTF-8%27%27C47647.pdf&x-oss-date=20260807T131228Z&x-oss-expires=3600&x-oss-security-token=CAISgAN1q6Ft5B2yfSjIr5rNJs%2FA35l407OaV03LgTQhTbp4qq%2FpiTz2IHhMdHJsAOodtv0%2FmmhT6PkclqRLcbhpcmfjV%2BZHzLB8qeBGggdU4J7b16cNrbH4M4H6aXeirtuwDsz9SNTCALjPD3nPii50x5bjaDymRCbLGJaViJlhHLN1Ow6jdmhpCctxLAlvo9NgFxm3D%2Fu2NQPwiWf9FVdhvhEG6Vly8qOi2MaRmFy8yFTx0b0SvJ%2BjYMrmPctoN9JnSdC5mfdzau3a1TJ84gRD0a5wkaVA1zbDs5bfISEIuUzebreLqY03dV4mOvdqIcMe8qigz88fk%2FfIioH6xyxKOexoSCnFTOiiupCcQLPyao9jLu6iayqViY7QaIOTqQohZmkAMwVOasAsI3Ngh4zF97Qt0cVNkXO9gWfLI8DtuMleWhqj3cxhytHD0eS19jklBdzSlusJRAJJUVBflCeKEaRNSAd3WGhEfM2%2BBt4QT30w5N2u00S8OSMIBZlqX6KWD5sagAF9lkF%2BBMbofNhURlSHnA2k5yBzuRWXn03QUJQS86UIJlTap3MmWyC839dhRqnobgr2FTu6Q25qlD2uVGVP1sO8uq6%2BAI19GaWx8KVyJT%2FK1Pa7buznX0ZqNiXL5W20QwRtks2%2FM3XyfIFqVK6FLsiLTpruIVQigFpT%2BBXyvrdirCAA&x-oss-signature-version=OSS4-HMAC-SHA256&x-oss-credential=STS.NYxmut2FYdqqUkze4tA5TEjBk%2F20260807%2Feu-central-1%2Foss%2Faliyun_v4_request&x-oss-signature=6df50a25c510894b502ddc7513b1b3d5cf2630d9b3fc4cf498338aab5c865cd6"
+		(property "Datasheet" "https://www.lcsc.com/search?q=C47647"
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
@@ -3551,7 +3551,7 @@
 				)
 			)
 		)
-		(property "Datasheet" "https://jlc-prod-smt.oss-eu-central-1.aliyuncs.com/smtDataManualFile/8588886944055513088-C720477.pdf?response-content-disposition=attachment%3B%20filename%3DC720477.pdf%3B%20filename%2A%3DUTF-8%27%27C720477.pdf&x-oss-date=20260807T103611Z&x-oss-expires=3600&x-oss-security-token=CAISgAN1q6Ft5B2yfSjIr5nDDvz6uItM4YndZU3mslYbNMNWtoPPgTz2IHhMdHJsAOodtv0%2FmmhT6PkclqRLcbhpcmfjV%2BZHzLB8qcA7pwJU4J7b16cNrbH4M4H6aXeirtuwDsz9SNTCALjPD3nPii50x5bjaDymRCbLGJaViJlhHLN1Ow6jdmhpCctxLAlvo9NgFxm3D%2Fu2NQPwiWf9FVdhvhEG6Vly8qOi2MaRmFy8yFTx0b0SvJ%2BjYMrmPctoN9JnSdC5mfdzau3a1TJ84gRD0a5wkaVA1zbDs5bfISEIuUzebreLqY03dV4mOvdqIcMe8qigz88fk%2FfIioH6xyxKOexoSCnFTOiiupCcQLPyao9jLu6iayqViY7QaIOTqQohZmkAMwVOasAsI3Ngh4zF97Qt0cVNkXO9gWfLI8DtuMleWqqgRNYdKnSgc5lCkRRYwGs1287ugXlSQzo890KPDAEovaKCnZ2ZSfh7Y4sNknI6i%2Bfc2Se2MIkIY%2B29Z6KWD5sagAGWg45Iji%2BV3hgY9ElPCTFh587%2BOojLKDXKMtS9Nk9lwcpifYXBl96MJe8jdm5uVMywn8d%2FQPhAVcWNwBKzLggV8JTQXyQ%2B4nNdpqrXdnMHf2HzYQGqKGZLKbR95p2QD0y61q1nNtiK4rxOOIXr70%2Fns%2BkdxGz%2BxOG5vPB%2FDzP9OCAA&x-oss-signature-version=OSS4-HMAC-SHA256&x-oss-credential=STS.NZvEFNUTmVK6gkWVVN8LzYFdc%2F20260807%2Feu-central-1%2Foss%2Faliyun_v4_request&x-oss-signature=dec311e587419d2915246c6563e8ba29dfbd8118131abe100e0dc2c54b0ce48f"
+		(property "Datasheet" "https://www.lcsc.com/search?q=C720477"
 			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
@@ -4097,7 +4097,7 @@
 				)
 			)
 		)
-		(property "Datasheet" "https://jlc-prod-smt.oss-eu-central-1.aliyuncs.com/smtDataManualFile/8586178133741879296-C23029.pdf?response-content-disposition=attachment%3B%20filename%3DC23029.pdf%3B%20filename%2A%3DUTF-8%27%27C23029.pdf&x-oss-date=20260807T095201Z&x-oss-expires=1800&x-oss-security-token=CAISgAN1q6Ft5B2yfSjIr5nDDvz6uItM4YndZU3mslYbNMNWtoPPgTz2IHhMdHJsAOodtv0%2FmmhT6PkclqRLcbhpcmfjV%2BZHzLB8qcA7pwJU4J7b16cNrbH4M4H6aXeirtuwDsz9SNTCALjPD3nPii50x5bjaDymRCbLGJaViJlhHLN1Ow6jdmhpCctxLAlvo9NgFxm3D%2Fu2NQPwiWf9FVdhvhEG6Vly8qOi2MaRmFy8yFTx0b0SvJ%2BjYMrmPctoN9JnSdC5mfdzau3a1TJ84gRD0a5wkaVA1zbDs5bfISEIuUzebreLqY03dV4mOvdqIcMe8qigz88fk%2FfIioH6xyxKOexoSCnFTOiiupCcQLPyao9jLu6iayqViY7QaIOTqQohZmkAMwVOasAsI3Ngh4zF97Qt0cVNkXO9gWfLI8DtuMleWqqgRNYdKnSgc5lCkRRYwGs1287ugXlSQzo890KPDAEovaKCnZ2ZSfh7Y4sNknI6i%2Bfc2Se2MIkIY%2B29Z6KWD5sagAGWg45Iji%2BV3hgY9ElPCTFh587%2BOojLKDXKMtS9Nk9lwcpifYXBl96MJe8jdm5uVMywn8d%2FQPhAVcWNwBKzLggV8JTQXyQ%2B4nNdpqrXdnMHf2HzYQGqKGZLKbR95p2QD0y61q1nNtiK4rxOOIXr70%2Fns%2BkdxGz%2BxOG5vPB%2FDzP9OCAA&x-oss-signature-version=OSS4-HMAC-SHA256&x-oss-credential=STS.NZvEFNUTmVK6gkWVVN8LzYFdc%2F20260807%2Feu-central-1%2Foss%2Faliyun_v4_request&x-oss-signature=68847222170a96d22f907fe0b83f26d98ea79c09439551b94c23818ba18529cc"
+		(property "Datasheet" "https://www.lcsc.com/search?q=C23029"
 			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
@@ -8908,7 +8908,7 @@
 				)
 			)
 		)
-		(property "Datasheet" "https://jlc-prod-smt.oss-eu-central-1.aliyuncs.com/smtDataManualFile/8588904365985423360-C293767.pdf?response-content-disposition=attachment%3B%20filename%3DC293767.pdf%3B%20filename%2A%3DUTF-8%27%27C293767.pdf&x-oss-date=20260827T164010Z&x-oss-expires=3600&x-oss-security-token=CAISgAN1q6Ft5B2yfSjIr5rBf46Dm%2BkUjoffTmfrj0RmZt0VlZbIgDz2IHhMdHJsAOodtv0%2FmmhT6PkclqRLcbhpcmfjV%2BZHzLB8qd9020Et557b16cNrbH4M4H6aXeirtuwDsz9SNTCALjPD3nPii50x5bjaDymRCbLGJaViJlhHLN1Ow6jdmhpCctxLAlvo9NgFxm3D%2Fu2NQPwiWf9FVdhvhEG6Vly8qOi2MaRmFy8yFTx0b0SvJ%2BjYMrmPctoN9JnSdC5mfdzau3a1TJ84gRD0a5wkaVA1zbDs5bfISEIuUzebreLqY03dV4mOvdqIcMe8qigz88fk%2FfIioH6xyxKOexoSCnFTOiiupCcQLPyao9jLu6iayqViY7QaIOTqQohZmkAMwVOasAsI3Ngh4zF97Qt0cVNkXO9gWfLI8DtuMleWirPm07BHjvyAFpORa%2Bb5wchMHn6pr9EWOXuJZUIn3b%2FstWNupKq5ldctHSeoXq108CXVnU5PXYIAZogK6KWD5sagAEnYLRsdocKCbShdrg6Em3EA2acJQBrbyyBHCOtElBp9beg8NNhTqR5xZeFT8DMqT6kWMnQve6qTx3ZGWBk%2FxPyBnI4814DWDTC4OWLRLnxv%2F0HQewLCqXu%2Fgs87wJ76yDIDikMlXcfffQ%2Fqpq085YVdFxjTRx9EW5S%2B6H7Qi26qCAA&x-oss-signature-version=OSS4-HMAC-SHA256&x-oss-credential=STS.NYt447v659E4LAZkD3jR9zScb%2F20260827%2Feu-central-1%2Foss%2Faliyun_v4_request&x-oss-signature=9868239ea565451698b6a949c9b568ad18e469b896f6feb8856019560ae3b016"
+		(property "Datasheet" "https://www.lcsc.com/search?q=C293767"
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
@@ -9081,7 +9081,7 @@
 				)
 			)
 		)
-		(property "Datasheet" "https://jlc-prod-smt.oss-eu-central-1.aliyuncs.com/smtDataManualFile/8770987774575165440-C1554.pdf?response-content-disposition=attachment%3B%20filename%3DC1554.pdf%3B%20filename%2A%3DUTF-8%27%27C1554.pdf&x-oss-date=20260827T164403Z&x-oss-expires=1800&x-oss-security-token=CAISgAN1q6Ft5B2yfSjIr5rBf46Dm%2BkUjoffTmfrj0RmZt0VlZbIgDz2IHhMdHJsAOodtv0%2FmmhT6PkclqRLcbhpcmfjV%2BZHzLB8qd9020Et557b16cNrbH4M4H6aXeirtuwDsz9SNTCALjPD3nPii50x5bjaDymRCbLGJaViJlhHLN1Ow6jdmhpCctxLAlvo9NgFxm3D%2Fu2NQPwiWf9FVdhvhEG6Vly8qOi2MaRmFy8yFTx0b0SvJ%2BjYMrmPctoN9JnSdC5mfdzau3a1TJ84gRD0a5wkaVA1zbDs5bfISEIuUzebreLqY03dV4mOvdqIcMe8qigz88fk%2FfIioH6xyxKOexoSCnFTOiiupCcQLPyao9jLu6iayqViY7QaIOTqQohZmkAMwVOasAsI3Ngh4zF97Qt0cVNkXO9gWfLI8DtuMleWirPm07BHjvyAFpORa%2Bb5wchMHn6pr9EWOXuJZUIn3b%2FstWNupKq5ldctHSeoXq108CXVnU5PXYIAZogK6KWD5sagAEnYLRsdocKCbShdrg6Em3EA2acJQBrbyyBHCOtElBp9beg8NNhTqR5xZeFT8DMqT6kWMnQve6qTx3ZGWBk%2FxPyBnI4814DWDTC4OWLRLnxv%2F0HQewLCqXu%2Fgs87wJ76yDIDikMlXcfffQ%2Fqpq085YVdFxjTRx9EW5S%2B6H7Qi26qCAA&x-oss-signature-version=OSS4-HMAC-SHA256&x-oss-credential=STS.NYt447v659E4LAZkD3jR9zScb%2F20260827%2Feu-central-1%2Foss%2Faliyun_v4_request&x-oss-signature=a31dcf13e8a0e8c20c55783782281035ad7c2fe466317fe038b7258bcf822f16"
+		(property "Datasheet" "https://www.lcsc.com/search?q=C1554"
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
@@ -9695,7 +9695,7 @@
 				)
 			)
 		)
-		(property "Datasheet" "https://jlc-prod-smt.oss-eu-central-1.aliyuncs.com/smtDataManualFile/8770987774575165440-C1554.pdf?response-content-disposition=attachment%3B%20filename%3DC1554.pdf%3B%20filename%2A%3DUTF-8%27%27C1554.pdf&x-oss-date=20260827T164403Z&x-oss-expires=1800&x-oss-security-token=CAISgAN1q6Ft5B2yfSjIr5rBf46Dm%2BkUjoffTmfrj0RmZt0VlZbIgDz2IHhMdHJsAOodtv0%2FmmhT6PkclqRLcbhpcmfjV%2BZHzLB8qd9020Et557b16cNrbH4M4H6aXeirtuwDsz9SNTCALjPD3nPii50x5bjaDymRCbLGJaViJlhHLN1Ow6jdmhpCctxLAlvo9NgFxm3D%2Fu2NQPwiWf9FVdhvhEG6Vly8qOi2MaRmFy8yFTx0b0SvJ%2BjYMrmPctoN9JnSdC5mfdzau3a1TJ84gRD0a5wkaVA1zbDs5bfISEIuUzebreLqY03dV4mOvdqIcMe8qigz88fk%2FfIioH6xyxKOexoSCnFTOiiupCcQLPyao9jLu6iayqViY7QaIOTqQohZmkAMwVOasAsI3Ngh4zF97Qt0cVNkXO9gWfLI8DtuMleWirPm07BHjvyAFpORa%2Bb5wchMHn6pr9EWOXuJZUIn3b%2FstWNupKq5ldctHSeoXq108CXVnU5PXYIAZogK6KWD5sagAEnYLRsdocKCbShdrg6Em3EA2acJQBrbyyBHCOtElBp9beg8NNhTqR5xZeFT8DMqT6kWMnQve6qTx3ZGWBk%2FxPyBnI4814DWDTC4OWLRLnxv%2F0HQewLCqXu%2Fgs87wJ76yDIDikMlXcfffQ%2Fqpq085YVdFxjTRx9EW5S%2B6H7Qi26qCAA&x-oss-signature-version=OSS4-HMAC-SHA256&x-oss-credential=STS.NYt447v659E4LAZkD3jR9zScb%2F20260827%2Feu-central-1%2Foss%2Faliyun_v4_request&x-oss-signature=a31dcf13e8a0e8c20c55783782281035ad7c2fe466317fe038b7258bcf822f16"
+		(property "Datasheet" "https://www.lcsc.com/search?q=C1554"
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
@@ -15141,7 +15141,7 @@
 			(justify left bottom mirror)
 		)
 	)
-	(gr_text "A.S.          V4\nW-Charger  08.26"
+	(gr_text "              V4\nW-Charger  08.26"
 		(at 127.3 98.3 0)
 		(layer "B.SilkS" knockout)
 		(uuid "5fd01c10-5c98-4a16-a69c-beffa3e5feb1")

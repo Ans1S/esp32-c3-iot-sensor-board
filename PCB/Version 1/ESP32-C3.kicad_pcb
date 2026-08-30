@@ -14196,7 +14196,7 @@
 		(layer "Edge.Cuts")
 		(uuid "f4be386e-73b9-4fa0-ae3d-ae66f605900a")
 	)
-	(gr_text "A.S.     V1\nW-Charger\n 06.2024"
+	(gr_text "         V1\nW-Charger\n 06.2024"
 		(at 148.9 85.9 0)
 		(layer "B.SilkS" knockout)
 		(uuid "0815a142-8880-4644-928d-c29ddd611f17")

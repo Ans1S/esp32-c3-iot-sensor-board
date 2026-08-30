@@ -1,0 +1,8 @@
+{
+  "name": "lil-sensor-protocol",
+  "version": "4.0.0",
+  "description": "Versioned ESP-NOW protocol shared by the station and sensor firmware",
+  "build": {
+    "includeDir": "include"
+  }
+}
