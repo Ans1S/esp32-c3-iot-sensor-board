@@ -1,8 +1,8 @@
-# Repository Agent Instructions
+# Repository AI Instructions
 
 ## Primary language
 
-English is the required language for all repository content created or modified by AI agents.
+English is the required language for all repository content created or modified by AI assistants.
 
 This rule applies to:
 
