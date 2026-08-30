@@ -839,7 +839,7 @@
 				)
 			)
 		)
-		(property "Datasheet" ""
+		(property "Datasheet" "https://www.lcsc.com/search?q=C16581"
 			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
@@ -1574,7 +1574,7 @@
 				)
 			)
 		)
-		(property "Datasheet" ""
+		(property "Datasheet" "https://www.lcsc.com/search?q=C22463806"
 			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
@@ -1919,7 +1919,7 @@
 				)
 			)
 		)
-		(property "Datasheet" ""
+		(property "Datasheet" "https://www.lcsc.com/search?q=C47647"
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
@@ -3551,7 +3551,7 @@
 				)
 			)
 		)
-		(property "Datasheet" ""
+		(property "Datasheet" "https://www.lcsc.com/search?q=C720477"
 			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
@@ -4097,7 +4097,7 @@
 				)
 			)
 		)
-		(property "Datasheet" ""
+		(property "Datasheet" "https://www.lcsc.com/search?q=C23029"
 			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
@@ -8908,7 +8908,7 @@
 				)
 			)
 		)
-		(property "Datasheet" ""
+		(property "Datasheet" "https://www.lcsc.com/search?q=C293767"
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
@@ -9081,7 +9081,7 @@
 				)
 			)
 		)
-		(property "Datasheet" ""
+		(property "Datasheet" "https://www.lcsc.com/search?q=C1554"
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
@@ -9695,7 +9695,7 @@
 				)
 			)
 		)
-		(property "Datasheet" ""
+		(property "Datasheet" "https://www.lcsc.com/search?q=C1554"
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
@@ -15141,7 +15141,7 @@
 			(justify left bottom mirror)
 		)
 	)
-	(gr_text "A.S.          V4\nW-Charger  08.26"
+	(gr_text "              V4\nW-Charger  08.26"
 		(at 127.3 98.3 0)
 		(layer "B.SilkS" knockout)
 		(uuid "5fd01c10-5c98-4a16-a69c-beffa3e5feb1")

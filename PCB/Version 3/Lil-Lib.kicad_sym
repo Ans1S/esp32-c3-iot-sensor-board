@@ -226,7 +226,7 @@
 				)
 			)
 		)
-		(property "Datasheet" ""
+		(property "Datasheet" "https://www.lcsc.com/search?q=C1554"
 			(at 0 0 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -2718,7 +2718,7 @@
 				)
 			)
 		)
-		(property "Datasheet" ""
+		(property "Datasheet" "https://www.lcsc.com/search?q=C16581"
 			(at -1.27 18.034 0)
 			(show_name no)
 			(do_not_autoplace no)

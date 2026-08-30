@@ -9,6 +9,7 @@
 .vscode/
 .clang_complete
 .gcc-flags.json
+**/compile_commands.json
 
 # Build directories
 build/
@@ -101,6 +102,8 @@ logs/
 tmp/
 *.tmp
 *.temp
+__pycache__/
+*.py[cod]
 
 # OS generated files
 .DS_Store
@@ -130,6 +133,16 @@ SW/libraries/
 # ===================================
 # Project Specific
 # ===================================
+
+# Only Firmware/ is maintained. Keep former local experiments out of Git.
+SW-VSCode/
+
+# Generated KiCad netlist exports contain machine-local source paths.
+PCB/**/*.xml
+
+# Unsanitized source renders stay local; public variants live beside them.
+Readme/V3B.webp
+Readme/backV4.webp
 
 # LTspice files and directory
 LTspice/

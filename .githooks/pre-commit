@@ -1,0 +1,24 @@
+#!/usr/bin/env sh
+# Blocks common credential files and likely real credentials before a commit.
+# Enable once per clone with: git config core.hooksPath .githooks
+set -eu
+
+blocked_files='(^|/)(\.env(\..*)?|.*\.(pem|key|p12|pfx)|.*(secret|credential).*)$'
+if git diff --cached --name-only --diff-filter=ACMR | grep -Eiq "$blocked_files"; then
+  echo 'Commit blocked: a credential-like file is staged.' >&2
+  echo 'Keep local credentials in ignored *.local, secrets.* or credentials.* files.' >&2
+  exit 1
+fi
+
+# Scan only added lines. Placeholder examples are allowed; actual values are
+# not. The public setup password is deliberately excluded because it is not a
+# secret and is printed in the README.
+if git diff --cached --unified=0 -- . ':!.githooks/**' | grep -E '^\+[^+].*(x-oss-(security-token|credential|signature)=|X-Amz-(Credential|Signature|Security-Token)=|-----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|gh[pousr]_[A-Za-z0-9_]{30,}|github_pat_[A-Za-z0-9_]{20,}|sk-(proj-)?[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|((api|read|write)[_-]?(key)|wifi[_-]?(password|ssid)|secret|token)([^[:alnum:]_]|$)[^=:]{0,24}[:=][[:space:]]*"[^"]{8,}")' | grep -Ev 'YOUR_(API_)?KEY|W-Charger-Setup'; then
+  echo 'Commit blocked: a possible credential or signed access token is staged.' >&2
+  exit 1
+fi
+
+if git diff --cached --unified=0 -- . ':!.githooks/**' | grep -E '^\+[^+].*([[:alpha:]]:[\\/]+Users[\\/]+|/Users/[^/]+/|/home/[^/]+/)'; then
+  echo 'Commit blocked: an absolute user-home path is staged.' >&2
+  exit 1
+fi
