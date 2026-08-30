@@ -1,187 +1,184 @@
 # W-Charger Sensor Firmware
 
-Eine gemeinsame Firmware deckt PCB V3 und V4 ab. Der Unterschied steckt nur im
-Build-Environment und im `hardware_profile`.
+One shared firmware codebase supports PCB V3 and V4. The only differences are
+the build environment and the `hardware_profile`.
 
 ```text
-pio run -e sensor_pcb_v3 -t upload   # vorhandene Testplatine
-pio run -e sensor_pcb_v4 -t upload   # neue Platine
+pio run -e sensor_pcb_v3 -t upload   # existing test board
+pio run -e sensor_pcb_v4 -t upload   # current board
 ```
 
-Es müssen keine WLAN-Daten, Stations-MAC, Funkkanäle oder Messintervalle in den
-Quellcode geschrieben werden. Ein neuer Sensor sucht die Station einmalig auf
-allen 13 ESP-NOW-Kanälen. Während des ersten zehnminütigen Pairing-Fensters
-wiederholt er diesen vollständigen Broadcast-Scan alle zehn Sekunden. Das gilt
-bis der Sensor im Dashboard tatsächlich hinzugefügt (`provisioned=true`) wurde;
-eine bloße Stationsantwort beendet den Suchmodus nicht. Nach dem Hinzufügen
-speichert er MAC und Kanal in NVS. Ein eingerichteter Sensor bleibt danach auf
-diesem gespeicherten Kanal.
+No Wi-Fi credentials, station MAC address, radio channel or measurement
+interval must be written into the source code. A new sensor scans all 13
+ESP-NOW channels for the station. During the initial ten-minute pairing window,
+it repeats this complete broadcast scan every ten seconds. This continues until
+the sensor is actually added in the dashboard (`provisioned=true`); a station
+response alone does not end discovery mode. After it is added, the sensor
+stores the station MAC address and channel in NVS and normally starts each
+future exchange on that saved channel.
 
-Ein neu geflashtes Firmware-Image wird über seinen ELF-SHA-Fingerabdruck
-erkannt. Beim ersten Start dieses Images werden die alte Stationszuordnung und
-der IAQ-Startzustand gelöscht, auch wenn das Upload-Werkzeug die NVS-Partition
-nicht mit gelöscht hat. Neustarts, Deep Sleep und vollständige Stromausfälle
-mit demselben Firmware-Image behalten die gespeicherten Zustände dagegen bei.
-Pro fälliger Übertragung versucht er die Station genau viermal zu erreichen:
-mit dem normalen Wert von 13 dBm, danach mit 16 dBm und 19 dBm und zuletzt mit
-der maximalen Sendeleistung von 21 dBm. Bleiben alle Antworten aus, beginnt
-kein zusätzlicher Funkzyklus; der Sensor schläft wieder für das konfigurierte
-Messintervall und versucht es beim nächsten fälligen Kontakt erneut.
+A newly flashed firmware image is identified by its ELF SHA fingerprint. On
+the first start of that image, the old station assignment and initial IAQ state
+are cleared even if the upload tool did not erase the NVS partition. Restarts,
+deep sleep and complete power loss with the same firmware image preserve the
+stored state. For each scheduled transmission, the sensor first tries the
+known channel at 13, 16, 19 and finally 21 dBm. If that channel is stale, it
+searches the other channels during the same scheduled exchange. When all
+responses fail, no extra radio cycle begins: the sensor sleeps for the
+configured reporting interval and tries again at the next scheduled contact.
 
-Der Sensortyp wird nicht mehr in eine eigene Firmware einkompiliert. Beim
-Hinzufügen oder späteren Bearbeiten wählt man auf der Station **Automatisch**,
-**BME280**, **BME680** oder **Kein Umweltsensor**. Die Einstellung sowie die
-BME680-Temperaturkorrektur werden mit der nächsten ESP-NOW-Antwort übertragen.
-Im Automatikmodus werden die Bosch-Chip-IDs an `0x76` und `0x77` geprüft.
+The sensor type is no longer compiled into a separate firmware image. When a
+sensor is added or edited on the station, select **Automatic**, **BME280**,
+**BME680** or **No environmental sensor**. The selection and BME680 temperature
+correction are transferred with the next ESP-NOW response. Automatic mode
+checks the Bosch chip IDs at `0x76` and `0x77`.
 
-Bei einem normalen BME280-Zyklus passiert nur:
+A normal BME280 cycle performs only these steps:
 
-1. Sensorversorgung einschalten und den BME280 im Forced Mode mit 1×
-   Oversampling lesen.
-2. Batteriespannung lesen; auf V4 den Teiler nur für die Messung einschalten.
-3. Ein validiertes Telemetriepaket per ESP-NOW senden.
-4. Kurz auf die Konfigurationsantwort der Station warten.
-5. Nur bei geänderter Revision die neue Konfiguration in NVS schreiben.
-6. Sensor- und ADC-Pfad sicher abschalten und in Deep Sleep gehen.
+1. Enable sensor power and read the BME280 in forced mode with 1x oversampling.
+2. Read battery voltage; on V4, enable the divider only for the measurement.
+3. Send a validated telemetry packet over ESP-NOW.
+4. Wait briefly for the station's configuration response.
+5. Write the new configuration to NVS only when its revision has changed.
+6. Safely disable the sensor and ADC paths and enter deep sleep.
 
-Die BME280-Konfiguration bleibt bewusst bei Boschs sparsamem
-Wettermonitor-Profil: Forced Mode, Temperatur/Druck/Feuchte jeweils 1× und IIR-
-Filter aus. Für langsame Raumwerte verbessert höheres Oversampling die
-praktische Aussagekraft kaum, verlängert aber Mess- und Aktivzeit. Die Station
-weckt diesen Sensortyp deshalb ausschließlich im gewählten Berichtsintervall.
+The BME280 configuration deliberately follows Bosch's energy-efficient weather
+monitoring profile: forced mode, 1x oversampling for temperature, pressure and
+humidity, and no IIR filter. Higher oversampling adds little practical value to
+slow-changing indoor measurements but increases measurement and active time.
+The station therefore wakes this sensor type only at the selected reporting
+interval.
 
-## Hardwareprofile
+## Hardware profiles
 
-| Funktion | PCB V3 | PCB V4 |
+| Function | PCB V3 | PCB V4 |
 |---|---:|---:|
 | ADC | GPIO3 | GPIO3 |
-| ADC-Freigabe | dauerhaft aktiv | GPIO6, aktiv-high |
-| Sensorversorgung | GPIO10, aktiv-high | GPIO10, PMOS aktiv-low |
-| I²C SDA / SCL | GPIO5 / GPIO4 | GPIO5 / GPIO4 |
-| Batterieteiler | empirisch validierter Softwarefaktor 1,67 | 100 kΩ / 150 kΩ, Faktor 1,667 |
+| ADC enable | always active | GPIO6, active high |
+| Sensor power | GPIO10, active high | GPIO10, PMOS active low |
+| I2C SDA / SCL | GPIO5 / GPIO4 | GPIO5 / GPIO4 |
+| Battery scaling | field-validated software factor 1.67 | 100 kOhm / 150 kOhm, factor 1.667 |
 
-Der Sensor kann von der Station aus beim nächsten Kontakt logisch auf
-Werkseinstellungen gesetzt werden. In der Weboberfläche ist das Intervall von
-einer Minute bis 24 Stunden frei konfigurierbar, um kurze Tests ebenso wie
-einen energiesparenden Langzeitbetrieb abzudecken.
+The station can logically restore a sensor to factory settings on its next
+contact. The web interface allows any interval from one minute to 24 hours,
+covering both short tests and energy-efficient long-term operation.
 
-## BME680 und Indoor Air Quality
+## BME680 and indoor air quality
 
-Der BME680 läuft mit Boschs BSEC2-Algorithmus und verwendet für ein stationäres
-Raumgerät den **Static IAQ**. Ein selbst aus dem Gaswiderstand berechneter Index
-wäre nicht gleichwertig: Feuchtekompensation, Sensoralterung, Drift und die
-adaptive Grundlinie gehören zum Algorithmus. Der Index reicht von 0 (saubere
-Luft) bis 500 (stark belastet); die zugehörige Genauigkeit 0–3 erscheint direkt
-im Dashboard. Solange sie 0 ist, steht dort „wird kalibriert“ und die Station
-sendet den IAQ noch nicht an ThingSpeak. Temperatur, Feuchte, Luftdruck und
-Gaswiderstand bleiben trotzdem verfügbar.
+The BME680 runs Bosch's BSEC2 algorithm and uses **Static IAQ** for a stationary
+indoor device. An index calculated independently from gas resistance would not
+be equivalent: humidity compensation, sensor ageing, drift and the adaptive
+baseline are part of the algorithm. The index ranges from 0 (clean air) to 500
+(heavily polluted), and the associated accuracy from 0 to 3 appears directly
+in the dashboard. While accuracy is 0, the dashboard displays "calibrating"
+and the station does not send IAQ to ThingSpeak. Temperature, humidity,
+pressure and gas resistance remain available.
 
-Erstinbetriebnahme und Langzeitbetrieb verwenden bewusst dieselbe Routine:
+Commissioning and long-term operation deliberately use the same routine:
 
-- vom ersten Start an und über die gesamte Lebensdauer läuft ausschließlich
-  `BSEC_SAMPLE_RATE_ULP` mit intern genau einer BME680-Messung alle fünf Minuten;
-- es gibt keinen Wechsel zwischen LP und ULP und damit keinen Sprung der
-  gelernten BSEC-Grundlinie durch einen Betriebsmoduswechsel;
-- Sensorversorgung und ESP32-C3 sind zwischen den Messungen abgeschaltet bzw.
-  im Deep Sleep;
-- Funkübertragung und ThingSpeak halten strikt das eingestellte
-  Berichtsintervall ein, etwa 10, 30 oder 60 Minuten;
-- BSEC-Zustand und logische Zeit bleiben im RTC-RAM; ein Flash-Checkpoint wird
-  bei verbesserter Genauigkeit und danach höchstens alle sechs Stunden erzeugt;
-- nach einem Batteriewechsel wird der letzte Flash-Zustand wiederhergestellt,
-  statt die adaptive Grundlinie vollständig zu verlieren.
+- `BSEC_SAMPLE_RATE_ULP` is the only mode used from the first start throughout
+  the device's lifetime, with exactly one internal BME680 measurement every
+  five minutes;
+- there is no switch between LP and ULP, avoiding a jump in the learned BSEC
+  baseline caused by an operating-mode change;
+- sensor power is off and the ESP32-C3 is in deep sleep between measurements;
+- radio transmission and ThingSpeak strictly follow the configured reporting
+  interval, such as 10, 30 or 60 minutes;
+- the logical reporting clock includes both deep-sleep and awake time, so a
+  report is not delayed by another five-minute BME680 cycle;
+- BSEC state and logical time remain in RTC RAM; a flash checkpoint is written
+  when accuracy improves and then no more than once every six hours;
+- after a battery replacement, the latest flash state is restored instead of
+  losing the adaptive baseline completely.
 
-Die Firmware lädt ausschließlich Boschs zur 3,3-V-Sensorversorgung passenden
-ULP-Konfigurationsblob. Die direkte Bosch-Sensor-API bleibt ein
-Verfügbarkeits-Fallback für Temperatur, Feuchte, Druck und Roh-Gaswiderstand.
-Sie erzeugt absichtlich **keinen** eigenen IAQ-Ersatzwert: Nur ein tatsächlich
-von BSEC gelieferter Static IAQ wird als IAQ markiert oder hochgeladen.
+The firmware loads only Bosch's ULP configuration blob intended for a 3.3 V
+sensor supply. The direct Bosch sensor API remains an availability fallback for
+temperature, humidity, pressure and raw gas resistance. It intentionally does
+**not** generate a substitute IAQ value: only a Static IAQ value actually
+provided by BSEC is marked or uploaded as IAQ.
 
-Die I²C-Sensorrail wird auf **PCB V3 und V4 vollständig abgeschaltet**. Der
-BME680 selbst behält dabei keinen Zustand. Deshalb wird er nach jedem Wakeup
-neu initialisiert, während der zuvor serialisierte BSEC-Lernzustand und eine
-kontinuierliche logische Zeit vor dem Ausschalten gesichert und beim nächsten
-Start wieder eingespielt werden. Das entspricht Boschs vorgesehenem
-`getState()`-/`setState()`-Ablauf für Systemabschaltungen.
+The I2C sensor power rail is **fully switched off on PCB V3 and V4**. The BME680
+itself retains no state while unpowered. It is therefore reinitialized after
+every wake-up, while the previously serialized BSEC learning state and a
+continuous logical time are saved before shutdown and restored on the next
+start. This follows Bosch's intended `getState()`/`setState()` flow for complete
+system shutdowns.
 
-Die anfängliche ULP-Stabilisierung dauert typischerweise ungefähr 20 Minuten
-und ist kein Versprechen auf endgültige IAQ-Genauigkeit 3. BSEC lernt den
-Gas-/IAQ-Pfad anhand wechselnder Luftzustände im Hintergrund weiter. Der
-Normalbetrieb bleibt dabei durchgehend aktiv; ein gesonderter Schnellstart mit
-erhöhter Heiz- und Funklast existiert nicht.
+Initial ULP stabilization typically takes approximately 20 minutes and does
+not guarantee final IAQ accuracy 3. BSEC continues learning the gas/IAQ path in
+the background as air conditions change. Normal operation remains active
+throughout; there is no separate fast-start mode with increased heater or radio
+load.
 
-Bei explizitem BME680 muss das Berichtsintervall fünf Minuten oder ein
-Vielfaches davon sein. Der vorgegebene Temperatur-Offset von `0,466 °C` stammt
-aus Boschs ULP-Beispiel und kann pro Einbauort auf der Station korrigiert werden.
-Er sollte erst nach einem Vergleich im thermisch eingeschwungenen Gehäuse
-geändert werden.
+When BME680 is selected explicitly, the reporting interval must be five minutes
+or a multiple of five minutes. The default temperature offset of `0.466 degC`
+comes from Bosch's ULP example and can be adjusted on the station for each
+installation. It should be changed only after comparison in an enclosure that
+has reached thermal equilibrium.
 
-Die Implementierung basiert auf Boschs offizieller
-[BME68x Sensor API](https://github.com/boschsensortec/BME68x_SensorAPI), der
-[BME68x Arduino-Bibliothek](https://github.com/boschsensortec/Bosch-BME68x-Library)
-und [BSEC2](https://github.com/boschsensortec/Bosch-BSEC2-Library). Die
-BME680-Grenzen, IAQ-Skala und ULP-Leistungswerte stehen im
-[BME680-Datenblatt](https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme680-ds001.pdf).
-BSEC2 enthält eine proprietäre Binärbibliothek; für Nutzung und Weitergabe gilt
-zusätzlich die [Bosch-BSEC-Lizenz](https://github.com/boschsensortec/Bosch-BSEC2-Library/blob/master/LICENSE.md).
+The implementation is based on Bosch's official
+[BME68x Sensor API](https://github.com/boschsensortec/BME68x_SensorAPI),
+[BME68x Arduino library](https://github.com/boschsensortec/Bosch-BME68x-Library)
+and [BSEC2](https://github.com/boschsensortec/Bosch-BSEC2-Library). The BME680
+limits, IAQ scale and ULP power figures are documented in the
+[BME680 data sheet](https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme680-ds001.pdf).
+BSEC2 contains a proprietary binary library; use and redistribution are also
+subject to the [Bosch BSEC license](https://github.com/boschsensortec/Bosch-BSEC2-Library/blob/master/LICENSE.md).
 
-Beim Build wird die festgehaltene BSEC2-2.1.5-Quelle automatisch mit einem
-kleinen Timing-Patch versehen. BSEC2 startet im Forced Mode zunächst nur die
-Messung; der Patch wartet die konfigurierte TPH-/Heizdauer plus eine
-konservative Marge ab und fragt `NO_NEW_DATA` bis zu 500 ms erneut ab. Der
-Treiber akzeptiert nur einen tatsächlich neuen BSEC-Ausgabedatensatz und hält
-die Sensorversorgung dafür insgesamt höchstens fünf Sekunden eingeschaltet.
-Liegt der nächste ULP-Termin weiter in der Zukunft, wird die Platine samt
-BME680 wieder vollständig abgeschaltet und exakt zu diesem Termin geweckt;
-sie wartet also nicht fünf Minuten mit eingeschaltetem Sensor. Das ist für die
-hier verwendete, nach jedem Zyklus abgeschaltete Sensorversorgung erforderlich.
-Die heruntergeladene Bosch-Bibliothek selbst wird nicht in das Repository
-kopiert.
+During a build, the pinned BSEC2 2.1.5 source is automatically adjusted with a
+small timing patch. In forced mode, BSEC2 initially starts only the measurement;
+the patch waits for the configured temperature/pressure/humidity and heater
+duration plus a conservative margin, then retries `NO_NEW_DATA` for up to
+500 ms. The driver accepts only a genuinely new BSEC output and keeps sensor
+power enabled for no more than five seconds in total. If the next ULP deadline
+is further in the future, the board and BME680 are switched off completely and
+woken exactly at that deadline; the board does not wait for five minutes with
+the sensor powered. This is required because this design removes sensor power
+after every cycle. The downloaded Bosch library itself is not copied into the
+repository.
 
-Falls ein Zyklus trotzdem nur eine direkte Bosch-Rohmessung liefert, bleibt der
-letzte echte BSEC-IAQ-Wert auf der Stationsseite sichtbar und wird als nicht
-frisch gekennzeichnet. Dieser alte Wert wird weder als neuer Verlaufspunkt noch
-zu ThingSpeak hochgeladen. Der nächste fällige BSEC-Zyklus versucht erneut,
-einen frischen IAQ-Wert zu erzeugen.
+If a cycle nevertheless provides only a direct Bosch raw measurement, the last
+genuine BSEC IAQ value remains visible on the station and is marked as stale.
+That old value is neither added as a new history point nor uploaded to
+ThingSpeak. The next scheduled BSEC cycle tries again to produce a fresh IAQ
+value.
 
-Die Station zeigt die anfängliche ULP-Stabilisierung und den späteren
-Hintergrund-Lernstatus an. Mess-, Funk- und Cloud-Betrieb verwenden von Beginn
-an dieselbe ULP-Routine. Die BSEC-Genauigkeit 0–3 bleibt sichtbar und kann sich
-durch unterschiedliche Luftzustände später weiter verbessern.
+The station displays the initial ULP stabilization and the later background
+learning status. Measurement, radio and cloud operation use the same ULP
+routine from the beginning. BSEC accuracy from 0 to 3 remains visible and can
+continue improving as the surrounding air conditions vary.
 
-## Erkennung und erneutes Hinzufügen
+## Discovery and re-adding sensors
 
-Ein nicht eingerichteter oder auf der Station gelöschter Sensor meldet sich
-zehn Minuten lang alle zehn Sekunden. Um Sensorheizer und ADC dabei nicht
-unnötig zu betreiben, wird sein Mess-Snapshot nur alle fünf Minuten erneuert.
-Nach zehn Minuten geht er zwischen den Anmeldeversuchen jeweils fünf Minuten in
-Deep Sleep. Beim erfolgreichen Hinzufügen beginnt der ausgewählte BME680 mit
-einem frischen Lernzustand direkt im ULP-Modus. Der Sensor
-speichert den Provisionierungsstatus selbst dauerhaft im NVS. Die Station hält
-ihn während der Funkbestätigung bereits in der eingerichteten Liste; verspätete
-Pairing-Pakete aus der Zeit vor dieser Bestätigung können ihn nicht wieder als
-neues Gerät markieren.
+An unconfigured sensor, or one deleted from the station, announces itself every
+ten seconds for ten minutes. To avoid operating the sensor heater and ADC
+unnecessarily, its measurement snapshot is refreshed only every five minutes.
+After ten minutes, it enters deep sleep for five minutes between discovery
+attempts. When it is added successfully, the selected BME680 starts with a
+fresh learning state directly in ULP mode. The sensor stores its provisioning
+status persistently in NVS. The station already keeps it in the configured list
+during radio confirmation, so delayed pairing packets from before confirmation
+cannot mark it as a new device again.
 
-## Treiber erweitern
+## Extending the drivers
 
-`environmental_sensor` ist nur die gemeinsame Fassade. Messdaten liegen im
-neutralen `EnvironmentalReading`; BME280, BME680 und BSEC-Persistenz besitzen
-eigene Header-/CPP-Dateien. Ein zukünftiger I²C-Sensor benötigt dadurch einen
-neuen Treiber, einen neuen Wert in `EnvironmentalSensorType` und einen Eintrag
-in `beginType()` – Funk, ADC, Deep Sleep und Konfigurationsspeicher bleiben
-unverändert.
+`environmental_sensor` is only the shared facade. Measurements use the neutral
+`EnvironmentalReading` type, while BME280, BME680 and BSEC persistence each
+have separate header and CPP files. A future I2C sensor therefore needs a new
+driver, a new value in `EnvironmentalSensorType` and an entry in `beginType()`;
+radio, ADC, deep sleep and configuration storage remain unchanged.
 
-## Batteriespannung kalibrieren
+## Calibrating battery voltage
 
-`analogReadMilliVolts()` nutzt bereits die ADC-Kalibrierdaten des ESP32-C3.
-Zusätzlich kann pro Sensor ein Multimeter-Referenzwert eingegeben werden. Die
-Station berechnet daraus einen Einpunkt-Verstärkungsfaktor, der die Toleranzen
-des externen Spannungsteilers und den verbleibenden Messfehler korrigiert:
+`analogReadMilliVolts()` already uses the ESP32-C3 ADC calibration data. A
+multimeter reference value can additionally be entered for each sensor. The
+station uses it to calculate a one-point gain factor that corrects external
+voltage-divider tolerance and the remaining measurement error:
 
-`neuer Faktor = bisheriger Faktor × Referenzspannung / letzter Messwert`
+`new factor = previous factor x reference voltage / latest measurement`
 
-Der zulässige Bereich 0,7–1,3 verhindert versehentliche extreme Werte. Die
-Kalibrierung korrigiert den Gain unter der sinnvollen Annahme eines
-Nullpunktes bei 0 V; für eine echte Zwei-Punkt-Kennlinie wären zwei präzise
-Referenzspannungen nötig. ADC- und Spannungsteilerpfad werden weiterhin nur für
-die wenigen Millisekunden der Messung eingeschaltet.
+The permitted range of 0.7 to 1.3 prevents accidental extreme values. The
+calibration corrects gain under the reasonable assumption of a zero point at
+0 V; a true two-point characteristic would require two precise reference
+voltages. The ADC and voltage-divider paths remain enabled only for the few
+milliseconds required by a measurement.
