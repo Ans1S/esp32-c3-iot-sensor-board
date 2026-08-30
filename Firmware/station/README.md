@@ -1,159 +1,151 @@
 # W-Charger Station Firmware
 
-Die Station läuft auf dem vorhandenen Seeed XIAO ESP32-S3. Sie hält WLAN und
-ESP-NOW gleichzeitig aktiv, sodass das Webinterface erreichbar bleibt und
-Sensoren nicht während eines Cloud-Uploads ausgesperrt werden.
+The station runs on the existing Seeed XIAO ESP32-S3. It keeps Wi-Fi and
+ESP-NOW active at the same time, so the web interface remains available and
+sensors are not locked out while a cloud upload is in progress.
 
-## Erster Start
+## First start
 
-1. `pio run -e station_s3 -t upload` (der Station-Upload löscht bewusst auch
-   die lokale NVS-Konfiguration und startet dadurch immer als Neuinstallation)
-2. Mit dem WLAN `W-Charger-XXXXXX` verbinden. Das initiale WLAN-Passwort ist
-   `W-Charger-Setup`.
-3. Normalerweise öffnet sich das Captive Portal automatisch. Falls nicht,
-   `http://192.168.4.1/` öffnen. Beim unkonfigurierten Erststart ist kein Login
-   nötig.
-4. Dem Einrichtungsassistenten folgen: Messintervall, optional ThingSpeak,
-   Sensoren und Heim-WLAN einstellen. Am Ende kann ein optionales, empfohlenes
-   Website-Passwort vergeben werden.
-5. Die Zusammenfassung bestätigen. Die Station speichert alles und startet
-   danach neu.
+1. Run `pio run -e station_s3 -t upload`. The station upload intentionally
+   erases the local NVS configuration, so every upload starts as a fresh
+   installation.
+2. Connect to the `W-Charger-XXXXXX` Wi-Fi network. The initial Wi-Fi password
+   is `W-Charger-Setup`.
+3. The captive portal normally opens automatically. If it does not, open
+   `http://192.168.4.1/`. No login is required during the unconfigured first
+   start.
+4. Follow the setup wizard to configure the measurement interval, optional
+   ThingSpeak integration, sensors and home Wi-Fi. An optional but recommended
+   website password can be set at the end.
+5. Confirm the summary. The station saves the configuration and restarts.
 
-Ein serieller Monitor ist für die Einrichtung nicht erforderlich. Das
-Setup-WLAN bleibt bis zur ersten erfolgreichen Verbindung zum Heimnetz aktiv
-und wird danach automatisch abgeschaltet. Es startet erst wieder bei einer
-Neuinstallation oder nach Werkseinstellungen. Im Heimnetz ist die Station unter
-`http://w-charger.local/` erreichbar, sofern der Client mDNS unterstützt.
-Abhängig vom Router funktioniert zusätzlich `http://w-charger/`.
+A serial monitor is not required for setup. The setup Wi-Fi remains active
+until the first successful connection to the home network and then switches
+off automatically. It starts again only after a fresh installation or factory
+reset. On the home network, the station is available at
+`http://w-charger.local/` when the client supports mDNS. Depending on the
+router, `http://w-charger/` may work as well.
 
-Nach der Einrichtung trennt das responsive Dashboard neu erkannte von bereits
-eingerichteten Sensoren. Ein neues Gerät wird automatisch eingeblendet und muss
-einmal im dreistufigen Assistenten bestätigt werden. Der Assistent vergibt Name
-und Intervall, wählt
-den angeschlossenen I²C-Sensor (automatisch, BME280, BME680 oder deaktiviert),
-stellt beim BME680 optional die Temperaturkorrektur ein, wählt ein gespeichertes
-ThingSpeak-Channel-Profil und ordnet die Messwerte den Feldern 1 bis 8 zu. Erst
-danach erscheint der Sensor mit letztem Kontakt,
-Messwerten, Batterie, Funkqualität und einem umschaltbaren lokalen Messverlauf
-im normalen Dashboard. Zur Auswahl stehen Intervalle ab einer Minute sowie
-eine benutzerdefinierte Zeit bis 24 Stunden. Der Stationsassistent ist nur bei
-einer Neuinstallation oder nach dem Zurücksetzen auf Werkseinstellungen
-erreichbar. Im laufenden Betrieb werden Änderungen direkt unter
-**Einstellungen** vorgenommen.
+After setup, the responsive dashboard separates newly discovered sensors from
+configured sensors. A new device appears automatically and must be confirmed
+once in the three-step wizard. The wizard assigns its name and interval,
+selects the attached I2C sensor (automatic, BME280, BME680 or disabled),
+optionally adjusts BME680 temperature compensation, selects a saved ThingSpeak
+channel profile and maps measurements to fields 1 through 8. Only then does
+the sensor appear in the regular dashboard with its last contact, readings,
+battery voltage, radio quality and switchable local history. Available
+intervals start at one minute and include a custom value of up to 24 hours.
+The station setup wizard is available only after a fresh installation or
+factory reset. During normal operation, changes are made directly under
+**Settings**.
 
-## Module
+## Modules
 
-- `config_store`: persistente Station- und Sensorkonfiguration in NVS sowie
-  lokale Messhistorien in LittleFS
-- `wifi_service`: einmaliger Setup-AP, Heim-WLAN-Reconnect, DNS und mDNS
-- `web_portal`: Dashboard, Sensor-Assistent, Channel-Profile, WLAN und Reset
-- `espnow_gateway`: validiertes, versioniertes Telemetrie-/Konfigurationsprotokoll
-- `sensor_registry`: Sensoren nach MAC-Adresse statt gehardcodierter IDs
-- `thingspeak_service`: HTTPS-Upload, Kontoverwaltung und automatisches
-  Erstellen privater Channels
+- `config_store`: persistent station and sensor configuration in NVS, plus
+  local measurement history in LittleFS
+- `wifi_service`: one-time setup access point, home Wi-Fi reconnect, DNS and
+  mDNS
+- `web_portal`: dashboard, sensor wizard, channel profiles, Wi-Fi and reset
+- `espnow_gateway`: validated and versioned telemetry/configuration protocol
+- `sensor_registry`: sensors identified by MAC address instead of hard-coded
+  IDs
+- `thingspeak_service`: HTTPS upload, account management and automatic creation
+  of private channels
 
-Bis zu sechs ThingSpeak-Channel-Profile können zentral gespeichert und von
-mehreren Sensoren wiederverwendet werden. Jedes Profil enthält einen Namen,
-die Channel-ID und optional Read- sowie Write-API-Key. Ein Sensor übernimmt
-Channel-ID und Write-Key durch Auswahl des Profils; die Schlüssel müssen dabei
-nicht erneut eingetippt werden. Alternativ kann im Sensor-Assistenten ein
-vorhandener Channel eingetragen oder mit dem User API Key automatisch ein
-neuer privater Channel angelegt werden.
+Up to six ThingSpeak channel profiles can be stored centrally and reused by
+multiple sensors. Each profile contains a name, the channel ID and optional
+read and write API keys. Selecting a profile gives a sensor its channel ID and
+write key without requiring the keys to be entered again. Alternatively, the
+sensor wizard can use an existing channel or automatically create a new private
+channel with the user API key.
 
-Die Zuordnung zu den ThingSpeak-Feldern ist pro Sensor frei konfigurierbar.
-Temperatur, Luftfeuchte, Luftdruck, Static IAQ, Gaswiderstand und
-Batteriespannung können jeweils auf `Feld 1` bis `Feld 8` oder auf `Nicht
-senden` gestellt werden. Mehrere Sensoren
-können denselben Channel und Write-Key verwenden und dabei unterschiedliche
-Felder belegen. Innerhalb eines Sensors verhindert die Oberfläche doppelte
-Feldbelegungen. Ein automatisch neu angelegter Channel startet mit Temperatur,
-Feuchte, Druck, IAQ, Batterie und Gaswiderstand auf den Feldern 1 bis 6. Beim
-BME680 übernimmt der Assistent diese Zuordnung direkt; sie bleibt vor dem
-Speichern frei änderbar.
+ThingSpeak field mapping is freely configurable for each sensor. Temperature,
+humidity, pressure, Static IAQ, gas resistance and battery voltage can each be
+assigned to `Field 1` through `Field 8` or set to `Do not upload`. Multiple
+sensors can use the same channel and write key while occupying different
+fields. The interface prevents duplicate field assignments within one sensor.
+An automatically created channel initially maps temperature, humidity,
+pressure, IAQ, battery voltage and gas resistance to fields 1 through 6. The
+BME680 wizard adopts this mapping by default, but it remains editable before
+saving.
 
-Beim BME680 zeigt das Dashboard neben dem IAQ die BSEC-Genauigkeit von
-„Hintergrundlernen“ bis „hoch“ sowie den Roh-Gaswiderstand in kΩ. BSEC läuft vom
-ersten Start an ausschließlich energiesparend im ULP-Modus und misst intern alle
-fünf Minuten; ESP-NOW und ThingSpeak folgen strikt dem gewählten längeren
-Berichtsintervall. Die anfängliche ULP-Stabilisierung von ungefähr 20 Minuten
-wird transparent angezeigt, ohne Betriebsmodus oder Funkintervall zu wechseln.
+For BME680 sensors, the dashboard shows BSEC accuracy from "background
+learning" through "high" next to the IAQ value, as well as raw gas resistance
+in kOhm. BSEC operates exclusively in its energy-efficient ULP mode from the
+first start and measures internally every five minutes. ESP-NOW and ThingSpeak
+strictly follow the selected, longer reporting interval. The initial ULP
+stabilization period of approximately 20 minutes is shown transparently without
+changing the operating mode or radio interval.
 
-Neue, noch nicht eingerichtete Sensoren werden automatisch auf der Übersicht
-eingeblendet; der zusätzliche Hinzufügen-Button ist nur noch ein direkter
-Sprung dorthin. Bereits eingerichtete Sensoren können aus der lokalen Station
-gelöscht werden. Solange ein gelöschter Sensor weiter sendet, erscheint er beim
-nächsten Kontakt erwartungsgemäß wieder als neues Gerät.
+New, unconfigured sensors appear automatically in the overview; the additional
+add button is now only a shortcut to that section. Configured sensors can be
+deleted from the local station. As long as a deleted sensor continues to
+transmit, it reappears as a new device on its next contact, as expected.
 
-Im Bearbeiten-Assistenten stehen außerdem eine transparente BME680-
-Erstinbetriebnahme, das bewusste Zurücksetzen des IAQ-Lernzustands und eine
-optionale Batteriespannungs-Kalibrierung mit Multimeterwert zur Verfügung. Das
-Die Station speichert unabhängig von einem geöffneten Browser für jeden Sensor
-eine rollierende 24-Stunden-Historie. Die 48 festen 30-Minuten-Fenster enthalten
-jeweils die neueste empfangene Messung dieses Fensters: Temperatur, Feuchte,
-Druck, IAQ samt Accuracy, Gaswiderstand und Batteriespannung. Ein Handy oder ein
-anderer Browser lädt diese Daten vollständig über die lokale Stations-API; ein
-Neuladen der Seite ist zum Sammeln nicht erforderlich. Die Historie übersteht
-auch einen normalen Neustart der Station. Ein Dropdown wechselt den beschrifteten
-Plot zwischen allen vom Sensor unterstützten Größen; Zeit, Wertebereich und
-Einheit werden auf den Achsen angezeigt. Tatsächlich fehlende 30-Minuten-Fenster
-werden nicht durch eine erfundene Verbindungslinie überbrückt.
+The editing wizard also provides transparent BME680 commissioning, an explicit
+reset of the IAQ learning state and optional battery-voltage calibration using
+a multimeter reference. Independently of any open browser, the station stores
+a rolling 24-hour history for every sensor. Its 48 fixed 30-minute windows each
+contain the latest measurement received during that window: temperature,
+humidity, pressure, IAQ and its accuracy, gas resistance and battery voltage.
+A phone or another browser loads the complete data through the local station
+API; keeping or reloading a page is not required for collection. The history
+survives a normal station restart. A drop-down switches the labelled plot
+between every quantity supported by the sensor, with time, value range and unit
+shown on the axes. Truly missing 30-minute windows are not bridged by an
+invented connecting line.
 
-Im Captive Portal und in den späteren Stationseinstellungen können Channel-ID
-sowie Read- und Write-API-Key hinterlegt werden. Der Read-Key ist nur für den
-Lesezugriff auf private Channels gedacht. Für das Senden verwendet die Station
-den Write-Key. Der User API Key wird ausschließlich benötigt, wenn W-Charger
-selbst einen neuen ThingSpeak-Channel anlegen soll. Alle API-Keys werden auf
-ausdrücklichen Wunsch im lokalen Webinterface im Klartext angezeigt und nach
-einem Neustart wieder in die Felder geladen. Der Cloud-Upload bleibt bis zur
-ausdrücklichen Aktivierung im Sensor-Assistenten ausgeschaltet.
+The channel ID and read/write API keys can be entered in the captive portal and
+later in the station settings. The read key is used only to read private
+channels, while the station uses the write key for uploads. The user API key is
+required only when W-Charger should create a new ThingSpeak channel itself. API
+keys are shown in plain text in the local web interface only on explicit
+request and are restored to the fields after a restart. Cloud upload remains
+disabled until it is explicitly enabled in the sensor wizard.
 
-Mit gespeichertem User API Key lädt die Einstellungsseite die ThingSpeak-
-Channels automatisch. Channels lassen sich dort erstellen, umbenennen, mit
-Beschreibung, Feldern, Tags, Metadaten, Sichtbarkeit und Ortsdaten bearbeiten,
-leeren oder löschen. Direkte Channel- und Feed-URLs werden angezeigt. Ein neu
-erkannter Sensor kann im Assistenten einen dieser Channels auswählen;
-Channel-ID und Write-Key werden dann automatisch in ein lokales Sensor-Profil
-übernommen.
+When a user API key is stored, the settings page loads ThingSpeak channels
+automatically. Channels can be created, renamed, edited with their description,
+fields, tags, metadata, visibility and location, cleared or deleted. Direct
+channel and feed URLs are displayed. A newly detected sensor can select one of
+these channels in the wizard; its channel ID and write key are then copied into
+a local sensor profile automatically.
 
-Das Statusfeld auf der Übersicht meldet erst dann **Verbunden**, wenn
-ThingSpeak einen Schreibvorgang mit einer echten Entry-ID bestätigt hat. Bei
-einem falschen Write-Key, einem HTTP-/TLS-Fehler oder fehlenden gültigen
-Messwerten wird stattdessen eine konkrete Fehlermeldung angezeigt. Die lokale
-24-Stunden-Historie wird ausschließlich auf der Station gehalten und ist damit
-nicht von ThingSpeak oder dem Speicher eines einzelnen Browsers abhängig. Ein
-vollständiger Firmware-Upload mit Flash-Löschung sowie das Zurücksetzen auf
-Werkseinstellungen löschen diese Historie bewusst.
+The status panel reports **Connected** only after ThingSpeak confirms a write
+with a real entry ID. An incorrect write key, HTTP/TLS error or absence of valid
+measurements produces a specific error message instead. The local 24-hour
+history is stored exclusively on the station and therefore does not depend on
+ThingSpeak or one browser's storage. A complete firmware upload with flash
+erasure and a factory reset intentionally delete this history.
 
-## Sicherheitsmodell dieses Stands
+## Security model of this release
 
-- Heim-WLAN- und ThingSpeak-Zugangsdaten liegen nur in NVS.
-- Das Setup-WLAN nutzt WPA2 mit dem initialen Passwort `W-Charger-Setup`.
-- Die lokale Weboberfläche kann bereits im Erstsetup oder später in den
-  Einstellungen mit einem mindestens acht Zeichen langen Passwort geschützt
-  werden. Geschützt sind Dashboard, Konfiguration, Historie, WLAN-Scan und alle
-  schreibenden sowie ThingSpeak-bezogenen APIs.
-- Das Website-Passwort liegt nicht im Klartext vor, sondern als gerätegebundener
-  SHA-256-Hash. Erfolgreiche Anmeldungen erhalten ein zufälliges, nur bis zum
-  nächsten Stationsneustart gültiges HttpOnly-Session-Cookie; wiederholte
-  Fehlversuche werden kurzzeitig gedrosselt.
-- ThingSpeak-API-Keys bleiben im angemeldeten Webinterface auf ausdrücklichen
-  Produktwunsch sichtbar. Ohne aktiviertes Website-Passwort kann deshalb jedes
-  Gerät im lokalen Netz diese Schlüssel lesen und Einstellungen ändern; das
-  Dashboard weist sichtbar darauf hin.
-- ThingSpeak-Aufrufe verwenden HTTPS mit geprüftem DigiCert-Root-Zertifikat.
-- ESP-NOW-Pakete besitzen Magic, Protokollversion, feste Längen und CRC32.
+- Home Wi-Fi and ThingSpeak credentials are stored only in NVS.
+- The setup Wi-Fi uses WPA2 with the initial password `W-Charger-Setup`.
+- The local web interface can be protected during initial setup or later in
+  Settings with a password of at least eight characters. This protects the
+  dashboard, configuration, history, Wi-Fi scan, all write operations and all
+  ThingSpeak-related APIs.
+- The website password is stored as a device-bound SHA-256 hash rather than in
+  plain text. Successful logins receive a random HttpOnly session cookie that
+  remains valid only until the next station restart. Repeated failed attempts
+  are briefly rate-limited.
+- At the explicit request of the product design, ThingSpeak API keys remain
+  visible in the authenticated web interface. Without an enabled website
+  password, any device on the local network can therefore read these keys and
+  change settings; the dashboard displays a clear warning.
+- ThingSpeak requests use HTTPS with a verified DigiCert root certificate.
+- ESP-NOW packets include a magic value, protocol version, fixed lengths and
+  CRC32.
 
-CRC32 schützt vor Übertragungsfehlern, ist aber keine kryptografische
-Authentifizierung. Individuelle ESP-NOW-Schlüssel und ein physisch bestätigter
-Pairing-Ablauf sind deshalb als nächster Härtungsschritt vorgesehen.
+CRC32 protects against transmission errors but does not provide cryptographic
+authentication. Individual ESP-NOW keys and a physically confirmed pairing
+flow are therefore planned as the next hardening step.
 
-Die lokale Weboberfläche wird weiterhin über HTTP ausgeliefert. Der
-Passwortschutz verhindert unbeabsichtigten Zugriff durch andere Teilnehmer im
-Heimnetz, ersetzt aber keine Transportverschlüsselung gegen aktives Mitschneiden
-im selben Netz.
+The local web interface is still served over HTTP. Password protection prevents
+unintended access by other participants on the home network, but it does not
+replace transport encryption against active interception on that network.
 
-Die verwendete 8-MB-Partition besitzt zwei OTA-fähige App-Slots mit jeweils
-rund 3,19 MiB. Das schafft Reserve, implementiert aber noch keinen
-Firmware-Upload. Der aktuelle Stand verteilt ausschließlich Einstellungen an
-die Sensoren; der sichere Binär-OTA-Ablauf ist in `../ARCHITECTURE.md`
-abgegrenzt.
+The selected 8 MB partition layout has two OTA-capable application slots of
+approximately 3.19 MiB each. This provides headroom but does not yet implement
+firmware upload. The current release distributes only settings to the sensors;
+the secure binary OTA flow is scoped separately in `../ARCHITECTURE.md`.
