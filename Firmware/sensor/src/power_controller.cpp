@@ -37,11 +37,19 @@ void PowerController::adcPower(bool enabled) {
 void PowerController::prepareForDeepSleep() {
   sensorPower(false);
   adcPower(false);
-  gpio_hold_en(kHardware.sensorPowerPin);
+
+  // GPIO6..21 are digital GPIOs on the ESP32-C3. Holding one of these pads
+  // through deep sleep can keep its digital power domain supplied and increase
+  // sleep current dramatically. Both board revisions have a safe unpowered
+  // state when the control pin becomes high impedance: V3 powers the sensor
+  // directly from GPIO10, while V4 biases its PMOS and ADC gates off with
+  // external resistors. Let the ESP32-C3 place these pins into their normal
+  // high-impedance deep-sleep state instead of retaining the output drivers.
+  gpio_hold_dis(kHardware.sensorPowerPin);
   if (kHardware.adcEnablePin != GPIO_NUM_NC) {
-    gpio_hold_en(kHardware.adcEnablePin);
+    gpio_hold_dis(kHardware.adcEnablePin);
   }
-  gpio_deep_sleep_hold_en();
+  gpio_deep_sleep_hold_dis();
 }
 
 }  // namespace sensor
