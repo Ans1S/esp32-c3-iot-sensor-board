@@ -53,10 +53,8 @@ monitor*.log
 *.p12
 *.pfx
 
-# Local Codex project guidance and skills
-# The repository-wide root guidance is versioned; nested guidance stays local.
+# Local Codex project guidance and skills (never publish)
 **/AGENTS.md
-!/AGENTS.md
 **/AGENTS.override.md
 **/.agents/
 **/.codex/
