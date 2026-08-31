@@ -7,7 +7,7 @@ namespace lil {
 namespace protocol {
 
 constexpr uint32_t kMagic = 0x4C494C32UL;  // "LIL2"
-constexpr uint8_t kVersion = 4;
+constexpr uint8_t kVersion = 5;
 constexpr size_t kMacLength = 6;
 constexpr size_t kMaxPacketSize = 250;
 
@@ -31,6 +31,13 @@ enum class EnvironmentalSensorType : uint8_t {
   kBme280 = 1,
   kBme680 = 2,
   kDisabled = 255,
+};
+
+enum class SensorOperatingMode : uint8_t {
+  kUnknown = 0,
+  kDiscovery = 1,
+  kEnergySaving = 2,
+  kChannelRecovery = 3,
 };
 
 enum ConfigFlag : uint16_t {
@@ -86,6 +93,7 @@ struct TelemetryPayload {
   float gasResistanceOhms;
   uint16_t batteryMillivolts;
   uint8_t pcbVersion;
+  SensorOperatingMode operatingMode;
   int8_t lastStationRssi;
   EnvironmentalSensorType sensorType;
   uint8_t iaqAccuracy;

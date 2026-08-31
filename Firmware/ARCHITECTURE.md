@@ -86,12 +86,34 @@ GPIO6-controlled battery divider and an active-low GPIO10 PMOS sensor rail with
 a nominal divider factor of 1.667.
 
 Unprovisioned sensors advertise every ten seconds for the first ten minutes and
-scan all 13 channels during each fast-discovery wake. Afterwards, they wake
-every five minutes and scan four rotating channels per wake to reduce battery
-cost. Configured sensors use four escalating-power attempts on the saved
-channel and scan the remaining channels during the same scheduled report if the
-saved channel has become stale. A completely failed exchange does not create an
-extra retry wake; the next attempt follows the configured report interval.
+scan all 13 channels during each discovery wake. Afterwards, they wake every
+five minutes but still scan all 13 channels, so commissioning never depends on
+the current rotating subset. Discovery alone uses a short random radio delay to
+prevent sensors powered together from repeatedly colliding.
+
+Configured sensors try the saved channel twice. A commissioning recovery guard
+remains active after a sensor is added: if the setup-AP channel stops
+responding, the sensor scans all 12 alternatives in the same wake and stores
+the channel returned by the station after it joins the home Wi-Fi network.
+After that transition succeeds, stale-channel recovery is limited to three
+rotating channels once each per scheduled report. The recovery cursor survives
+in RTC RAM, so later reports continue the scan without permanently extending
+the active radio window. A completely failed configured exchange does not
+create an extra retry wake; the next attempt follows the configured report
+interval. A one-time sub-second deep-sleep phase offset staggers sensors that
+started together, and both ESP32-C3 PCB targets run at 80 MHz.
+
+The sensor selects energy-saving mode only when NVS contains a complete
+assignment (`provisioned`, valid station MAC and valid channel). A fresh flash,
+local factory reset or `provisioned=false` response clears the station identity
+and selects discovery mode. Consequently an incomplete or interrupted setup
+cannot accidentally use the configured sleep and unicast path.
+
+Protocol V5 includes the sensor's current operating mode in telemetry:
+discovery, energy saving or channel recovery. The station exposes this value in
+`/api/status` and renders it in both the captive setup wizard and the normal
+dashboard. Unknown is reserved for a stored station entry without a current V5
+telemetry packet.
 
 BME680 nodes still wake every five minutes to maintain BSEC ULP timing, but
 ESP-NOW and ThingSpeak follow the configured reporting interval. The logical

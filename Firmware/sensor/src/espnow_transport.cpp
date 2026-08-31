@@ -13,8 +13,8 @@ constexpr uint8_t kBroadcastMac[6] = {0xFF, 0xFF, 0xFF,
                                       0xFF, 0xFF, 0xFF};
 constexpr uint32_t kSendWaitMs = 180;
 constexpr uint32_t kResponseWaitMs = 260;
-constexpr uint8_t kChannelsPerDiscoveryWake = 4;
-constexpr uint8_t kUnicastAttempts = 4;
+constexpr uint8_t kDiscoveryChannelStride = 4;
+constexpr uint8_t kKnownChannelAttempts = 2;
 constexpr uint8_t kBroadcastAttempts = 1;
 constexpr uint8_t kLpNormalAttempts = 2;
 constexpr uint8_t kLpRecoveryAttempts = 1;
@@ -26,9 +26,6 @@ int8_t txPowerForAttempt(int8_t baseQuarterDbm, uint8_t attempt,
   const int8_t base = constrain(baseQuarterDbm, 8, kMaximumTxPowerQuarterDbm);
   if (broadcast || attempt == 0) {
     return base;
-  }
-  if (attempt >= kUnicastAttempts - 1) {
-    return kMaximumTxPowerQuarterDbm;
   }
   return static_cast<int8_t>(
       min(static_cast<int>(kMaximumTxPowerQuarterDbm),
@@ -89,58 +86,46 @@ void EspNowTransport::receiveCallback(const esp_now_recv_info_t* info,
 
 ExchangeResult EspNowTransport::exchange(
     const lil::protocol::TelemetryPacket& packet,
-    const SensorRuntimeConfig& config, bool fastDiscovery) {
+    const SensorRuntimeConfig& config) {
   ExchangeResult result{};
   expectedSequence_ = packet.header.sequence;
   const bool configured = config.provisioned && config.stationKnown;
   const uint8_t* destination =
       configured ? config.stationMac : kBroadcastMac;
 
-  // Sensors with identical intervals otherwise wake within the same few
-  // milliseconds. A short random backoff prevents repeatable RF collisions.
-  // Also stagger brand-new sensors. Several units are commonly powered at
-  // once during setup and would otherwise broadcast on every channel in lock
-  // step, repeatedly colliding before the station can answer.
-  delay(esp_random() % 121U);
+  // Discovery is a commissioning operation, so prioritize reliable concurrent
+  // discovery over active-time savings. Once provisioned, this delay is never
+  // used and the normal low-power path remains short.
+  if (!configured) {
+    delay(esp_random() % 121U);
+  }
 
   if (tryChannel(config.wifiChannel, destination, packet, result,
                  config.txPowerQuarterDbm,
-                 configured ? kUnicastAttempts : kBroadcastAttempts)) {
+                 configured ? kKnownChannelAttempts : kBroadcastAttempts)) {
     return result;
   }
 
-  // A configured sensor first uses the last channel confirmed by the station.
-  // If that channel fails, search the remaining channels by unicast. This is
-  // essential when setup finishes: the station AP can use the fallback
-  // channel, while the home WLAN moves the station radio to another channel.
-  // The scan only costs energy while the saved channel is actually stale.
+  // Configured sensors keep the normal radio window short. The caller decides
+  // whether this is a normal bounded recovery or the one-time full recovery
+  // needed while the station moves from its setup AP to the home Wi-Fi channel.
   if (configured) {
-    for (uint8_t channel = 1; channel <= 13; ++channel) {
-      if (channel == config.wifiChannel) {
-        continue;
-      }
-    if (tryChannel(channel, destination, packet, result,
-                      config.txPowerQuarterDbm, kUnicastAttempts)) {
-        return result;
-      }
-    }
     return result;
   }
 
   const uint8_t scanStart =
       static_cast<uint8_t>((packet.header.sequence *
-                            kChannelsPerDiscoveryWake) % 13U) +
+                            kDiscoveryChannelStride) % 13U) +
       1U;
-  const uint8_t scanLimit = fastDiscovery ? 13 : kChannelsPerDiscoveryWake;
-  uint8_t scanned = 0;
-  for (uint8_t offset = 0; offset < 13 && scanned < scanLimit;
-       ++offset) {
+  // An unprovisioned sensor scans the complete 2.4 GHz channel range during
+  // every discovery wake. Only the wake interval becomes slower after the
+  // initial pairing window; channel coverage must not become incomplete.
+  for (uint8_t offset = 0; offset < 13; ++offset) {
     const uint8_t channel =
         static_cast<uint8_t>((scanStart - 1U + offset) % 13U) + 1U;
     if (channel == config.wifiChannel) {
       continue;
     }
-    ++scanned;
     if (tryChannel(channel, kBroadcastMac, packet, result,
                    config.txPowerQuarterDbm, kBroadcastAttempts)) {
       return result;
@@ -160,9 +145,8 @@ ExchangeResult EspNowTransport::exchangeLpChannel(
   }
   expectedSequence_ = packet.header.sequence;
   // Keep each radio window short. Normal reports get two attempts on the known
-  // channel. Recovery scans use one maximum-power attempt per BSEC cycle and
-  // therefore do not unnecessarily extend the active time.
-  delay(esp_random() % 31U);
+  // channel. Recovery scans use one maximum-power attempt per scheduled report
+  // and therefore do not unnecessarily extend the active time.
   tryChannel(channel, config.stationMac, packet, result,
              config.txPowerQuarterDbm,
              recoveryAttempt ? kLpRecoveryAttempts : kLpNormalAttempts,

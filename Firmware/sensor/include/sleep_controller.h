@@ -9,7 +9,8 @@ namespace sensor {
 class SleepController {
  public:
   [[noreturn]] static void deepSleep(uint32_t seconds,
-                                     PowerController& power);
+                                     PowerController& power,
+                                     uint32_t additionalMilliseconds = 0);
 };
 
 }  // namespace sensor

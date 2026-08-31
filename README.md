@@ -146,10 +146,13 @@ Key behavior:
   five minutes while radio reports follow the configured longer interval.
 - Initial BME680 stabilization takes roughly 20 minutes; background learning
   continues afterwards.
-- The station retains 48 local half-hour windows per sensor, creating a rolling
-  24-hour history without an open browser or ThingSpeak.
+- The station retains a rolling 24-hour history for every sensor. Its local
+  history step follows that sensor's measurement interval, so a 10-minute
+  interval produces 10-minute points and a 20-minute interval produces
+  20-minute points.
 - ThingSpeak channels and field mappings are optional and configured centrally
-  in the station UI.
+  in the station UI. Initial setup only asks for the account User API Key;
+  channel creation, selection, keys and field mapping remain in the dashboard.
 
 ## Upload the firmware
 
@@ -230,8 +233,9 @@ All three release targets currently compile successfully:
    credential.
 3. If the captive portal does not open, browse to
    [`http://192.168.4.1/`](http://192.168.4.1/). Select a 2.4 GHz home network,
-   configure optional ThingSpeak access and set the recommended website
-   password.
+   optionally enter the single ThingSpeak User API Key and set the recommended
+   website password. Advanced ThingSpeak channel settings are available later
+   in the dashboard.
 4. After the station joins the home network, open
    [`http://w-charger.local/`](http://w-charger.local/) or the LAN address
    shown during setup.
@@ -262,9 +266,19 @@ This repository is designed to be public:
   ```
 
 Set a station website password before using ThingSpeak. Without it, another
-device on the same trusted LAN could view configuration and API keys. The local
-dashboard uses HTTP, so its password protects access but does not encrypt local
-traffic. ThingSpeak requests use HTTPS.
+device on the same trusted LAN could view configuration and API keys. When
+enabled, the station uses independent, bounded in-memory login sessions with a
+30-minute absolute lifetime, CSRF-protected server-side sign-out, device-wide
+login throttling, CSRF and same-origin checks, and compact browser security
+headers. These
+protections are intentionally lightweight for the ESP32-S3.
+
+The local dashboard still uses HTTP, so its password protects access but does
+not encrypt local traffic. Publicly trusted certificates cannot cover the
+station's `.local` name or changing private IP address, while a self-signed
+certificate would require a browser exception and would interfere with the
+captive-portal flow. Use the dashboard on a trusted home network. ThingSpeak
+requests use HTTPS.
 
 ESP-NOW packets currently have protocol versioning, length checks and CRC32,
 but no per-device cryptographic authentication. Treat the current system as a

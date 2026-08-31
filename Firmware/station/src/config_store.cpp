@@ -406,9 +406,21 @@ bool ConfigStore::loadHistory(size_t index, void* output, size_t length) {
       historyBytesLength(index) != length) {
     return false;
   }
+  return loadHistoryRange(index, 0, output, length);
+}
+
+bool ConfigStore::loadHistoryRange(size_t index, size_t offset, void* output,
+                                   size_t length) {
+  if (index >= kMaxSensors || output == nullptr || length == 0) {
+    return false;
+  }
   const String key = historyKey(index);
   File file = LittleFS.open(key, FILE_READ);
-  return file && file.read(static_cast<uint8_t*>(output), length) == length;
+  if (!file || offset > file.size() || length > file.size() - offset ||
+      !file.seek(offset)) {
+    return false;
+  }
+  return file.read(static_cast<uint8_t*>(output), length) == length;
 }
 
 bool ConfigStore::saveHistory(size_t index, const void* data, size_t length) {
@@ -427,6 +439,62 @@ bool ConfigStore::saveHistory(size_t index, const void* data, size_t length) {
   }
   file.close();
   return LittleFS.rename(temporary, key);
+}
+
+bool ConfigStore::saveHistoryParts(size_t index, const void* header,
+                                   size_t headerLength, const void* samples,
+                                   size_t samplesLength) {
+  if (index >= kMaxSensors || header == nullptr || headerLength == 0 ||
+      (samplesLength > 0 && samples == nullptr)) {
+    return false;
+  }
+  const String key = historyKey(index);
+  const String temporary = key + ".tmp";
+  File file = LittleFS.open(temporary, FILE_WRITE);
+  const bool headerWritten =
+      file && file.write(static_cast<const uint8_t*>(header), headerLength) ==
+                  headerLength;
+  const bool samplesWritten =
+      headerWritten &&
+      (samplesLength == 0 ||
+       file.write(static_cast<const uint8_t*>(samples), samplesLength) ==
+           samplesLength);
+  if (!samplesWritten) {
+    if (file) {
+      file.close();
+    }
+    LittleFS.remove(temporary);
+    return false;
+  }
+  file.close();
+  return LittleFS.rename(temporary, key);
+}
+
+bool ConfigStore::updateHistory(size_t index, size_t expectedLength,
+                                const void* header, size_t headerLength,
+                                size_t sampleOffset, const void* sample,
+                                size_t sampleLength) {
+  if (index >= kMaxSensors || header == nullptr || headerLength == 0 ||
+      sample == nullptr || sampleLength == 0 || sampleOffset < headerLength ||
+      sampleOffset > expectedLength ||
+      sampleLength > expectedLength - sampleOffset) {
+    return false;
+  }
+  const String key = historyKey(index);
+  File file = LittleFS.open(key, "r+");
+  if (!file || file.size() != expectedLength || !file.seek(sampleOffset) ||
+      file.write(static_cast<const uint8_t*>(sample), sampleLength) !=
+          sampleLength) {
+    return false;
+  }
+  file.flush();
+  if (!file.seek(0) ||
+      file.write(static_cast<const uint8_t*>(header), headerLength) !=
+          headerLength) {
+    return false;
+  }
+  file.flush();
+  return true;
 }
 
 bool ConfigStore::deleteHistory(size_t index) {
