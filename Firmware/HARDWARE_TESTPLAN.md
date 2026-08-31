@@ -9,7 +9,9 @@ commit, board revision, power source and measurement equipment.
 1. Upload the station target. Confirm that the upload erases the old flash/NVS
    state and that the `W-Charger-XXXXXX` setup network appears.
 2. Connect with `W-Charger-Setup`, open `http://192.168.4.1/` and complete the
-   unconfigured portal without a website login.
+   unconfigured portal without a website login. Confirm that its ThingSpeak
+   step only asks for the optional User API Key; channel IDs and Read/Write API
+   Keys must remain in the later dashboard settings.
 3. Enter an invalid home Wi-Fi password before the first successful setup and
    wait through at least two reconnect cycles. The setup access point must
    remain available so the credentials can be corrected.
@@ -17,18 +19,27 @@ commit, board revision, power source and measurement equipment.
    after connection and that `http://w-charger.local/` or the LAN IP reaches
    the station.
 5. Set a website password of at least eight characters. Verify that dashboard,
-   configuration, history, Wi-Fi scan and ThingSpeak APIs require login, failed
-   attempts are rate-limited and sign-out invalidates the session.
-6. Restart the station and confirm that settings and local history persist,
-   while the previous session cookie no longer authenticates.
+   configuration, history, Wi-Fi scan and ThingSpeak APIs require login. Check
+   that CSRF or cross-origin state-changing requests are rejected and that the
+   dashboard, API and Wi-Fi-scan responses include the configured no-cache,
+   frame, MIME-sniffing and content-security headers.
+6. Log in from two clients. Five failed attempts from one client must trigger a
+   30-second block without blocking the other client. Signing out one client
+   must invalidate only its server-side session; the other session must remain
+   valid. Confirm that an idle session expires after 30 minutes.
+7. Restart the station and confirm that settings and local history persist,
+   while all previous session cookies no longer authenticate.
 
 ## 2. Sensor PCB V3
 
 1. Upload `sensor_pcb_v3`. An unprovisioned sensor must find the station without
-   a compiled-in station MAC address or radio channel.
+   a compiled-in station MAC address or radio channel. Verify this once during
+   the fast pairing window and once after it has expired; every discovery wake
+   must cover all 13 channels.
 2. Confirm that the sensor advertises every ten seconds during the initial
    ten-minute fast-pairing window, but refreshes its sensor/battery snapshot
-   only every five minutes.
+   only every five minutes. Both the captive setup page and the dashboard's
+   pending-sensor list must show **Setup mode**.
 3. Compare dashboard temperature and humidity with reference instruments.
 4. Measure battery voltage simultaneously with a multimeter. The current V3
    firmware intentionally uses the field-validated base scaling factor 1.67,
@@ -36,17 +47,28 @@ commit, board revision, power source and measurement equipment.
    error before applying any per-sensor calibration.
 5. Set the interval to one minute in the web interface. Confirm that
    `appliedRevision` matches the station revision no later than the second
-   subsequent contact.
+   subsequent contact and that the dashboard changes to **Energy-saving mode**
+   only after the sensor reports that mode.
 6. Switch the station off during a transmission. The sensor must still power
    down safely, enter deep sleep and retry only at the next configured report
    interval.
-7. Change the router's Wi-Fi channel. At the next due report, the configured
-   sensor must try its saved channel and then find the station by scanning the
-   remaining channels during the same exchange.
+7. Add a sensor while the station is still using its captive-portal setup AP,
+   then finish Wi-Fi setup on a different channel. At the next due report, the
+   sensor must try its saved setup channel, scan all remaining channels in the
+   same wake, receive the station response and persist the new channel. Change
+   the router channel again after this transition; steady-state recovery must
+   then use at most three rotating channels per scheduled exchange. During a
+   received recovery packet, the dashboard must show **Channel recovery** and
+   return to **Energy-saving mode** after the next normal report.
 8. Queue a sensor factory reset, interrupt the station during its response and
    verify that the command remains pending until the sensor acknowledges the
    matching revision.
-9. Upload a new sensor firmware image without erasing NVS manually. The ELF SHA
+9. Delete a configured sensor from the station without resetting its power.
+   At its next scheduled known-channel check-in, the station must return
+   `provisioned=false`. The sensor must clear the station identity, wake again
+   after one second and reappear as an unprovisioned sensor using a complete
+   13-channel discovery scan.
+10. Upload a new sensor firmware image without erasing NVS manually. The ELF SHA
    change must clear the old station assignment once; another restart with the
    same image must not clear it again.
 
@@ -59,9 +81,11 @@ commit, board revision, power source and measurement equipment.
    first start. There must be no LP/three-second cycle and no later sample-rate
    switch. Permanent direct raw measurements indicate a fault.
 3. The dashboard must show temperature, humidity, pressure, gas resistance and,
-   after BSEC stabilization, Static IAQ. IAQ begins at accuracy 0/learning; the
-   initial ULP stabilization normally takes about 20 minutes. ThingSpeak must
-   not receive IAQ while accuracy is 0.
+   after BSEC learning, Static IAQ. While accuracy is 0, the dashboard must show
+   the real elapsed learning time without a fixed-duration progress bar, and
+   ThingSpeak must not receive IAQ. When accuracy first reaches 1, the large
+   learning notice must disappear permanently and the compact Accuracy badge
+   must remain visible during normal operation.
 4. Operate the sensor in a normally used room for at least 24 hours and observe
    whether accuracy progresses through 1, 2 and eventually 3. Ventilation
    should improve IAQ with a delay, while ordinary indoor pollution should
@@ -93,8 +117,8 @@ commit, board revision, power source and measurement equipment.
 
 ## 4. ThingSpeak
 
-1. Store the user API key in the station and create a private channel for a
-   sensor.
+1. Store only the User API Key during initial setup. In the dashboard, load the
+   account channels and create a private channel for a sensor.
 2. Confirm that channel ID, channel profile and write key remain available
    after a station restart.
 3. Map every supported quantity to a unique field and verify its unit and
@@ -107,8 +131,43 @@ commit, board revision, power source and measurement equipment.
    does not guarantee delivery of offline samples.
 6. Verify that unprovisioned discovery telemetry and stale BSEC fallback IAQ
    values are never uploaded.
+7. After a successful upload, confirm that the overview status remains
+   **Connected** while the redundant success message is hidden. A later upload
+   or station-connection error must make its warning visible again.
 
-## 5. PCB V3 energy profile
+## 5. Local station history
+
+1. Set one BME280 sensor to a 10-minute measurement interval. Confirm that the
+   dashboard and `/api/history` report 10-minute steps while retaining at most
+   the rolling last 24 hours.
+2. Change the same sensor to 20 minutes. Existing recent history should remain,
+   be rebucketed to 20-minute steps and survive a station restart.
+3. After collecting several 10-minute points, change the interval to two
+   minutes. The existing line must remain plotted while new two-minute points
+   are appended; cursor inspection alone is not sufficient.
+4. Repeat with a second sensor at a different interval and confirm that each
+   chart keeps its own step size. Missing measurements must create a visible
+   line gap instead of being connected as continuous data.
+5. With website protection enabled, confirm that the protected-access banner
+   disappears automatically after its initial display. The unprotected warning
+   must remain visible when no password is set.
+
+## 6. PCB V3 energy profile
+
+Before measuring current, verify the configured-mode radio policy:
+
+1. Add a BME280 sensor, wait for the station to acknowledge provisioning and
+   select a ten-minute interval. Across three successful cycles, verify that it
+   wakes at the configured interval, sends unicast on the saved channel and
+   emits neither discovery beacons nor scans on other channels.
+2. Power-cycle that sensor without changing its firmware. The persisted
+   assignment must keep it in the same energy-saving mode; it must not return
+   to ten-second discovery.
+3. Repeat with a reporting interval longer than five minutes on a BME680. The
+   node may wake every five minutes for BSEC ULP, but ESP-NOW must remain off on
+   intermediate wakes and transmit only when the configured report is due.
+4. Delete the sensor or complete its factory reset and verify the opposite:
+   ten-second discovery and complete 13-channel scans must resume.
 
 Use a power analyser to measure at least 20 cycles of each case:
 
@@ -126,7 +185,7 @@ Derive runtime only from measured charge per cycle, the battery's measured
 usable capacity and self-discharge. Runtime estimates in documentation are not
 acceptance values.
 
-## 6. Battery-voltage calibration
+## 7. Battery-voltage calibration
 
 1. With USB disconnected, measure the battery simultaneously using a calibrated
    multimeter and the dashboard.
@@ -140,7 +199,7 @@ acceptance values.
 5. Reset calibration to its default and verify that correction factor 1.0000 is
    active again on top of the board-specific base scaling.
 
-## 7. Moving to PCB V4
+## 8. Moving to PCB V4
 
 1. Before assembly, continuity-check GPIO6/`ADC_EN` and
    GPIO10/`SENSOR_PWR_EN` against both schematic and PCB.

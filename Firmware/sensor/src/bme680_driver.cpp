@@ -567,7 +567,10 @@ void Bme680Driver::updateCalibrationStatus(EnvironmentalReading& reading) {
   const uint32_t elapsed = currentCalibrationElapsedSeconds();
   reading.iaqCalibrationElapsedMinutes = static_cast<uint16_t>(
       min(elapsed / 60UL, static_cast<uint32_t>(UINT16_MAX - 1U)));
-  if (reading.iaqAccuracy >= 2 && !rtcBsecState.calibrationReady) {
+  // Accuracy 1 is the first BSEC level that provides a usable learned IAQ
+  // baseline. From this point onward the sensor remains in normal operation
+  // while BSEC continues improving the accuracy in the background.
+  if (reading.iaqAccuracy >= 1 && !rtcBsecState.calibrationReady) {
     rtcBsecState.calibrationElapsedSeconds = elapsed;
     rtcBsecState.calibrationReady = true;
     saveCalibrationMetadata();
