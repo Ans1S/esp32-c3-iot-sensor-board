@@ -19,8 +19,7 @@ class EspNowTransport {
  public:
   bool begin();
   ExchangeResult exchange(const lil::protocol::TelemetryPacket& packet,
-                          const SensorRuntimeConfig& config,
-                          bool fastDiscovery);
+                          const SensorRuntimeConfig& config);
   ExchangeResult exchangeLpChannel(
       const lil::protocol::TelemetryPacket& packet,
       const SensorRuntimeConfig& config, uint8_t channel,

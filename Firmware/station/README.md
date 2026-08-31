@@ -35,6 +35,11 @@ channel profile and maps measurements to fields 1 through 8. Only then does
 the sensor appear in the regular dashboard with its last contact, readings,
 battery voltage, radio quality and switchable local history. Available
 intervals start at one minute and include a custom value of up to 24 hours.
+Each sensor report also carries its actual operating mode. The captive setup
+wizard, pending-sensor list and configured dashboard cards display **Setup
+mode**, **Energy-saving mode**, **Channel recovery** or **Mode unknown**. The
+badge represents the last mode reported by the sensor rather than an estimate
+from the station configuration.
 The station setup wizard is available only after a fresh installation or
 factory reset. During normal operation, changes are made directly under
 **Settings**.
@@ -74,8 +79,11 @@ learning" through "high" next to the IAQ value, as well as raw gas resistance
 in kOhm. BSEC operates exclusively in its energy-efficient ULP mode from the
 first start and measures internally every five minutes. ESP-NOW and ThingSpeak
 strictly follow the selected, longer reporting interval. The initial ULP
-stabilization period of approximately 20 minutes is shown transparently without
-changing the operating mode or radio interval.
+learning notice remains visible only while Accuracy is 0. It disappears after
+Accuracy first reaches 1; the compact accuracy badge then remains visible as
+BSEC continues improving to 2 and 3 during normal operation. No fixed-duration
+progress bar is shown because the required air-condition changes cannot be
+predicted honestly.
 
 New, unconfigured sensors appear automatically in the overview; the additional
 add button is now only a shortcut to that section. Configured sensors can be
@@ -127,8 +135,9 @@ erasure and a factory reset intentionally delete this history.
   ThingSpeak-related APIs.
 - The website password is stored as a device-bound SHA-256 hash rather than in
   plain text. Successful logins receive a random HttpOnly session cookie that
-  remains valid only until the next station restart. Repeated failed attempts
-  are briefly rate-limited.
+  expires after an absolute 30-minute lifetime or at the next station restart.
+  Repeated failed attempts trigger a device-wide temporary login block, and
+  sign-out requires the authenticated CSRF-protected action.
 - At the explicit request of the product design, ThingSpeak API keys remain
   visible in the authenticated web interface. Without an enabled website
   password, any device on the local network can therefore read these keys and

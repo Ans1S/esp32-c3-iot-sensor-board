@@ -15,17 +15,45 @@ it repeats this complete broadcast scan every ten seconds. This continues until
 the sensor is actually added in the dashboard (`provisioned=true`); a station
 response alone does not end discovery mode. After it is added, the sensor
 stores the station MAC address and channel in NVS and normally starts each
-future exchange on that saved channel.
+future exchange on that saved channel. After the initial ten-minute window, an
+unprovisioned sensor sleeps for five minutes between discovery attempts but
+still scans all 13 channels on every attempt. A short randomized radio delay is
+used only during discovery so that sensors powered together do not repeatedly
+collide.
 
 A newly flashed firmware image is identified by its ELF SHA fingerprint. On
 the first start of that image, the old station assignment and initial IAQ state
 are cleared even if the upload tool did not erase the NVS partition. Restarts,
 deep sleep and complete power loss with the same firmware image preserve the
-stored state. For each scheduled transmission, the sensor first tries the
-known channel at 13, 16, 19 and finally 21 dBm. If that channel is stale, it
-searches the other channels during the same scheduled exchange. When all
-responses fail, no extra radio cycle begins: the sensor sleeps for the
-configured reporting interval and tries again at the next scheduled contact.
+stored state. For each scheduled transmission, the sensor first tries the known
+channel twice. A newly paired sensor retains a commissioning recovery guard: if
+the saved setup-AP channel stops responding, it scans all 12 other channels in
+the same wake. This guarantees recovery when the station joins the configured
+home Wi-Fi network and its radio moves to that network's channel. Once a new
+channel is found, later stale-channel events test at most three other channels
+per scheduled report, with one maximum-power attempt each, and continue from a
+retained RTC cursor. This bounds steady-state failure energy without adding a
+separate retry wake. A one-time sub-second offset in the first deep-sleep
+interval staggers paired nodes without keeping their radios active. Both PCB
+targets run the CPU at 80 MHz, the lowest supported maximum frequency while
+ESP-NOW keeps the 80 MHz APB clock available.
+
+The operating modes are intentionally mutually exclusive. Energy-saving mode
+requires all three persisted facts: `provisioned=true`, a valid station MAC and
+a valid saved channel. In that mode the sensor uses its configured measurement
+interval, addresses only the station and starts on the saved channel. If any
+part of the assignment is absent, or the station returns `provisioned=false`
+after deletion, the sensor clears the station identity and enters discovery
+mode with broadcast traffic and complete channel scans.
+
+| Scenario | Selected mode | Radio and wake behaviour |
+|---|---|---|
+| Fresh flash, erased NVS or factory reset | Discovery | All 13 channels; 10-second then 5-minute sleep |
+| Deleted by the station and deletion response received | Discovery | Station identity cleared; all-channel broadcast resumes |
+| Incomplete or invalid persisted assignment | Discovery | Safe fallback; energy-saving mode is rejected |
+| Fully provisioned BME280 or no environmental sensor | Energy saving | Configured interval; saved-channel unicast only while communication succeeds |
+| Fully provisioned BME680 | Energy saving | Five-minute BSEC ULP wake; radio only at the configured report interval |
+| Saved station channel no longer responds | Recovery | Bounded recovery, except the protected setup-AP transition |
 
 The sensor type is no longer compiled into a separate firmware image. When a
 sensor is added or edited on the station, select **Automatic**, **BME280**,
@@ -104,11 +132,12 @@ continuous logical time are saved before shutdown and restored on the next
 start. This follows Bosch's intended `getState()`/`setState()` flow for complete
 system shutdowns.
 
-Initial ULP stabilization typically takes approximately 20 minutes and does
-not guarantee final IAQ accuracy 3. BSEC continues learning the gas/IAQ path in
-the background as air conditions change. Normal operation remains active
-throughout; there is no separate fast-start mode with increased heater or radio
-load.
+Initial learning remains active while BSEC Accuracy is 0 and ends permanently
+after Accuracy first reaches 1. Its duration depends on the observed air
+conditions and is therefore not represented by a fixed countdown. BSEC
+continues learning the gas/IAQ path in normal operation and can improve through
+Accuracy 2 to 3. There is no separate fast-start mode with increased heater or
+radio load.
 
 When BME680 is selected explicitly, the reporting interval must be five minutes
 or a multiple of five minutes. The default temperature offset of `0.466 degC`
@@ -143,10 +172,10 @@ That old value is neither added as a new history point nor uploaded to
 ThingSpeak. The next scheduled BSEC cycle tries again to produce a fresh IAQ
 value.
 
-The station displays the initial ULP stabilization and the later background
-learning status. Measurement, radio and cloud operation use the same ULP
-routine from the beginning. BSEC accuracy from 0 to 3 remains visible and can
-continue improving as the surrounding air conditions vary.
+The station displays an initial learning notice only until Accuracy first
+reaches 1. Afterwards a permanent compact Accuracy 0-to-3 status remains in the
+normal sensor header. Measurement, radio and cloud operation use the same ULP
+routine from the beginning.
 
 ## Discovery and re-adding sensors
 
