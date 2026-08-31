@@ -2,7 +2,9 @@
 
 #include <ArduinoJson.h>
 #include <SHA2Builder.h>
+#include <esp_heap_caps.h>
 #include <esp_random.h>
+#include <esp_timer.h>
 
 #include "web_pages.h"
 
@@ -12,8 +14,11 @@ namespace {
 constexpr size_t kMaxScannedNetworks = 20;
 constexpr char kSessionCookieName[] = "wch_session";
 constexpr char kPasswordHashDomain[] = "W-Charger website password v1";
-constexpr uint32_t kMaxLoginAttempts = 5;
+constexpr uint8_t kMaxLoginAttempts = 5;
 constexpr uint32_t kLoginBlockMs = 30000;
+constexpr uint32_t kLoginAttemptWindowMs = 5UL * 60UL * 1000UL;
+constexpr uint64_t kSessionLifetimeMs = 30ULL * 60ULL * 1000ULL;
+constexpr uint32_t kSessionLifetimeSeconds = kSessionLifetimeMs / 1000UL;
 
 void hashAdminPassword(const String& password, char output[65]) {
   SHA256Builder hash;
@@ -35,6 +40,14 @@ bool constantTimeEquals(const char* first, const char* second,
     difference |= static_cast<uint8_t>(first[i] ^ second[i]);
   }
   return difference == 0;
+}
+
+void randomToken(char output[33]) {
+  snprintf(output, 33, "%08lX%08lX%08lX%08lX",
+           static_cast<unsigned long>(esp_random()),
+           static_cast<unsigned long>(esp_random()),
+           static_cast<unsigned long>(esp_random()),
+           static_cast<unsigned long>(esp_random()));
 }
 
 void appendFormValue(String& body, const char* name, const String& value) {
@@ -153,11 +166,15 @@ void sendNoCache(WebServer& server) {
   server.sendHeader("X-Content-Type-Options", "nosniff");
   server.sendHeader("X-Frame-Options", "DENY");
   server.sendHeader("Referrer-Policy", "no-referrer");
+  server.sendHeader("Permissions-Policy",
+                    "camera=(), microphone=(), geolocation=()");
+  server.sendHeader("Cross-Origin-Resource-Policy", "same-origin");
   server.sendHeader(
       "Content-Security-Policy",
       "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src "
       "'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; "
-      "frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+      "object-src 'none'; frame-ancestors 'none'; base-uri 'none'; "
+      "form-action 'self'");
 }
 }  // namespace
 
@@ -170,12 +187,10 @@ bool WebPortal::begin(StationConfig& config, ConfigStore& store,
   registry_ = &registry;
   thingSpeak_ = &thingSpeak;
   gateway_ = &gateway;
-  snprintf(csrfToken_, sizeof(csrfToken_), "%08lX%08lX",
-           static_cast<unsigned long>(esp_random()),
-           static_cast<unsigned long>(esp_random()));
-  refreshAuthToken();
-  const char* collectedHeaders[] = {"Cookie"};
-  server_.collectHeaders(collectedHeaders, 1);
+  refreshCsrfToken();
+  clearAuthSessions();
+  const char* collectedHeaders[] = {"Cookie", "Origin"};
+  server_.collectHeaders(collectedHeaders, 2);
 
   server_.on("/", HTTP_GET, [this]() {
     sendNoCache(server_);
@@ -204,7 +219,9 @@ bool WebPortal::begin(StationConfig& config, ConfigStore& store,
   });
   server_.on("/login", HTTP_GET, [this]() { handleLogin(); });
   server_.on("/login", HTTP_POST, [this]() { handleLogin(); });
-  server_.on("/logout", HTTP_GET, [this]() { handleLogout(); });
+  server_.on("/logout", HTTP_POST, [this]() {
+    if (requireAuthentication() && verifyCsrf()) handleLogout();
+  });
   server_.on("/api/status", HTTP_GET, [this]() {
     if (requireAuthentication()) sendJsonStatus();
   });
@@ -269,8 +286,10 @@ bool WebPortal::begin(StationConfig& config, ConfigStore& store,
   server_.on("/api/factory-reset", HTTP_POST, [this]() {
     if (requireAuthentication() && verifyCsrf()) factoryReset();
   });
-  server_.on("/favicon.ico", HTTP_GET,
-             [this]() { server_.send(204, "text/plain", ""); });
+  server_.on("/favicon.ico", HTTP_GET, [this]() {
+    sendNoCache(server_);
+    server_.send(204, "text/plain", "");
+  });
 
   const auto captiveRedirect = [this]() {
     sendNoCache(server_);
@@ -298,7 +317,19 @@ bool WebPortal::begin(StationConfig& config, ConfigStore& store,
   server_.on("/wifi/wifidog", HTTP_ANY, captiveRedirect);
   server_.on("/kindle-wifi/wifistub.html", HTTP_ANY, captiveRedirect);
   server_.on("/.well-known/captive-portal", HTTP_ANY, captiveRedirect);
-  server_.onNotFound(captiveRedirect);
+  server_.onNotFound([this, captiveRedirect]() {
+    const bool apiPath = server_.uri().startsWith("/api/");
+    if (apiPath ||
+        (config_->wifiSsid[0] != '\0' && !wifi_->setupPortalActive())) {
+      sendNoCache(server_);
+      server_.send(404, apiPath ? "application/json" : "text/plain",
+                   apiPath
+                       ? "{\"success\":false,\"message\":\"Not found\"}"
+                       : "Not found");
+      return;
+    }
+    captiveRedirect();
+  });
   server_.begin();
   return true;
 }
@@ -307,12 +338,9 @@ bool WebPortal::authenticationEnabled() const {
   return config_ != nullptr && config_->adminPassword[0] != '\0';
 }
 
-bool WebPortal::isAuthenticated() const {
-  if (!authenticationEnabled()) {
-    return true;
-  }
-  String cookies = server_.header("Cookie");
-  const String expected = String(kSessionCookieName) + '=' + authToken_;
+String WebPortal::currentSessionToken() const {
+  const String cookies = server_.header("Cookie");
+  const String prefix = String(kSessionCookieName) + '=';
   int start = 0;
   while (start < static_cast<int>(cookies.length())) {
     int end = cookies.indexOf(';', start);
@@ -321,10 +349,34 @@ bool WebPortal::isAuthenticated() const {
     }
     String cookie = cookies.substring(start, end);
     cookie.trim();
-    if (cookie == expected) {
-      return true;
+    if (cookie.startsWith(prefix)) {
+      return cookie.substring(prefix.length());
     }
     start = end + 1;
+  }
+  return String();
+}
+
+bool WebPortal::isAuthenticated() {
+  if (!authenticationEnabled()) {
+    return true;
+  }
+  const String token = currentSessionToken();
+  if (token.length() != 32) {
+    return false;
+  }
+  const uint64_t now = static_cast<uint64_t>(esp_timer_get_time()) / 1000ULL;
+  for (AuthSession& session : authSessions_) {
+    if (!session.active) {
+      continue;
+    }
+    if (now - session.createdAtMs >= kSessionLifetimeMs) {
+      session = AuthSession{};
+      continue;
+    }
+    if (constantTimeEquals(token.c_str(), session.token, 32)) {
+      return true;
+    }
   }
   return false;
 }
@@ -366,12 +418,103 @@ void WebPortal::setAdminPassword(const String& password) {
   hashAdminPassword(password, config_->adminPassword);
 }
 
-void WebPortal::refreshAuthToken() {
-  snprintf(authToken_, sizeof(authToken_), "%08lX%08lX%08lX%08lX",
-           static_cast<unsigned long>(esp_random()),
-           static_cast<unsigned long>(esp_random()),
-           static_cast<unsigned long>(esp_random()),
-           static_cast<unsigned long>(esp_random()));
+void WebPortal::refreshCsrfToken() { randomToken(csrfToken_); }
+
+const char* WebPortal::createAuthSession() {
+  const uint64_t now = static_cast<uint64_t>(esp_timer_get_time()) / 1000ULL;
+  size_t selected = 0;
+  uint64_t oldestAge = 0;
+  for (size_t i = 0; i < 4; ++i) {
+    AuthSession& session = authSessions_[i];
+    if (session.active && now - session.createdAtMs >= kSessionLifetimeMs) {
+      session = AuthSession{};
+    }
+    if (!session.active) {
+      selected = i;
+      break;
+    }
+    const uint64_t age = now - session.createdAtMs;
+    if (i == 0 || age > oldestAge) {
+      selected = i;
+      oldestAge = age;
+    }
+  }
+  AuthSession& session = authSessions_[selected];
+  randomToken(session.token);
+  session.createdAtMs = now;
+  session.active = true;
+  return session.token;
+}
+
+void WebPortal::clearAuthSessions() {
+  for (AuthSession& session : authSessions_) {
+    session = AuthSession{};
+  }
+}
+
+void WebPortal::revokeCurrentSession() {
+  const String token = currentSessionToken();
+  if (token.length() != 32) {
+    return;
+  }
+  for (AuthSession& session : authSessions_) {
+    if (session.active &&
+        constantTimeEquals(token.c_str(), session.token, 32)) {
+      session = AuthSession{};
+      return;
+    }
+  }
+}
+
+bool WebPortal::loginBlocked(uint32_t& retryAfterSeconds) {
+  LoginThrottle& throttle = loginThrottle_;
+  const uint32_t now = millis();
+  if (throttle.blockedUntilMs != 0 &&
+      static_cast<int32_t>(now - throttle.blockedUntilMs) < 0) {
+    retryAfterSeconds =
+        (throttle.blockedUntilMs - now + 999UL) / 1000UL;
+    return true;
+  }
+  if (throttle.blockedUntilMs != 0 ||
+      now - throttle.lastAttemptMs > kLoginAttemptWindowMs) {
+    throttle.blockedUntilMs = 0;
+    throttle.failures = 0;
+  }
+  retryAfterSeconds = 0;
+  return false;
+}
+
+bool WebPortal::recordFailedLogin(uint32_t& retryAfterSeconds) {
+  LoginThrottle& throttle = loginThrottle_;
+  const uint32_t now = millis();
+  if (now - throttle.lastAttemptMs > kLoginAttemptWindowMs) {
+    throttle.failures = 0;
+  }
+  throttle.lastAttemptMs = now;
+  ++throttle.failures;
+  if (throttle.failures < kMaxLoginAttempts) {
+    retryAfterSeconds = 0;
+    return false;
+  }
+  throttle.failures = 0;
+  throttle.blockedUntilMs = now + kLoginBlockMs;
+  retryAfterSeconds = kLoginBlockMs / 1000UL;
+  return true;
+}
+
+void WebPortal::clearLoginFailures() {
+  loginThrottle_ = LoginThrottle{};
+}
+
+bool WebPortal::validRequestOrigin() const {
+  const String origin = server_.header("Origin");
+  if (origin.isEmpty()) {
+    return true;
+  }
+  const String host = server_.hostHeader();
+  return !host.isEmpty() &&
+         (origin.equalsIgnoreCase("http://" + host) ||
+          origin.equalsIgnoreCase("https://" + host));
 }
 
 void WebPortal::handleLogin() {
@@ -391,8 +534,19 @@ void WebPortal::handleLogin() {
     return;
   }
 
-  if (loginBlockedUntilMs_ != 0 &&
-      static_cast<int32_t>(millis() - loginBlockedUntilMs_) < 0) {
+  if (!validRequestOrigin()) {
+    JsonDocument document;
+    document["success"] = false;
+    document["message"] = "Request origin is not allowed";
+    String output;
+    serializeJson(document, output);
+    server_.send(403, "application/json", output);
+    return;
+  }
+
+  uint32_t retryAfterSeconds = 0;
+  if (loginBlocked(retryAfterSeconds)) {
+    server_.sendHeader("Retry-After", String(retryAfterSeconds));
     JsonDocument document;
     document["success"] = false;
     document["message"] = "Too many attempts. Try again in a few seconds.";
@@ -401,47 +555,56 @@ void WebPortal::handleLogin() {
     server_.send(429, "application/json", output);
     return;
   }
-  loginBlockedUntilMs_ = 0;
   if (!verifyAdminPassword(server_.arg("password"))) {
-    ++failedLoginAttempts_;
-    if (failedLoginAttempts_ >= kMaxLoginAttempts) {
-      failedLoginAttempts_ = 0;
-      loginBlockedUntilMs_ = millis() + kLoginBlockMs;
-    }
+    const bool nowBlocked = recordFailedLogin(retryAfterSeconds);
     JsonDocument document;
     document["success"] = false;
-    document["message"] = "Incorrect password";
+    document["message"] = nowBlocked
+                              ? "Too many attempts. Try again in 30 seconds."
+                              : "Incorrect password";
     String output;
     serializeJson(document, output);
-    server_.send(401, "application/json", output);
+    if (nowBlocked) {
+      server_.sendHeader("Retry-After", String(retryAfterSeconds));
+    }
+    server_.send(nowBlocked ? 429 : 401, "application/json", output);
     return;
   }
 
-  failedLoginAttempts_ = 0;
+  clearLoginFailures();
+  const char* sessionToken = createAuthSession();
   server_.sendHeader(
       "Set-Cookie",
-      String(kSessionCookieName) + '=' + authToken_ +
-          "; Path=/; HttpOnly; SameSite=Strict");
+      String(kSessionCookieName) + '=' + sessionToken +
+          "; Path=/; Max-Age=" + String(kSessionLifetimeSeconds) +
+          "; HttpOnly; SameSite=Strict");
   server_.send(200, "application/json", "{\"success\":true}");
 }
 
 void WebPortal::handleLogout() {
   sendNoCache(server_);
+  revokeCurrentSession();
   server_.sendHeader(
       "Set-Cookie",
       String(kSessionCookieName) +
           "=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict");
-  server_.sendHeader("Location", authenticationEnabled() ? "/login"
-                                                         : "/dashboard",
-                     true);
-  server_.send(303, "text/plain", "");
+  server_.send(200, "application/json", "{\"success\":true}");
 }
 
 bool WebPortal::verifyCsrf() {
+  if (!validRequestOrigin()) {
+    sendNoCache(server_);
+    server_.send(
+        403, "application/json",
+        "{\"success\":false,\"message\":\"Request origin is not allowed\"}");
+    return false;
+  }
   if (server_.arg("csrf") == csrfToken_) {
     return true;
   }
-  sendJsonResult(false, "Invalid CSRF token");
+  sendNoCache(server_);
+  server_.send(403, "application/json",
+               "{\"success\":false,\"message\":\"Invalid CSRF token\"}");
   return false;
 }
 
@@ -535,10 +698,7 @@ void WebPortal::sendJsonStatus() {
     item["iaqCalibrationPhase"] = static_cast<uint8_t>(
         view.runtime.telemetry.iaqCalibrationPhase);
     item["iaqCalibrationElapsedMinutes"] =
-        view.config.bme680QuickStartComplete
-            ? max<uint16_t>(10,
-                            view.runtime.telemetry.iaqCalibrationElapsedMinutes)
-            : view.runtime.telemetry.iaqCalibrationElapsedMinutes;
+        view.runtime.telemetry.iaqCalibrationElapsedMinutes;
     item["iaqCalibrationRemainingMinutes"] =
         view.runtime.telemetry.iaqCalibrationRemainingMinutes;
     item["bme680QuickStartComplete"] =
@@ -549,6 +709,10 @@ void WebPortal::sendJsonStatus() {
     item["telemetryFlags"] = view.runtime.telemetry.flags;
     item["batteryMv"] = view.runtime.telemetry.batteryMillivolts;
     item["pcbVersion"] = view.runtime.telemetry.pcbVersion;
+    item["operatingMode"] = static_cast<uint8_t>(
+        (view.runtime.hasTelemetry || view.runtime.hasPersistedTelemetry)
+            ? view.runtime.telemetry.operatingMode
+            : lil::protocol::SensorOperatingMode::kUnknown);
     item["appliedRevision"] = view.runtime.telemetry.appliedConfigRevision;
     item["historyRevision"] = registry_->historyRevision(view.config.mac);
     if (view.config.provisioned) {
@@ -582,45 +746,88 @@ void WebPortal::sendJsonHistory() {
     return;
   }
 
-  HistorySample samples[kHistoryBucketCount]{};
-  const size_t count =
-      registry_->history(mac, samples, kHistoryBucketCount);
-  JsonDocument document;
-  document["mac"] = SensorRegistry::formatMac(mac);
-  document["bucketMinutes"] = kHistoryBucketSeconds / 60UL;
-  JsonArray points = document["points"].to<JsonArray>();
+  const size_t capacity = registry_->historyCapacity(mac);
+  HistorySample* samples = nullptr;
+  if (capacity > 0) {
+    samples = static_cast<HistorySample*>(heap_caps_malloc(
+        capacity * sizeof(HistorySample),
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (samples == nullptr) {
+      samples = static_cast<HistorySample*>(heap_caps_malloc(
+          capacity * sizeof(HistorySample), MALLOC_CAP_8BIT));
+    }
+    if (samples == nullptr) {
+      sendJsonResult(false, "History is temporarily unavailable");
+      return;
+    }
+  }
+  const size_t count = registry_->history(mac, samples, capacity);
+  const uint32_t bucketSeconds = registry_->historyBucketSeconds(mac);
+  sendNoCache(server_);
+  server_.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server_.send(200, "application/json", "");
+  String opening = "{\"mac\":\"" + SensorRegistry::formatMac(mac) +
+                   "\",\"bucketSeconds\":" + String(bucketSeconds) +
+                   ",\"bucketMinutes\":" +
+                   String(bucketSeconds / 60.0F, 2) + ",\"points\":[";
+  server_.sendContent(opening);
+  String chunk;
+  chunk.reserve(2048);
   for (size_t i = 0; i < count; ++i) {
     const HistorySample& sample = samples[i];
-    JsonObject point = points.add<JsonObject>();
-    point["t"] = static_cast<uint64_t>(sample.timestamp) * 1000ULL;
-    point["sensorType"] = sample.sensorType;
-    point["pcbVersion"] = sample.pcbVersion;
-    point["iaqAccuracy"] = sample.iaqAccuracy;
+    String point = i == 0 ? "{" : ",{";
+    point.reserve(256);
+    point += "\"t\":";
+    point += String(static_cast<unsigned long long>(sample.timestamp) *
+                    1000ULL);
+    point += ",\"sensorType\":";
+    point += String(sample.sensorType);
+    point += ",\"pcbVersion\":";
+    point += String(sample.pcbVersion);
+    point += ",\"iaqAccuracy\":";
+    point += String(sample.iaqAccuracy);
     if ((sample.capabilities & lil::protocol::kTemperature) != 0) {
-      point["temperature"] = sample.temperature;
+      point += ",\"temperature\":";
+      point += String(sample.temperatureCentiC / 100.0F, 2);
     }
     if ((sample.capabilities & lil::protocol::kHumidity) != 0) {
-      point["humidity"] = sample.humidity;
+      point += ",\"humidity\":";
+      point += String(sample.humidityCentiPercent / 100.0F, 2);
     }
     if ((sample.capabilities & lil::protocol::kPressure) != 0) {
-      point["pressure"] = sample.pressure;
+      point += ",\"pressure\":";
+      point += String(sample.pressureDeciHpa / 10.0F, 1);
     }
     if ((sample.capabilities & lil::protocol::kIaq) != 0 &&
         sample.iaqAccuracy > 0) {
-      point["iaq"] = sample.iaq;
+      point += ",\"iaq\":";
+      point += String(sample.iaqDeci / 10.0F, 1);
     }
     if ((sample.capabilities & lil::protocol::kGasResistance) != 0) {
-      point["gas"] = sample.gasKohms;
+      point += ",\"gas\":";
+      point += String(sample.gasResistanceOhms / 1000.0F, 3);
     }
     if ((sample.capabilities & lil::protocol::kBattery) != 0) {
-      point["battery"] = sample.batteryVolts;
+      point += ",\"battery\":";
+      point += String(sample.batteryMillivolts / 1000.0F, 3);
     }
+    point += '}';
+    if (chunk.length() + point.length() > 2048) {
+      server_.sendContent(chunk);
+      chunk = String();
+      chunk.reserve(2048);
+    }
+    chunk += point;
   }
-
-  String output;
-  serializeJson(document, output);
-  sendNoCache(server_);
-  server_.send(200, "application/json", output);
+  if (!chunk.isEmpty()) {
+    server_.sendContent(chunk);
+  }
+  server_.sendContent("]}");
+  server_.sendContent("");
+  server_.setContentLength(CONTENT_LENGTH_NOT_SET);
+  if (samples != nullptr) {
+    heap_caps_free(samples);
+  }
 }
 
 void WebPortal::sendJsonConfig() {
@@ -675,6 +882,7 @@ void WebPortal::sendWifiScan() {
   }
   String output;
   serializeJson(document, output);
+  sendNoCache(server_);
   server_.send(200, "application/json", output);
 }
 
@@ -684,14 +892,11 @@ void WebPortal::saveSetup() {
                    "The station is already configured. Use Settings.");
     return;
   }
+  const StationConfig previousConfig = *config_;
   const String oldSsid = config_->wifiSsid;
   const String ssid = server_.arg("ssid");
   const String password = server_.arg("wifiPassword");
   const String userApiKey = server_.arg("userApiKey");
-  const String channelName = server_.arg("channelName");
-  const uint32_t channelId = server_.arg("defaultChannelId").toInt();
-  const String readApiKey = server_.arg("readApiKey");
-  const String writeApiKey = server_.arg("writeApiKey");
   const String adminPassword = server_.arg("adminPassword");
   const String confirmAdminPassword = server_.arg("confirmAdminPassword");
   const uint32_t defaultSleep = server_.arg("defaultSleep").toInt();
@@ -703,11 +908,8 @@ void WebPortal::saveSetup() {
     return;
   }
   if (ssid.isEmpty() || ssid.length() > 32 || password.length() > 64 ||
-      userApiKey.length() > 40 || channelName.length() > 24 ||
-      readApiKey.length() > 32 ||
-      writeApiKey.length() > 32 || defaultSleep < kMinSleepSeconds ||
-      defaultSleep > kMaxSleepSeconds ||
-      (channelId == 0 && (!readApiKey.isEmpty() || !writeApiKey.isEmpty()))) {
+      userApiKey.length() > 40 || defaultSleep < kMinSleepSeconds ||
+      defaultSleep > kMaxSleepSeconds) {
     sendJsonResult(false, "Check Wi-Fi and the measurement interval.");
     return;
   }
@@ -718,28 +920,15 @@ void WebPortal::saveSetup() {
     copyText(config_->wifiPassword, password);
   }
   copyText(config_->thingSpeakUserApiKey, userApiKey);
-  config_->thingSpeakDefaultChannelId = channelId;
-  copyText(config_->thingSpeakReadApiKey, readApiKey);
-  copyText(config_->thingSpeakWriteApiKey, writeApiKey);
-  auto& profile = config_->thingSpeakChannels[0];
-  profile = ThingSpeakChannelProfile{};
-  if (channelId != 0) {
-    profile.occupied = true;
-    copyText(profile.name,
-             channelName.isEmpty() ? String("Home Sensor") : channelName);
-    profile.channelId = channelId;
-    copyText(profile.readApiKey, readApiKey);
-    copyText(profile.writeApiKey, writeApiKey);
-  }
   setAdminPassword(adminPassword);
   config_->defaultSleepSeconds = defaultSleep;
   // Keep the setup portal alive through this reboot.  WifiService clears it
   // and persists completion only after the home WLAN really connects.
   config_->setupPortalRequired = true;
-  const bool profileSynced = channelId != 0
-                                 ? registry_->syncThingSpeakProfile(0, profile)
-                                 : registry_->removeThingSpeakProfile(0);
-  const bool saved = store_->saveStationConfig(*config_) && profileSynced;
+  const bool saved = store_->saveStationConfig(*config_);
+  if (!saved) {
+    *config_ = previousConfig;
+  }
   sendJsonResult(saved,
                  saved ? "Setup saved. W-Charger is restarting."
                        : "Setup could not be saved.",
@@ -796,7 +985,9 @@ void WebPortal::saveSetupSensor() {
 }
 
 void WebPortal::saveStation() {
+  const StationConfig previousConfig = *config_;
   const String oldSsid = config_->wifiSsid;
+  const String oldApPassword = config_->accessPointPassword;
   const String oldAdminPasswordHash = config_->adminPassword;
   const uint32_t oldDefaultSleep = config_->defaultSleepSeconds;
   const uint8_t oldFallbackChannel = config_->fallbackWifiChannel;
@@ -808,11 +999,11 @@ void WebPortal::saveStation() {
   const String confirmAdminPassword = server_.arg("confirmAdminPassword");
   const bool removeAdminPassword = server_.hasArg("removeAdminPassword");
   const uint32_t defaultSleep = server_.arg("defaultSleep").toInt();
-  const uint8_t fallbackChannel = server_.arg("fallbackChannel").toInt();
+  const int fallbackChannelValue = server_.arg("fallbackChannel").toInt();
   if (ssid.isEmpty() || ssid.length() > 32 || wifiPassword.length() > 64 ||
       userApiKey.length() > 40 || defaultSleep < kMinSleepSeconds ||
-      defaultSleep > kMaxSleepSeconds || fallbackChannel < 1 ||
-      fallbackChannel > 13 ||
+      defaultSleep > kMaxSleepSeconds || fallbackChannelValue < 1 ||
+      fallbackChannelValue > 13 ||
       (!apPassword.isEmpty() &&
        (apPassword.length() < 8 || apPassword.length() > 63)) ||
       (!newAdminPassword.isEmpty() &&
@@ -822,6 +1013,8 @@ void WebPortal::saveStation() {
     sendJsonResult(false, "Invalid station configuration");
     return;
   }
+  const uint8_t fallbackChannel =
+      static_cast<uint8_t>(fallbackChannelValue);
 
   copyText(config_->hostname, "w-charger");
   copyText(config_->wifiSsid, ssid);
@@ -842,13 +1035,18 @@ void WebPortal::saveStation() {
   const bool saved = store_->saveStationConfig(*config_);
   const bool authenticationChanged =
       saved && oldAdminPasswordHash != config_->adminPassword;
+  if (!saved) {
+    *config_ = previousConfig;
+  }
   const bool restartRequested = server_.arg("restartNow") == "1";
   const bool restartRequired =
       saved && (ssid != oldSsid || !wifiPassword.isEmpty() ||
+                (!apPassword.isEmpty() && apPassword != oldApPassword) ||
                 defaultSleep != oldDefaultSleep ||
                 fallbackChannel != oldFallbackChannel || restartRequested);
   if (authenticationChanged) {
-    refreshAuthToken();
+    clearAuthSessions();
+    refreshCsrfToken();
     server_.sendHeader(
         "Set-Cookie",
         String(kSessionCookieName) +
@@ -900,6 +1098,7 @@ void WebPortal::saveSensor() {
   SensorView existingView{};
   if (!SensorRegistry::parseMac(server_.arg("mac"), mac) ||
       !registry_->findView(mac, existingView) ||
+      server_.arg("name").isEmpty() || server_.arg("name").length() > 24 ||
       sleepSeconds < kMinSleepSeconds || sleepSeconds > kMaxSleepSeconds ||
       writeKey.length() > 32 || !validSensorType ||
       !isfinite(temperatureOffsetC) || temperatureOffsetC < -10.0F ||

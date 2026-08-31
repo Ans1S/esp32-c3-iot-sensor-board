@@ -10,19 +10,18 @@
 
 namespace station {
 
-constexpr size_t kHistoryBucketCount = 48;
-constexpr uint32_t kHistoryBucketSeconds = 30UL * 60UL;
+constexpr uint32_t kHistoryWindowSeconds = 24UL * 60UL * 60UL;
 
 #pragma pack(push, 1)
 struct HistorySample {
   uint32_t timestamp = 0;
   uint16_t capabilities = 0;
-  float temperature = 0.0F;
-  float humidity = 0.0F;
-  float pressure = 0.0F;
-  float iaq = 0.0F;
-  float gasKohms = 0.0F;
-  float batteryVolts = 0.0F;
+  int16_t temperatureCentiC = 0;
+  uint16_t humidityCentiPercent = 0;
+  uint16_t pressureDeciHpa = 0;
+  uint16_t iaqDeci = 0;
+  uint32_t gasResistanceOhms = 0;
+  uint16_t batteryMillivolts = 0;
   uint8_t iaqAccuracy = 0;
   uint8_t sensorType = 0;
   uint8_t pcbVersion = 0;
@@ -74,6 +73,8 @@ class SensorRegistry {
   bool findView(const uint8_t mac[6], SensorView& output) const;
   size_t history(const uint8_t mac[6], HistorySample* output,
                  size_t capacity) const;
+  size_t historyCapacity(const uint8_t mac[6]) const;
+  uint32_t historyBucketSeconds(const uint8_t mac[6]) const;
   uint32_t historyRevision(const uint8_t mac[6]) const;
   static String formatMac(const uint8_t mac[6]);
   static bool parseMac(const String& text, uint8_t output[6]);
@@ -83,6 +84,12 @@ class SensorRegistry {
   int allocateIndexLocked(const uint8_t mac[6]);
   bool recordHistoryLocked(size_t index,
                            const lil::protocol::TelemetryPayload& telemetry);
+  bool loadHistoryLocked(size_t index);
+  bool configureHistoryLocked(size_t index, uint32_t bucketSeconds,
+                              bool preserveSamples,
+                              bool persistImmediately = true);
+  bool persistHistoryLocked(size_t index);
+  bool persistHistorySampleLocked(size_t index, size_t slot);
   bool saveLatestTelemetryLocked(
       size_t index, const lil::protocol::TelemetryPayload& telemetry,
       int8_t stationRssi);
@@ -95,10 +102,10 @@ class SensorRegistry {
   };
 
   struct StoredHistory {
-    uint32_t magic = 0;
-    uint16_t version = 0;
     uint32_t revision = 0;
-    HistorySample samples[kHistoryBucketCount]{};
+    uint32_t bucketSeconds = 0;
+    size_t capacity = 0;
+    HistorySample* samples = nullptr;
   };
 
   ConfigStore* store_ = nullptr;

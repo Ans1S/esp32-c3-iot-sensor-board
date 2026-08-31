@@ -19,12 +19,32 @@ class WebPortal {
  void loop();
 
  private:
+  struct AuthSession {
+    char token[33]{};
+    uint64_t createdAtMs = 0;
+    bool active = false;
+  };
+
+  struct LoginThrottle {
+    uint32_t lastAttemptMs = 0;
+    uint32_t blockedUntilMs = 0;
+    uint8_t failures = 0;
+  };
+
   bool authenticationEnabled() const;
-  bool isAuthenticated() const;
+  bool isAuthenticated();
   bool requireAuthentication(bool redirectToLogin = false);
   bool verifyAdminPassword(const String& password) const;
   void setAdminPassword(const String& password);
-  void refreshAuthToken();
+  void refreshCsrfToken();
+  const char* createAuthSession();
+  void clearAuthSessions();
+  void revokeCurrentSession();
+  String currentSessionToken() const;
+  bool loginBlocked(uint32_t& retryAfterSeconds);
+  bool recordFailedLogin(uint32_t& retryAfterSeconds);
+  void clearLoginFailures();
+  bool validRequestOrigin() const;
   void handleLogin();
   void handleLogout();
   bool verifyCsrf();
@@ -61,10 +81,9 @@ class WebPortal {
   ThingSpeakService* thingSpeak_ = nullptr;
   EspNowGateway* gateway_ = nullptr;
   uint32_t restartAtMs_ = 0;
-  uint32_t failedLoginAttempts_ = 0;
-  uint32_t loginBlockedUntilMs_ = 0;
-  char csrfToken_[17]{};
-  char authToken_[33]{};
+  AuthSession authSessions_[4]{};
+  LoginThrottle loginThrottle_{};
+  char csrfToken_[33]{};
 };
 
 }  // namespace station
