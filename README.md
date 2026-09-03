@@ -4,7 +4,11 @@
 
 ### Give disposable-vape batteries a second life as low-power sensor nodes
 
-<img src="Readme/esp32_pcb.webp" alt="W-Charger ESP32-C3 prototype powered by a recovered single-cell lithium battery" width="680">
+<p align="center">
+  <img src="Readme/pcb-v4-with-battery.webp" alt="PCB V4 connected to a recovered single-cell lithium battery" height="250">
+  &nbsp;
+  <img src="Readme/pcb-v4-closeup.webp" alt="Close-up of the assembled PCB V4" height="250">
+</p>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-1f6f50.svg)](LICENSE)
 ![Sensor](https://img.shields.io/badge/Sensor-ESP32--C3-1f6f50.svg)
@@ -79,8 +83,8 @@ range and reduce avoidable deep-sleep losses.
 <td align="center"><img src="Readme/FrontV4.webp" alt="PCB V4 front render" width="320"><br><sub>Front</sub></td>
 </tr>
 <tr>
-<td align="center"><img src="Readme/pcb-v3-back.png" alt="PCB V3 back render" width="320"><br><sub>Back</sub></td>
-<td align="center"><img src="Readme/pcb-v4-back.png" alt="PCB V4 back render" width="320"><br><sub>Back</sub></td>
+<td align="center"><img src="Readme/pcb-v3-back.webp" alt="PCB V3 back render" width="320"><br><sub>Back</sub></td>
+<td align="center"><img src="Readme/pcb-v4-back.webp" alt="PCB V4 back render" width="320"><br><sub>Back</sub></td>
 </tr>
 </table>
 
@@ -124,7 +128,7 @@ overview shows connection state, discovered sensors, latest readings, battery
 voltage, radio strength, ThingSpeak status and a local rolling 24-hour history.
 
 <p align="center">
-<img src="Readme/station-dashboard.png" alt="Anonymized W-Charger station overview" width="760">
+<img src="Readme/station-dashboard.webp" alt="Anonymized W-Charger station overview" width="760">
 <br><sub>Station overview with anonymized demo identifiers.</sub>
 </p>
 
@@ -133,7 +137,7 @@ mapped to ThingSpeak fields 1–8 or kept local. BME680 nodes also show Static
 IAQ, BSEC accuracy and gas resistance.
 
 <p align="center">
-<img src="Readme/station-sensors.png" alt="Anonymized W-Charger dashboard with BME280 and BME680 sensor cards" width="520">
+<img src="Readme/station-sensors.webp" alt="Anonymized W-Charger dashboard with BME280 and BME680 sensor cards" width="520">
 <br><sub>Multiple sensor cards, local history and optional cloud field mapping. All device and channel identifiers are demo values.</sub>
 </p>
 
