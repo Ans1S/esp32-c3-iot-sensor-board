@@ -8,7 +8,6 @@ namespace sensor {
 
 namespace {
 constexpr size_t kSampleCount = 16;
-constexpr uint32_t kAdcSettleMs = 4;
 }
 
 void AdcReader::begin(PowerController& power) {
@@ -20,7 +19,7 @@ void AdcReader::begin(PowerController& power) {
 BatteryReading AdcReader::readBattery(float calibrationFactor) {
   BatteryReading reading{};
   power_->adcPower(true);
-  delay(kAdcSettleMs);
+  delay(kHardware.adcSettleMs);
 
   uint16_t samples[kSampleCount];
   for (size_t i = 0; i < kSampleCount; ++i) {
