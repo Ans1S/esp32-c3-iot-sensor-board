@@ -83,7 +83,9 @@ a full flash erase or factory reset.
 
 PCB V3 uses its field-validated battery scaling factor of 1.67. PCB V4 adds a
 GPIO6-controlled battery divider and an active-low GPIO10 PMOS sensor rail with
-a nominal divider factor of 1.667.
+a nominal divider factor of 1.667. Its 100 kOhm ADC series resistor and 100 nF
+filter capacitor produce an approximately 16 ms charging time constant with the
+divider, so the firmware waits 100 ms after enabling the path before sampling.
 
 Unprovisioned sensors advertise every ten seconds for the first ten minutes and
 scan all 13 channels during each discovery wake. Afterwards, they wake every

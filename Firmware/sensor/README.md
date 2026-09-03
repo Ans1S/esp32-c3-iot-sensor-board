@@ -64,7 +64,8 @@ checks the Bosch chip IDs at `0x76` and `0x77`.
 A normal BME280 cycle performs only these steps:
 
 1. Enable sensor power and read the BME280 in forced mode with 1x oversampling.
-2. Read battery voltage; on V4, enable the divider only for the measurement.
+2. Read battery voltage; on V4, enable the divider only for the measurement and
+   wait 100 ms for its 100 kOhm / 100 nF ADC filter to settle.
 3. Send a validated telemetry packet over ESP-NOW.
 4. Wait briefly for the station's configuration response.
 5. Write the new configuration to NVS only when its revision has changed.
