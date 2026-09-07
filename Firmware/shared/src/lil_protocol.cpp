@@ -1,11 +1,17 @@
 #include "lil_protocol.h"
 
 #include <string.h>
+#if defined(ESP_PLATFORM)
+#include <esp_rom_crc.h>
+#endif
 
 namespace lil {
 namespace protocol {
 
 uint32_t crc32(const uint8_t* data, size_t length) {
+#if defined(ESP_PLATFORM)
+  return esp_rom_crc32_le(0, data, length);
+#else
   uint32_t crc = 0xFFFFFFFFUL;
   for (size_t i = 0; i < length; ++i) {
     crc ^= data[i];
@@ -15,6 +21,7 @@ uint32_t crc32(const uint8_t* data, size_t length) {
     }
   }
   return ~crc;
+#endif
 }
 
 void finalizePacket(void* packet, size_t packetSize, MessageType type,

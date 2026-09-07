@@ -7,6 +7,7 @@
 namespace sensor {
 
 struct EnvironmentalReading {
+  lil::protocol::MotionReading motion{};
   bool valid = false;
   bool bme680RawFallback = false;
   float temperatureC = 0;

@@ -39,10 +39,14 @@ class SensorConfigStore {
   void factoryReset();
 
  private:
+  bool ensurePreferencesOpen();
   Preferences preferences_;
   SensorRuntimeConfig lastStored_{};
+  uint8_t currentFirmwareSha_[32]{};
   bool hasStoredCopy_ = false;
   bool firmwareChanged_ = false;
+  bool preferencesOpen_ = false;
+  bool rtcConfigAvailable_ = false;
 };
 
 }  // namespace sensor

@@ -1,10 +1,13 @@
-"""Apply the power-cycled BME680 timing fix to the pinned Bosch BSEC2 library.
+"""Apply the low-power BME680 timing fixes to the pinned Bosch BSEC2 library.
 
 BSEC2 2.1.5 starts a forced measurement in ``Bsec2::run()`` and immediately
 calls ``fetchData()``. That loses the first measurement when the sensor rail
 is switched off after every call. Wait for the complete measurement and allow
 a bounded 500-ms NO_NEW_DATA retry window before the application-level
-five-second acquisition deadline expires.
+six-second acquisition budget expires. The fetch budget is propagated into
+the Bosch I2C/delay callbacks, rather than multiplying nested retry counts. Long forced-measurement waits are
+delegated to the application so the ESP32-C3 can use Light-sleep while keeping
+the sensor power rail latched.
 
 The Bosch library contains proprietary precompiled BSEC code and remains a
 normal PlatformIO dependency.  This small, version-checked source patch keeps
@@ -27,7 +30,6 @@ libdeps_dir = _project_path(env.subst("$PROJECT_LIBDEPS_DIR"), project_dir)
 pio_env = env.subst("$PIOENV")
 
 candidates = [libdeps_dir / pio_env / "bsec2" / "src" / "bsec2.cpp"]
-candidates.extend(libdeps_dir.glob("*/bsec2/src/bsec2.cpp"))
 source_path = next((path for path in candidates if path.is_file()), None)
 if source_path is None:
     raise RuntimeError(
@@ -49,6 +51,21 @@ if "2.1.5" not in source:
 marker = "WCHARGER_BSEC2_MEASUREMENT_WAIT"
 changed = False
 header_changed = False
+wait_declaration_marker = "WCHARGER_BSEC2_LOW_POWER_WAIT_DECLARATION"
+if wait_declaration_marker not in source:
+    include_needle = '#include "bsec2.h"\n'
+    include_replacement = (
+        '#include "bsec2.h"\n\n'
+        '#if defined(ARDUINO)\n'
+        '/* WCHARGER_BSEC2_LOW_POWER_WAIT_DECLARATION */\n'
+        'extern "C" void wchargerBsecLowPowerWait(uint32_t periodUs);\n'
+        '#endif\n'
+    )
+    if include_needle not in source:
+        raise RuntimeError("BSEC2 include layout changed; cannot add wait hook.")
+    source = source.replace(include_needle, include_replacement, 1)
+    changed = True
+
 if marker not in source:
     needle = (
         "        if (sensor.checkStatus() == BME68X_ERROR)\n"
@@ -84,8 +101,7 @@ if marker not in source:
         "            if (measurementUs > 0U) {\n"
         "                /* WCHARGER_BSEC2_COOPERATIVE_WAIT */\n"
         "                const uint32_t waitUs = measurementUs + 10000UL;\n"
-        "                delay(waitUs / 1000UL);\n"
-        "                delayMicroseconds(waitUs % 1000UL);\n"
+        "                wchargerBsecLowPowerWait(waitUs);\n"
         "            }\n"
         "        }\n"
         "#endif\n"
@@ -118,8 +134,7 @@ if cooperative_marker not in source:
     cooperative_wait = (
         "                /* WCHARGER_BSEC2_COOPERATIVE_WAIT */\n"
         "                const uint32_t waitUs = measurementUs + 10000UL;\n"
-        "                delay(waitUs / 1000UL);\n"
-        "                delayMicroseconds(waitUs % 1000UL);\n"
+        "                wchargerBsecLowPowerWait(waitUs);\n"
     )
     if blocking_wait not in source:
         raise RuntimeError(
@@ -127,6 +142,23 @@ if cooperative_marker not in source:
         )
     source = source.replace(blocking_wait, cooperative_wait, 1)
     changed = True
+
+legacy_cooperative_wait = (
+    "                const uint32_t waitUs = measurementUs + 10000UL;\n"
+    "                delay(waitUs / 1000UL);\n"
+    "                delayMicroseconds(waitUs % 1000UL);\n"
+)
+low_power_wait = (
+    "                const uint32_t waitUs = measurementUs + 10000UL;\n"
+    "                wchargerBsecLowPowerWait(waitUs);\n"
+)
+if legacy_cooperative_wait in source:
+    source = source.replace(legacy_cooperative_wait, low_power_wait, 1)
+    changed = True
+elif low_power_wait not in source:
+    raise RuntimeError(
+        "BSEC2 measurement wait layout changed; low-power wait hook is missing."
+    )
 
 retry_marker = "WCHARGER_BSEC2_FETCH_RETRY"
 if retry_marker not in source:
@@ -194,6 +226,46 @@ if next_call_marker not in header:
         )
     header = header.replace(header_needle, header_replacement, 1)
     header_changed = True
+
+# Upgrade previous project patches as well as clean library downloads.
+if "WCHARGER_BSEC2_BOUNDED_FETCH" not in source:
+    needle = "            uint8_t fetchedFields = sensor.fetchData();"
+    if needle not in source:
+        raise RuntimeError("BSEC2 fetch layout changed")
+    source = source.replace(needle,
+        "            /* WCHARGER_BSEC2_BOUNDED_FETCH */\n"
+        "            const uint32_t fetchStartedMs = millis();\n" + needle, 1)
+    source = source.replace('extern "C" void wchargerBsecLowPowerWait(uint32_t periodUs);',
+        'extern "C" void wchargerBsecLowPowerWait(uint32_t periodUs);\n'
+        'extern "C" bool wchargerSensorBudgetExpired();', 1)
+    source = source.replace(
+        "bmeConf.op_mode == BME68X_FORCED_MODE && retry < 50;",
+        "bmeConf.op_mode == BME68X_FORCED_MODE && retry < 50 &&\n"
+        "                 millis() - fetchStartedMs < 500U &&\n"
+        "                 !wchargerSensorBudgetExpired();", 1)
+    source = source.replace("                delay(10);\n                fetchedFields",
+                            "                wchargerBsecLowPowerWait(10000);\n                fetchedFields", 1)
+    source = source.replace("INT64_C(0xFFFFFFFF)", "INT64_C(0x100000000)")
+    changed = True
+
+if "WCHARGER_BSEC2_FETCH_DEADLINE" not in source:
+    source = source.replace('extern "C" bool wchargerSensorBudgetExpired();',
+        'extern "C" bool wchargerSensorBudgetExpired();\n'
+        'extern "C" void wchargerBeginFetchWindow();\n'
+        'extern "C" void wchargerEndFetchWindow();', 1)
+    needle = "            const uint32_t fetchStartedMs = millis();"
+    if needle not in source:
+        raise RuntimeError("BSEC2 bounded-fetch layout changed")
+    source = source.replace(needle,
+        "#if defined(ARDUINO)\n"
+        "            /* WCHARGER_BSEC2_FETCH_DEADLINE */\n"
+        "            wchargerBeginFetchWindow();\n" + needle + "\n#endif", 1)
+    needle = "#endif\n            if (fetchedFields)"
+    if needle not in source:
+        raise RuntimeError("BSEC2 fetch completion layout changed")
+    source = source.replace(needle,
+        "            wchargerEndFetchWindow();\n" + needle, 1)
+    changed = True
 
 if changed:
     source_path.write_text(source, encoding="utf-8")

@@ -84,6 +84,9 @@ class WebPortal {
   AuthSession authSessions_[4]{};
   LoginThrottle loginThrottle_{};
   char csrfToken_[33]{};
+  bool otaUploadAuthorized_ = false;
+  bool otaUploadOk_ = false;
+  String otaUploadError_;
 };
 
 }  // namespace station

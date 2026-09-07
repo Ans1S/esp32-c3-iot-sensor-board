@@ -1,6 +1,7 @@
 #include "sensor_config_store.h"
 
 #include <esp_app_desc.h>
+#include <esp_attr.h>
 #include <string.h>
 
 namespace sensor {
@@ -9,8 +10,17 @@ namespace {
 constexpr char kNamespace[] = "lil_sensor";
 constexpr char kConfigKey[] = "config";
 constexpr char kFirmwareKey[] = "fw_sha";
-constexpr uint32_t kMinSleepSeconds = 30;
+constexpr uint32_t kMinSleepSeconds = 1;
 constexpr uint32_t kMaxSleepSeconds = 86400;
+constexpr uint32_t kRtcConfigSignature = 0x43464737UL;  // "CFG7"
+
+struct RtcConfigCache {
+  uint32_t signature = 0;
+  uint8_t firmwareSha[32]{};
+  SensorRuntimeConfig config{};
+};
+
+RTC_DATA_ATTR RtcConfigCache rtcConfigCache{};
 
 struct LegacySensorRuntimeConfigV1 {
   uint32_t magic = kSensorConfigMagic;
@@ -103,37 +113,86 @@ void migrateRuntimeConfig(const Legacy& legacy, SensorRuntimeConfig& config) {
 bool validSensorType(lil::protocol::EnvironmentalSensorType type) {
   return type == lil::protocol::EnvironmentalSensorType::kAutoDetect ||
          type == lil::protocol::EnvironmentalSensorType::kBme280 ||
+      type == lil::protocol::EnvironmentalSensorType::kLsm6dsox ||
          type == lil::protocol::EnvironmentalSensorType::kBme680 ||
          type == lil::protocol::EnvironmentalSensorType::kDisabled;
 }
+
+bool validRuntimeConfig(const SensorRuntimeConfig& config) {
+  return config.magic == kSensorConfigMagic &&
+         config.version == kSensorConfigVersion &&
+         config.sleepSeconds >= kMinSleepSeconds &&
+         config.sleepSeconds <= kMaxSleepSeconds && config.wifiChannel >= 1 &&
+         config.wifiChannel <= 13 &&
+         validSensorType(config.environmentalSensorType) &&
+         isfinite(config.temperatureOffsetC) &&
+         config.temperatureOffsetC >= -10.0F &&
+         config.temperatureOffsetC <= 10.0F &&
+         isfinite(config.batteryCalibrationFactor) &&
+         config.batteryCalibrationFactor >= 0.7F &&
+         config.batteryCalibrationFactor <= 1.3F;
+}
+
+void updateRtcConfigCache(const uint8_t firmwareSha[32],
+                          const SensorRuntimeConfig& config) {
+  rtcConfigCache.signature = 0;
+  memcpy(rtcConfigCache.firmwareSha, firmwareSha,
+         sizeof(rtcConfigCache.firmwareSha));
+  rtcConfigCache.config = config;
+  rtcConfigCache.signature = kRtcConfigSignature;
+}
+}
+
+bool SensorConfigStore::ensurePreferencesOpen() {
+  if (preferencesOpen_) {
+    return true;
+  }
+  preferencesOpen_ = preferences_.begin(kNamespace, false);
+  return preferencesOpen_;
 }
 
 bool SensorConfigStore::begin() {
-  if (!preferences_.begin(kNamespace, false)) {
-    return false;
-  }
   const esp_app_desc_t* description = esp_app_get_description();
   if (description == nullptr) {
     return false;
   }
-  uint8_t storedSha[sizeof(description->app_elf_sha256)]{};
+  static_assert(sizeof(currentFirmwareSha_) ==
+                    sizeof(description->app_elf_sha256),
+                "Firmware SHA size changed");
+  memcpy(currentFirmwareSha_, description->app_elf_sha256,
+         sizeof(currentFirmwareSha_));
+
+  if (rtcConfigCache.signature == kRtcConfigSignature &&
+      memcmp(rtcConfigCache.firmwareSha, currentFirmwareSha_,
+             sizeof(currentFirmwareSha_)) == 0 &&
+      validRuntimeConfig(rtcConfigCache.config)) {
+    lastStored_ = rtcConfigCache.config;
+    hasStoredCopy_ = true;
+    rtcConfigAvailable_ = true;
+    firmwareChanged_ = false;
+    return true;
+  }
+
+  if (!ensurePreferencesOpen()) {
+    return false;
+  }
+  uint8_t storedSha[sizeof(currentFirmwareSha_)]{};
   const bool sameFirmware =
       preferences_.getBytesLength(kFirmwareKey) == sizeof(storedSha) &&
       preferences_.getBytes(kFirmwareKey, storedSha, sizeof(storedSha)) ==
           sizeof(storedSha) &&
-      memcmp(storedSha, description->app_elf_sha256, sizeof(storedSha)) == 0;
+      memcmp(storedSha, currentFirmwareSha_, sizeof(storedSha)) == 0;
   firmwareChanged_ = !sameFirmware;
   if (firmwareChanged_) {
-    // Serial flashing normally leaves NVS intact. Treat a different firmware
-    // image as a freshly flashed sensor while retaining state across ordinary
-    // resets, deep sleep and complete power loss with the same image.
-    if (!preferences_.clear() ||
-        preferences_.putBytes(kFirmwareKey, description->app_elf_sha256,
-                              sizeof(description->app_elf_sha256)) !=
-            sizeof(description->app_elf_sha256)) {
+    // Firmware upgrades invalidate RTC data, not the persisted pairing. Keep
+    // the previous schema readable so a bootloader rollback retains settings.
+    if (preferences_.putBytes(kFirmwareKey, currentFirmwareSha_,
+                              sizeof(currentFirmwareSha_)) !=
+            sizeof(currentFirmwareSha_)) {
       return false;
     }
   }
+  rtcConfigCache.signature = 0;
   return true;
 }
 
@@ -142,8 +201,15 @@ bool SensorConfigStore::firmwareChanged() const {
 }
 
 SensorRuntimeConfig SensorConfigStore::load() {
+  if (rtcConfigAvailable_) {
+    return lastStored_;
+  }
+
   SensorRuntimeConfig config{};
   bool migrated = false;
+  if (!ensurePreferencesOpen()) {
+    return config;
+  }
   const size_t stored = preferences_.getBytesLength(kConfigKey);
   if (stored == sizeof(config)) {
     preferences_.getBytes(kConfigKey, &config, sizeof(config));
@@ -214,18 +280,7 @@ SensorRuntimeConfig SensorConfigStore::load() {
     config.provisioned = legacy.stationKnown;
     migrated = true;
   }
-  if (config.magic != kSensorConfigMagic ||
-      config.version != kSensorConfigVersion ||
-      config.sleepSeconds < kMinSleepSeconds ||
-      config.sleepSeconds > kMaxSleepSeconds || config.wifiChannel < 1 ||
-      config.wifiChannel > 13 ||
-      !validSensorType(config.environmentalSensorType) ||
-      !isfinite(config.temperatureOffsetC) ||
-      config.temperatureOffsetC < -10.0F ||
-      config.temperatureOffsetC > 10.0F ||
-      !isfinite(config.batteryCalibrationFactor) ||
-      config.batteryCalibrationFactor < 0.7F ||
-      config.batteryCalibrationFactor > 1.3F) {
+  if (!validRuntimeConfig(config)) {
     config = SensorRuntimeConfig{};
   }
   lastStored_ = config;
@@ -233,6 +288,8 @@ SensorRuntimeConfig SensorConfigStore::load() {
   if (migrated) {
     preferences_.putBytes(kConfigKey, &config, sizeof(config));
   }
+  updateRtcConfigCache(currentFirmwareSha_, config);
+  rtcConfigAvailable_ = true;
   return config;
 }
 
@@ -240,18 +297,25 @@ bool SensorConfigStore::saveIfChanged(const SensorRuntimeConfig& config) {
   if (hasStoredCopy_ && memcmp(&lastStored_, &config, sizeof(config)) == 0) {
     return true;
   }
-  if (preferences_.putBytes(kConfigKey, &config, sizeof(config)) !=
+  if (!ensurePreferencesOpen() ||
+      preferences_.putBytes(kConfigKey, &config, sizeof(config)) !=
       sizeof(config)) {
     return false;
   }
   lastStored_ = config;
   hasStoredCopy_ = true;
+  updateRtcConfigCache(currentFirmwareSha_, config);
+  rtcConfigAvailable_ = true;
   return true;
 }
 
 void SensorConfigStore::factoryReset() {
-  preferences_.clear();
+  if (ensurePreferencesOpen()) {
+    preferences_.clear();
+  }
+  rtcConfigCache.signature = 0;
   hasStoredCopy_ = false;
+  rtcConfigAvailable_ = false;
 }
 
 }  // namespace sensor

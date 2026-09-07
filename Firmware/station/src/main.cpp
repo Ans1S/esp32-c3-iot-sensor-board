@@ -2,6 +2,7 @@
 #include <time.h>
 
 #include "app_config.h"
+#include "ota_service.h"
 #include "config_store.h"
 #include "espnow_gateway.h"
 #include "sensor_registry.h"
@@ -35,7 +36,7 @@ void setup() {
 
   Serial.println();
   Serial.println("========================================");
-  Serial.println("W-Charger Station firmware 3.0");
+  Serial.printf("W-Charger Station firmware %s\n", lil::ota::kVersion);
   Serial.println("========================================");
 
   if (!configStore.begin()) {
@@ -56,6 +57,9 @@ void setup() {
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
   if (!thingSpeakService.begin()) {
     fatal("ThingSpeak task could not be started");
+  }
+  if (!station::otaService.begin()) {
+    Serial.println("[WARN] OTA staging unavailable; install the new partition layout by USB");
   }
   if (!espNowGateway.begin(sensorRegistry, thingSpeakService, wifiService)) {
     fatal("ESP-NOW gateway could not be started");

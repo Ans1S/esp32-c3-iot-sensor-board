@@ -24,12 +24,14 @@ enum Capability : uint16_t {
   kBattery = 1U << 4,
   kPcbV4PowerGates = 1U << 5,
   kGasResistance = 1U << 6,
+  kMotion = 1U << 7,
 };
 
 enum class EnvironmentalSensorType : uint8_t {
   kAutoDetect = 0,
   kBme280 = 1,
   kBme680 = 2,
+  kLsm6dsox = 3,
   kDisabled = 255,
 };
 
@@ -38,12 +40,15 @@ enum class SensorOperatingMode : uint8_t {
   kDiscovery = 1,
   kEnergySaving = 2,
   kChannelRecovery = 3,
+  kContinuousMotion = 4,
 };
 
 enum ConfigFlag : uint16_t {
   kConfigNone = 0,
   kFactoryReset = 1U << 0,
   kResetIaqCalibration = 1U << 1,
+  // Additive status bit: packet layout/version remains compatible with V5.
+  kStationChannelStable = 1U << 2,
 };
 
 enum TelemetryFlag : uint16_t {
@@ -81,6 +86,15 @@ struct PacketHeader {
   uint32_t crc32;
 };
 
+struct MotionReading {
+  float accelerationG[3]{};
+  float angularRateDps[3]{};
+  float peakAccelerationG = 0;
+  float peakAngularRateDps = 0;
+  uint16_t sampleCount = 0;
+  uint8_t fifoOverrun = 0;
+};
+
 struct TelemetryPayload {
   uint32_t appliedConfigRevision;
   uint32_t bootCount;
@@ -100,7 +114,11 @@ struct TelemetryPayload {
   IaqCalibrationPhase iaqCalibrationPhase;
   uint16_t iaqCalibrationElapsedMinutes;
   uint16_t iaqCalibrationRemainingMinutes;
+  MotionReading motion;
 };
+
+// V5 prefix retained for OTA migration from 4.0.0; station accepts both sizes.
+constexpr size_t kLegacyTelemetryPayloadSize = offsetof(TelemetryPayload, motion);
 
 struct ConfigResponsePayload {
   uint32_t revision;

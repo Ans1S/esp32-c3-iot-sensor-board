@@ -4,12 +4,11 @@
 #include <HTTPClient.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <time.h>
 
 namespace station {
 
 namespace {
-constexpr size_t kUploadQueueSize = 64;
-constexpr uint32_t kMinimumWriteIntervalMs = 15000;
 constexpr uint32_t kHttpTimeoutMs = 7000;
 
 // DigiCert Global Root G2, valid until 2038-01-15.
@@ -37,9 +36,9 @@ MrY=
 }  // namespace
 
 bool ThingSpeakService::begin() {
-  queue_ = xQueueCreate(kUploadQueueSize, sizeof(CloudUploadJob));
+  queueMutex_ = xSemaphoreCreateMutex();
   tlsMutex_ = xSemaphoreCreateMutex();
-  if (queue_ == nullptr || tlsMutex_ == nullptr) {
+  if (queueMutex_ == nullptr || tlsMutex_ == nullptr) {
     return false;
   }
   return xTaskCreate(taskEntry, "thingspeak", 10240, this, 1, &task_) == pdPASS;
@@ -48,7 +47,7 @@ bool ThingSpeakService::begin() {
 bool ThingSpeakService::queue(
     const SensorConfig& config,
     const lil::protocol::TelemetryPayload& telemetry, int8_t stationRssi,
-    uint32_t sequence) {
+    uint32_t sequence, uint32_t receivedAt, bool sharedChannel) {
   if (!config.provisioned || !config.cloudUploadEnabled ||
       config.thingSpeakChannelId == 0 ||
       config.thingSpeakWriteKey[0] == '\0') {
@@ -56,6 +55,8 @@ bool ThingSpeakService::queue(
   }
 
   CloudUploadJob job{};
+  job.receivedAt = receivedAt;
+  job.sharedChannel = sharedChannel;
   memcpy(job.mac, config.mac, sizeof(job.mac));
   job.channelId = config.thingSpeakChannelId;
   strlcpy(job.writeKey, config.thingSpeakWriteKey, sizeof(job.writeKey));
@@ -64,14 +65,11 @@ bool ThingSpeakService::queue(
   job.fields = config.thingSpeakFields;
   job.telemetry = telemetry;
 
-  if (xQueueSend(queue_, &job, 0) == pdTRUE) {
-    return true;
-  }
-
-  CloudUploadJob discarded{};
-  xQueueReceive(queue_, &discarded, 0);
-  droppedJobs_.fetch_add(1, std::memory_order_relaxed);
-  return xQueueSend(queue_, &job, 0) == pdTRUE;
+  xSemaphoreTake(queueMutex_, portMAX_DELAY);
+  scheduler_.push(job, millis());
+  droppedJobs_.store(scheduler_.dropped(), std::memory_order_relaxed);
+  xSemaphoreGive(queueMutex_);
+  return true;
 }
 
 void ThingSpeakService::taskEntry(void* context) {
@@ -79,24 +77,28 @@ void ThingSpeakService::taskEntry(void* context) {
 }
 
 void ThingSpeakService::taskLoop() {
-  CloudUploadJob job{};
-  uint32_t lastWriteMs = 0;
   for (;;) {
-    if (xQueueReceive(queue_, &job, portMAX_DELAY) != pdTRUE) {
+    lil::UploadScheduler<CloudUploadJob, 64>::Entry entry{};
+    xSemaphoreTake(queueMutex_, portMAX_DELAY);
+    scheduler_.expire(millis());
+    const bool ready = WiFi.status() == WL_CONNECTED &&
+                       scheduler_.take(millis(), entry);
+    droppedJobs_.store(scheduler_.dropped(), std::memory_order_relaxed);
+    xSemaphoreGive(queueMutex_);
+    if (!ready) {
+      vTaskDelay(pdMS_TO_TICKS(250));
       continue;
     }
-
-    const uint32_t elapsed = millis() - lastWriteMs;
-    if (lastWriteMs != 0 && elapsed < kMinimumWriteIntervalMs) {
-      vTaskDelay(pdMS_TO_TICKS(kMinimumWriteIntervalMs - elapsed));
-    }
-
-    while (WiFi.status() != WL_CONNECTED) {
-      vTaskDelay(pdMS_TO_TICKS(5000));
-    }
-
-    upload(job);
-    lastWriteMs = millis();
+    const bool success = upload(entry.job);
+    const int status = lastHttpStatus_.load(std::memory_order_relaxed);
+    // Retry transient network/server/rate-limit failures; reject permanent
+    // credential/field errors. Retain the original acquisition timestamp.
+    const bool retryable = (status < 0 && status != -2) || status == 429 ||
+                           status >= 500 || status == HTTP_CODE_OK;
+    xSemaphoreTake(queueMutex_, portMAX_DELAY);
+    scheduler_.complete(entry, millis(), success, retryable);
+    droppedJobs_.store(scheduler_.dropped(), std::memory_order_relaxed);
+    xSemaphoreGive(queueMutex_);
   }
 }
 
@@ -172,6 +174,20 @@ bool ThingSpeakService::upload(const CloudUploadJob& job) {
       return false;
     }
 
+    if (job.receivedAt >= 1577836800UL) {
+      const time_t timestamp = job.receivedAt;
+      struct tm utc{};
+      char formatted[24]{};
+      if (gmtime_r(&timestamp, &utc) != nullptr &&
+          strftime(formatted, sizeof(formatted), "%Y-%m-%dT%H:%M:%SZ", &utc)) {
+        // Shared channels can receive simultaneous samples. ThingSpeak requires
+        // unique second-resolution created_at values, so retain server time in
+        // that case and carry the actual receive time explicitly in status.
+        if (!job.sharedChannel) body += "&created_at=" + urlEncode(formatted);
+        body += "&status=" + urlEncode("received_at=" + String(formatted) +
+                                      ";sequence=" + String(job.sequence));
+      }
+    }
     const int status = https.POST(body);
     const String response = https.getString();
     lastHttpStatus_.store(status, std::memory_order_relaxed);

@@ -8,10 +8,10 @@ namespace station {
 
 constexpr uint32_t kConfigMagic = 0x53543230UL;  // "ST20"
 constexpr uint16_t kConfigVersion = 5;
-constexpr size_t kMaxSensors = 16;
+constexpr size_t kMaxSensors = 19;
 constexpr size_t kMaxThingSpeakChannels = 6;
 constexpr uint32_t kSensorStorageVersion = 6;
-constexpr uint32_t kMinSleepSeconds = 30;
+constexpr uint32_t kMinSleepSeconds = 1;
 constexpr uint32_t kMaxSleepSeconds = 24UL * 60UL * 60UL;
 constexpr char kDefaultSetupPassword[] = "W-Charger-Setup";
 // Internal station-only state stored in SensorConfig::pendingFlags. This bit
