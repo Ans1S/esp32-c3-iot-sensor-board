@@ -1,5 +1,8 @@
 # W-Charger Station Firmware
 
+Firmware 4.1.3 supports LSM6DSOX motion acquisition on PCB V3/V4 and local
+second-scale charts. See [LSM6DSOX setup and recording limits](../LSM6DSOX.md).
+
 The station runs on the existing Seeed XIAO ESP32-S3. It keeps Wi-Fi and
 ESP-NOW active at the same time, so the web interface remains available and
 sensors are not locked out while a cloud upload is in progress.
@@ -29,12 +32,13 @@ router, `http://w-charger/` may work as well.
 After setup, the responsive dashboard separates newly discovered sensors from
 configured sensors. A new device appears automatically and must be confirmed
 once in the three-step wizard. The wizard assigns its name and interval,
-selects the attached I2C sensor (automatic, BME280, BME680 or disabled),
+selects the attached I2C sensor (automatic, BME280, BME680, LSM6DSOX or disabled),
 optionally adjusts BME680 temperature compensation, selects a saved ThingSpeak
 channel profile and maps measurements to fields 1 through 8. Only then does
 the sensor appear in the regular dashboard with its last contact, readings,
 battery voltage, radio quality and switchable local history. Available
-intervals start at one minute and include a custom value of up to 24 hours.
+intervals start at one second and include a custom value of up to 24 hours.
+Intervals below one minute retain 900 history slots in RAM instead of a persistent 24-hour ring.
 Each sensor report also carries its actual operating mode. The captive setup
 wizard, pending-sensor list and configured dashboard cards display **Setup
 mode**, **Energy-saving mode**, **Channel recovery** or **Mode unknown**. The
@@ -56,6 +60,22 @@ factory reset. During normal operation, changes are made directly under
   IDs
 - `thingspeak_service`: HTTPS upload, account management and automatic creation
   of private channels
+
+The ESP-NOW gateway builds its configuration response entirely from RAM and
+sends it before writing telemetry, history or a newly discovered sensor entry
+to flash. A separate low-priority task performs those writes after the send
+callback. This keeps filesystem latency out of the battery sensor's response
+window; if the persistence queue is unexpectedly full, the station performs a
+synchronous fallback only after the response transmission has completed.
+
+The station also selects each sensor's normal transmit-power request from its
+received RSSI using hysteresis. PCB V4 starts at 11 dBm when the first link has
+adequate margin and can step down to 8.5 dBm after eight strong reports; PCB V3
+does not go below 11 dBm. Two weak reports raise power, an RSSI at or below
+-82 dBm raises it immediately, and normal requested power is capped at 15 dBm.
+The sensor still adds 3 dBm on its second known-channel attempt and uses the
+ESP32 API maximum for bounded channel recovery. The current base request is
+available as `sensorTxPowerDbm` in `/api/status`.
 
 Up to six ThingSpeak channel profiles can be stored centrally and reused by
 multiple sensors. Each profile contains a name, the channel ID and optional
@@ -93,14 +113,14 @@ transmit, it reappears as a new device on its next contact, as expected.
 The editing wizard also provides transparent BME680 commissioning, an explicit
 reset of the IAQ learning state and optional battery-voltage calibration using
 a multimeter reference. Independently of any open browser, the station stores
-a rolling 24-hour history for every sensor. Its 48 fixed 30-minute windows each
-contain the latest measurement received during that window: temperature,
+a rolling 24-hour history for every sensor. Its windows follow the configured
+report interval and each contains the latest received measurement: temperature,
 humidity, pressure, IAQ and its accuracy, gas resistance and battery voltage.
 A phone or another browser loads the complete data through the local station
 API; keeping or reloading a page is not required for collection. The history
 survives a normal station restart. A drop-down switches the labelled plot
 between every quantity supported by the sensor, with time, value range and unit
-shown on the axes. Truly missing 30-minute windows are not bridged by an
+shown on the axes. Truly missing measurement windows are not bridged by an
 invented connecting line.
 
 The channel ID and read/write API keys can be entered in the captive portal and
@@ -154,7 +174,17 @@ The local web interface is still served over HTTP. Password protection prevents
 unintended access by other participants on the home network, but it does not
 replace transport encryption against active interception on that network.
 
-The selected 8 MB partition layout has two OTA-capable application slots of
-approximately 3.19 MiB each. This provides headroom but does not yet implement
-firmware upload. The current release distributes only settings to the sensors;
-the secure binary OTA flow is scoped separately in `../ARCHITECTURE.md`.
+The 8 MB OTA station layout reserves two 2.25 MiB application slots, a
+1.375 MiB measurement filesystem and a separate 2 MiB firmware staging
+partition. Install this layout once by USB. The **Firmware updates** page
+accepts signed sensor packages, queues one node at a time, and displays actual
+reported software/build versions and confirmed transfer progress. See
+[the OTA guide](../OTA.md) for signing keys, installation and recovery tests.
+
+## Performance changes and verification
+
+See [power management](../POWER_MANAGEMENT.md) for default operating modes,
+energy tradeoffs and validation limits. Reproducible host and browser checks
+are in [tests/README.md](../tests/README.md); physical acceptance checks are in
+[HARDWARE_TESTPLAN.md](../HARDWARE_TESTPLAN.md). Current package information is
+in [releases](../releases/README.md).

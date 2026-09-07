@@ -9,10 +9,13 @@
 
 #include "app_config.h"
 #include "lil_protocol.h"
+#include "upload_scheduler.h"
 
 namespace station {
 
 struct CloudUploadJob {
+  uint32_t receivedAt = 0;
+  bool sharedChannel = false;
   uint8_t mac[6]{};
   uint32_t channelId = 0;
   char writeKey[33]{};
@@ -43,7 +46,8 @@ class ThingSpeakService {
   bool begin();
   bool queue(const SensorConfig& config,
              const lil::protocol::TelemetryPayload& telemetry,
-             int8_t stationRssi, uint32_t sequence);
+             int8_t stationRssi, uint32_t sequence, uint32_t receivedAt,
+             bool sharedChannel = false);
   ChannelCreationResult createChannel(const String& userApiKey,
                                       const String& sensorName);
   ThingSpeakApiResult listChannels(const String& userApiKey);
@@ -73,7 +77,8 @@ class ThingSpeakService {
                                      const String& userApiKey,
                                      const String& encodedSettings = "");
 
-  QueueHandle_t queue_ = nullptr;
+  lil::UploadScheduler<CloudUploadJob, 64> scheduler_;
+  SemaphoreHandle_t queueMutex_ = nullptr;
   SemaphoreHandle_t tlsMutex_ = nullptr;
   TaskHandle_t task_ = nullptr;
   std::atomic<int> lastHttpStatus_{0};

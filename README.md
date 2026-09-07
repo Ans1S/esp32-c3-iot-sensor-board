@@ -15,8 +15,8 @@
 ![Station](https://img.shields.io/badge/Station-ESP32--S3-1f6f50.svg)
 ![Build](https://img.shields.io/badge/Build-PlatformIO-f5822a.svg)
 
-**[Purpose](#why-w-charger)** · **[Hardware](#hardware)** ·
-**[Software](#software)** · **[Upload](#upload-the-firmware)** ·
+**[Purpose](#why-w-charger)** Â· **[Hardware](#hardware)** Â·
+**[Software](#software)** Â· **[Upload](#upload-the-firmware)** Â·
 **[Security](#security-and-privacy)**
 
 </div>
@@ -30,7 +30,7 @@ ESP32-C3 nodes that measure the environment instead of becoming immediate
 electronic waste.
 
 The goal is bigger than reusing one battery. This project makes a complete,
-understandable sensor system available—from the PCB and low-power firmware to
+understandable sensor system availableâ€”from the PCB and low-power firmware to
 automatic discovery, a local dashboard and optional cloud export. Connect a
 BME280 or BME680, place multiple nodes around a room, and turn discarded energy
 into useful temperature, humidity, pressure and air-quality data.
@@ -45,23 +45,23 @@ into useful temperature, humidity, pressure and air-quality data.
 
 ```text
 Recovered 1-cell battery
-          │
-          ▼
+          â”‚
+          â–¼
 ESP32-C3 sensor board + BME280/BME680
-          │  ESP-NOW
-          ▼
+          â”‚  ESP-NOW
+          â–¼
 USB-powered ESP32-S3 station
-          ├── Local responsive dashboard + 24 h history
-          └── Optional HTTPS upload to ThingSpeak
+          â”œâ”€â”€ Local responsive dashboard + 24 h history
+          â””â”€â”€ Optional HTTPS upload to ThingSpeak
 ```
 
 | Part | Current implementation |
 |---|---|
-| Sensor node | Custom ESP32-C3 PCB V3 or V4, battery powered and mostly in deep sleep |
+| Sensor node | Custom ESP32-C3 PCB V3 or V4, battery powered; environmental modes use deep sleep |
 | Home station | Seeed Studio XIAO ESP32-S3, continuously powered by USB |
 | Radio | ESP-NOW with automatic station and Wi-Fi-channel discovery |
-| Sensors | BME280 or BME680 over I²C; operation without an environmental sensor is also possible |
-| Configuration | Browser-based setup—no Wi-Fi password, MAC address or API key in source code |
+| Sensors | BME280 or BME680 over IÂ²C; operation without an environmental sensor is also possible |
+| Configuration | Browser-based setupâ€”no Wi-Fi password, MAC address or API key in source code |
 | Data | Local readings and history; ThingSpeak is optional |
 
 ## Hardware
@@ -75,8 +75,8 @@ range and reduce avoidable deep-sleep losses.
 
 <table>
 <tr>
-<th align="center">PCB V3 · previous design</th>
-<th align="center">PCB V4 · current design</th>
+<th align="center">PCB V3 Â· previous design</th>
+<th align="center">PCB V4 Â· current design</th>
 </tr>
 <tr>
 <td align="center"><img src="Readme/V3.webp" alt="PCB V3 front render" width="320"><br><sub>Front</sub></td>
@@ -92,15 +92,15 @@ range and reduce avoidable deep-sleep losses.
 |---|---|---|
 | 3.3 V supply | DS8561-33S5 LDO | TPS63900 buck-boost regulator |
 | Usable battery range | Limited by LDO headroom | Designed to maintain 3.3 V across more of the Li-ion discharge curve |
-| Sensor rail | GPIO10, active-high switching | PMOS power gate on GPIO10, active-low; sensor and I²C pull-ups are off during sleep |
+| Sensor rail | GPIO10, active-high switching | PMOS power gate on GPIO10, active-low; sensor and IÂ²C pull-ups are off during sleep |
 | Battery measurement | ADC on GPIO3; divider remains connected | ADC on GPIO3 plus GPIO6 enable; divider is powered only for a reading |
 | Battery connector | Earlier vertical connector layout | Low-profile, side-entry two-pin SMD connector |
 | Charging/status | TC4056A-based layout | Revised TP4056 thermal-pad layout with clearer power/charge indicators |
 | Firmware target | `sensor_pcb_v3` | `sensor_pcb_v4` |
 | Status | Existing prototype | **Current prototype; complete electrical, thermal, RF and runtime validation is still required** |
 
-Both revisions expose the same four-pin I²C interface:
-`3V3 · SDA (GPIO5) · SCL (GPIO4) · GND`. The shared sensor firmware selects
+Both revisions expose the same four-pin IÂ²C interface:
+`3V3 Â· SDA (GPIO5) Â· SCL (GPIO4) Â· GND`. The shared sensor firmware selects
 the correct pin polarity and battery-measurement behavior through its build
 profile.
 
@@ -115,7 +115,7 @@ There is one maintained firmware implementation under [`Firmware/`](Firmware/):
 | Module | Role |
 |---|---|
 | [`station/`](Firmware/station/) | ESP32-S3 setup portal, local dashboard, sensor registry, history and optional ThingSpeak integration |
-| [`sensor/`](Firmware/sensor/) | One ESP32-C3 codebase for PCB V3/V4 and BME280/BME680 |
+| [`sensor/`](Firmware/sensor/) | One ESP32-C3 codebase for PCB V3/V4 and BME280/BME680/LSM6DSOX |
 | [`shared/`](Firmware/shared/) | Versioned ESP-NOW protocol shared by station and sensor |
 
 Old experiments are intentionally excluded from Git. The `Firmware/`
@@ -133,7 +133,7 @@ voltage, radio strength, ThingSpeak status and a local rolling 24-hour history.
 </p>
 
 Each sensor can be named and configured independently. Measurements can be
-mapped to ThingSpeak fields 1–8 or kept local. BME680 nodes also show Static
+mapped to ThingSpeak fields 1â€“8 or kept local. BME680 nodes also show Static
 IAQ, BSEC accuracy and gas resistance.
 
 <p align="center">
@@ -150,7 +150,7 @@ Key behavior:
   five minutes while radio reports follow the configured longer interval.
 - Initial BME680 stabilization takes roughly 20 minutes; background learning
   continues afterwards.
-- The station retains a rolling 24-hour history for every sensor. Its local
+- At report intervals of at least one minute, the station retains a rolling 24-hour history. Its local
   history step follows that sensor's measurement interval, so a 10-minute
   interval produces 10-minute points and a 20-minute interval produces
   20-minute points.
@@ -244,12 +244,12 @@ All three release targets currently compile successfully:
    [`http://w-charger.local/`](http://w-charger.local/) or the LAN address
    shown during setup.
 5. Flash and power the matching sensor board. Open **Find sensors**, name the
-   detected node, select BME280/BME680 (or automatic detection), choose its
+   detected node, select BME280/BME680/LSM6DSOX (or automatic detection), choose its
    interval and save.
 
 No serial monitor and no source-code credential file are required. Firmware
-updates are currently USB-only; OTA update slots are reserved but the OTA flow
-is not implemented.
+updates support signed ESP-NOW OTA after initial USB provisioning; see
+[the OTA guide](Firmware/OTA.md) for installation, signing and recovery.
 
 ## Security and privacy
 
@@ -292,18 +292,18 @@ trusted-home-network prototype.
 
 ```text
 .
-├── Firmware/
-│   ├── station/        # ESP32-S3 station
-│   ├── sensor/         # ESP32-C3 sensor, PCB V3 and V4
-│   └── shared/         # Common ESP-NOW protocol
-├── PCB/
-│   ├── Version 1–3/    # Earlier hardware revisions
-│   └── Version 4/      # Current KiCad and production files
-├── Readme/             # Public documentation images
-├── .githooks/          # Optional secret guards
-├── .gitignore
-├── LICENSE
-└── README.md
+â”œâ”€â”€ Firmware/
+â”‚   â”œâ”€â”€ station/        # ESP32-S3 station
+â”‚   â”œâ”€â”€ sensor/         # ESP32-C3 sensor, PCB V3 and V4
+â”‚   â””â”€â”€ shared/         # Common ESP-NOW protocol
+â”œâ”€â”€ PCB/
+â”‚   â”œâ”€â”€ Version 1â€“3/    # Earlier hardware revisions
+â”‚   â””â”€â”€ Version 4/      # Current KiCad and production files
+â”œâ”€â”€ Readme/             # Public documentation images
+â”œâ”€â”€ .githooks/          # Optional secret guards
+â”œâ”€â”€ .gitignore
+â”œâ”€â”€ LICENSE
+â””â”€â”€ README.md
 ```
 
 Detailed references:
@@ -319,3 +319,16 @@ Detailed references:
 Project-owned source and hardware files are released under the [MIT License](LICENSE).
 The optional BME680 path downloads Bosch BSEC2 during the build; that dependency
 is distributed under Bosch's separate BSEC license.
+
+## Firmware 4.1.3
+
+Both PCB revisions support signed sensor updates through the station dashboard.
+See the [OTA setup and signing guide](Firmware/OTA.md) before building and the
+[current package notes](Firmware/releases/README.md) for migration details.
+
+LSM6DSOX motion acquisition uses a continuous 104 Hz FIFO with one-second or
+longer interval summaries and local graphs. Subminute history keeps up to 900
+points in RAM and is cleared on station restart. BME280/BME680 retain their
+power-gated deep-sleep modes. Continuous motion acquisition and shorter report
+intervals consume more energy; see [power management](Firmware/POWER_MANAGEMENT.md)
+and the [motion guide](Firmware/LSM6DSOX.md).
