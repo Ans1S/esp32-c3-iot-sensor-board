@@ -21,7 +21,6 @@ build/
 *.uf2
 *.partitions.bin
 *.bootloader.bin
-*.ota
 *.env
 .env.*
 
