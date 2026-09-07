@@ -17,34 +17,34 @@
       <rect x="45" y="45" width="225" height="270" rx="24" fill="#fff"/>
       <rect x="345" y="45" width="225" height="270" rx="24" fill="#fff"/>
       <rect x="645" y="45" width="225" height="270" rx="24" fill="#fff"/>
-      <rect x="945" y="45" width="210" height="270" rx="24" fill="#fff"/>
+      <rect x="930" y="45" width="225" height="270" rx="24" fill="#fff"/>
     </g>
     <g text-anchor="middle">
       <g transform="translate(157 105)">
         <rect x="-30" y="0" width="60" height="112" rx="18" fill="#27342c"/><rect x="-20" y="12" width="40" height="75" rx="11" fill="#b7d8c4"/><rect x="-12" y="-12" width="24" height="20" rx="8" fill="#172019"/>
         <path d="M-10 40h20M0 30v20" stroke="#fff" stroke-width="4" opacity=".8"/>
       </g>
-      <text x="157" y="247" fill="#172019" font-size="21" font-weight="750">Disposable device</text>
-      <text x="157" y="274" fill="#667168" font-size="15">Too often littered or binned</text>
+      <text x="157" y="247" fill="#172019" font-size="19" font-weight="750">Disposable device</text>
+      <text x="157" y="274" fill="#667168" font-size="13">Too often littered or binned</text>
 
       <g transform="translate(457 110)">
         <rect x="-48" y="8" width="96" height="100" rx="20" fill="#d8d8d4" stroke="#a7aea9" stroke-width="3"/><rect x="-31" y="-2" width="62" height="16" rx="6" fill="#d8d8d4" stroke="#a7aea9" stroke-width="3"/>
         <rect x="-34" y="30" width="68" height="55" rx="10" fill="#f5bd39"/><path d="M4 38-13 64H1l-8 21 23-31H2z" fill="#fff"/>
       </g>
-      <text x="457" y="247" fill="#172019" font-size="21" font-weight="750">Rechargeable cell</text>
-      <text x="457" y="274" fill="#667168" font-size="15">Carefully recovered and checked</text>
+      <text x="457" y="247" fill="#172019" font-size="19" font-weight="750">Rechargeable cell</text>
+      <text x="457" y="274" fill="#667168" font-size="13">Carefully recovered and checked</text>
 
       <g transform="translate(757 112)">
         <rect x="-66" y="0" width="132" height="103" rx="13" fill="url(#green)"/><g fill="#dce7de"><rect x="-48" y="17" width="31" height="25" rx="4"/><rect x="2" y="17" width="45" height="25" rx="4"/><rect x="-48" y="57" width="50" height="28" rx="4"/><circle cx="39" cy="70" r="13"/></g><g fill="#e6b946"><circle cx="-56" cy="11" r="3"/><circle cx="56" cy="11" r="3"/><circle cx="-56" cy="92" r="3"/><circle cx="56" cy="92" r="3"/></g>
       </g>
-      <text x="757" y="247" fill="#172019" font-size="21" font-weight="750">Low-power sensor</text>
-      <text x="757" y="274" fill="#667168" font-size="15">Measures, reports, then sleeps</text>
+      <text x="757" y="247" fill="#172019" font-size="19" font-weight="750">Low-power sensor</text>
+      <text x="757" y="274" fill="#667168" font-size="13">Measures, reports, then sleeps</text>
 
-      <g transform="translate(1050 105)">
+      <g transform="translate(1042 105)">
         <rect x="-72" y="0" width="144" height="104" rx="14" fill="#e9efeb" stroke="#bfd0c4" stroke-width="3"/><rect x="-59" y="13" width="118" height="70" rx="7" fill="#fff"/><path d="M-45 66-18 48 5 56 38 27 49 35" fill="none" stroke="#198955" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="-18" cy="48" r="5" fill="#198955"/><circle cx="38" cy="27" r="5" fill="#198955"/><rect x="-19" y="104" width="38" height="11" rx="4" fill="#88998d"/>
       </g>
-      <text x="1050" y="247" fill="#172019" font-size="21" font-weight="750">Station &amp; dashboard</text>
-      <text x="1050" y="274" fill="#667168" font-size="15">One place for every reading</text>
+      <text x="1042" y="247" fill="#172019" font-size="19" font-weight="750">Station &amp; dashboard</text>
+      <text x="1042" y="274" fill="#667168" font-size="13">One place for every reading</text>
     </g>
     <text x="600" y="332" text-anchor="middle" fill="#146c43" font-size="15" font-weight="750" letter-spacing="1.7">FROM SHORT-LIVED PRODUCT TO LONG-LIVED TOOL</text>
   </g>
