@@ -1,19 +1,19 @@
 # Firmware 4.1.3
 
 The current sensor release is **4.1.3** (release integer **40103**) for PCB V3
-and V4. This directory keeps only the latest locally built OTA packages:
+and V4. This directory publishes the latest signed OTA packages:
 
 | File | Target |
 | --- | --- |
 | `sensor-v3-4.1.3.ota` | PCB V3 |
 | `sensor-v4-4.1.3.ota` | PCB V4 |
 
-Binary packages are excluded from Git. Build and sign them using the
-[OTA guide](../OTA.md); they require the installation key already trusted by
-both the station and sensor. A newly generated key cannot update an existing
-installation. `SHA256SUMS.txt` identifies the current local packages; signatures
-are verified by the packager and both devices. Factory images and older
-packages are not part of this release directory.
+Build and sign release packages using the [OTA guide](../OTA.md). They require
+the installation key already trusted by both the station and sensor. A newly
+generated key cannot update an existing installation. `SHA256SUMS.txt`
+identifies the published packages; signatures are verified by the packager and
+both devices. Factory images and older packages are not part of this release
+directory.
 
 ## Changes
 
