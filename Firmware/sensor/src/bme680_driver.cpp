@@ -4,15 +4,18 @@
 #include <esp_timer.h>
 #include <string.h>
 
+#include "low_power_wait.h"
+#include "sensor_log.h"
+#include "measurement_budget.h"
+#include "logical_clock.h"
+#include "power_policy.h"
+
 namespace sensor {
 
 namespace {
 // Revision 8 invalidates RTC data learned by the former LP/ULP switching
 // routine. It complements the NVS format bump in bsec_state_store.cpp.
-constexpr uint32_t kRtcSignature = 0x42525438UL;  // "BRT8"
-constexpr uint8_t kAddresses[] = {0x76, 0x77};
-constexpr uint8_t kChipIdRegister = 0xD0;
-constexpr uint8_t kBme680ChipId = 0x61;
+constexpr uint32_t kRtcSignature = 0x42525439UL;  // "BRT9"
 // Bosch's examples persist the adaptive BSEC state periodically. Every sample
 // remains in RTC memory; NVS is only updated on an accuracy improvement or
 // after six hours.
@@ -41,7 +44,6 @@ static_assert(sizeof(kBsecConfigUlp33v) == BSEC_MAX_PROPERTY_BLOB_SIZE,
 
 struct BsecRtcState {
   uint32_t signature = 0;
-  uint64_t logicalTimeMs = 0;
   uint8_t state[BSEC_MAX_STATE_BLOB_SIZE]{};
   uint8_t lastSavedAccuracy = 0;
   uint64_t lastNvsSaveLogicalMs = 0;
@@ -60,8 +62,6 @@ struct BsecRtcState {
   uint64_t nextBsecCallLogicalMs = 0;
   // Diagnostic only. BSEC must still be attempted on every ULP wake: skipping
   // calls stops IAQ learning and can keep accuracy at zero indefinitely.
-  uint8_t consecutiveBsecFailures = 0;
-  uint8_t reservedRetryWakes = 0;
 };
 
 RTC_DATA_ATTR BsecRtcState rtcBsecState{};
@@ -76,7 +76,7 @@ unsigned long bsecLogicalMillis() {
   if (clockOverride) {
     return clockOverrideValue;
   }
-  return static_cast<uint32_t>(rtcBsecState.logicalTimeMs + bootElapsedMs());
+  return static_cast<uint32_t>(sensor::logicalTimeMs());
 }
 
 bool validReading(float value) {
@@ -88,19 +88,27 @@ bool inRange(float value, float minimum, float maximum) {
 }
 
 uint64_t logicalNowMs() {
-  return rtcBsecState.logicalTimeMs + bootElapsedMs();
+  return sensor::logicalTimeMs();
 }
 }  // namespace
 
-bool Bme680Driver::begin(float temperatureOffsetC) {
+bool Bme680Driver::ensureStateStore() {
+  if (!stateStoreReady_) {
+    stateStoreReady_ = stateStore_.begin();
+  }
+  return stateStoreReady_;
+}
+
+bool Bme680Driver::begin(uint8_t address, float temperatureOffsetC) {
   rawReady_ = false;
   bsecReady_ = false;
+  scheduleUpdated_ = false;
+  address_ = address;
   temperatureOffsetC_ = constrain(temperatureOffsetC, -10.0F, 10.0F);
-  stateStoreReady_ = stateStore_.begin();
   if (rtcBsecState.signature != kRtcSignature) {
     rtcBsecState = BsecRtcState{};
     rtcBsecState.signature = kRtcSignature;
-    if (stateStoreReady_) {
+    if (ensureStateStore()) {
       rtcBsecState.stateValid =
           stateStore_.load(rtcBsecState.state, sizeof(rtcBsecState.state));
       stateStore_.loadCalibration(rtcBsecState.calibrationElapsedSeconds,
@@ -111,38 +119,19 @@ bool Bme680Driver::begin(float temperatureOffsetC) {
   calibrationElapsedAtBeginSeconds_ =
       rtcBsecState.calibrationElapsedSeconds;
 
-  uint8_t detectedAddress = 0;
-  for (const uint8_t address : kAddresses) {
-    Wire.beginTransmission(address);
-    Wire.write(kChipIdRegister);
-    if (Wire.endTransmission(false) != 0 ||
-        Wire.requestFrom(address, static_cast<uint8_t>(1)) != 1 ||
-        Wire.read() != kBme680ChipId) {
-      continue;
-    }
-    detectedAddress = address;
-    break;
-  }
-  if (detectedAddress == 0 || !beginRaw(detectedAddress)) {
-    Serial.println("[BME680] Direkte Bosch-Initialisierung fehlgeschlagen");
-    return false;
-  }
-  Serial.printf("[BME680] Chip-ID 0x61 an Adresse 0x%02X erkannt\n",
-                detectedAddress);
+  SENSOR_LOG_PRINTF("[BME680] Chip ID 0x61 detected at address 0x%02X\n",
+                    address);
 
-  // BSEC is an enhancement, not a single point of failure. The proven raw
-  // Bosch Sensor API above remains able to produce T/H/P/gas measurements if
-  // a BSEC cycle fails. Nevertheless BSEC has to run on every ULP wake;
-  // suppressing retries also suppresses all IAQ learning.
-  rtcBsecState.reservedRetryWakes = 0;
+  // Run BSEC on every ULP wake to preserve IAQ learning. Initialize the raw
+  // Bosch fallback only when this path fails, avoiding a second sensor reset.
   bsec_.allocateMemory(bsecMemory_);
-  bsecReady_ = tryAddress(detectedAddress);
+  bsecReady_ = tryAddress(address);
   if (bsecReady_) {
     seedClockOverflowCounter();
     const bool configApplied = bsec_.setConfig(kBsecConfigUlp33v);
     if (!configApplied || bsec_.status < BSEC_OK) {
-      Serial.printf("[BME680] BSEC-Konfiguration fehlgeschlagen: %d\n",
-                    static_cast<int>(bsec_.status));
+      SENSOR_LOG_PRINTF("[BME680] BSEC configuration failed: %d\n",
+                        static_cast<int>(bsec_.status));
       bsecReady_ = false;
     }
   }
@@ -162,35 +151,33 @@ bool Bme680Driver::begin(float temperatureOffsetC) {
     bsecReady_ = bsec_.updateSubscription(
         outputs, ARRAY_LEN(outputs), BSEC_SAMPLE_RATE_ULP);
     if (!bsecReady_) {
-      Serial.printf("[BME680] BSEC-Abonnement fehlgeschlagen: %d\n",
-                    static_cast<int>(bsec_.status));
-    }
-  }
-  if (!bsecReady_) {
-    if (rtcBsecState.consecutiveBsecFailures < UINT8_MAX) {
-      ++rtcBsecState.consecutiveBsecFailures;
+      SENSOR_LOG_PRINTF("[BME680] BSEC subscription failed: %d\n",
+                        static_cast<int>(bsec_.status));
     }
   }
   if (bsecReady_) {
-    Serial.printf("[BME680] BSEC %u.%u.%u.%u bereit (%s, 3.3-V-Profil)\n",
-                  bsec_.version.major, bsec_.version.minor,
-                  bsec_.version.major_bugfix, bsec_.version.minor_bugfix,
-                  "ULP/300 s");
+    SENSOR_LOG_PRINTF(
+        "[BME680] BSEC %u.%u.%u.%u ready (%s, 3.3 V profile)\n",
+        bsec_.version.major, bsec_.version.minor,
+        bsec_.version.major_bugfix, bsec_.version.minor_bugfix, "ULP/300 s");
   } else {
-    Serial.println("[BME680] Direkte Forced-Mode-Routine aktiv");
+    SENSOR_LOG_PRINTLN("[BME680] Direct forced-mode fallback active");
   }
-  return rawReady_;
+  // Initialize the fallback only if BSEC initialization failed. A successful
+  // BSEC cycle already owns a fully initialized physical sensor.
+  return bsecReady_ || (!measurementBudgetExpired() && beginRaw(address_));
 }
 
 int8_t Bme680Driver::rawI2cRead(uint8_t registerAddress, uint8_t* data,
                                 uint32_t length, void* context) {
   auto* bus = static_cast<RawI2cContext*>(context);
+  if (measurementBudgetExpired()) return BME68X_E_COM_FAIL;
   if (bus == nullptr || bus->wire == nullptr || data == nullptr) {
     return BME68X_E_NULL_PTR;
   }
   bus->wire->beginTransmission(bus->address);
   bus->wire->write(registerAddress);
-  if (bus->wire->endTransmission() != 0 ||
+  if (bus->wire->endTransmission() != 0 || measurementBudgetExpired() ||
       bus->wire->requestFrom(bus->address, static_cast<size_t>(length)) !=
           length) {
     return BME68X_E_COM_FAIL;
@@ -208,6 +195,7 @@ int8_t Bme680Driver::rawI2cWrite(uint8_t registerAddress,
                                  const uint8_t* data, uint32_t length,
                                  void* context) {
   auto* bus = static_cast<RawI2cContext*>(context);
+  if (measurementBudgetExpired()) return BME68X_E_COM_FAIL;
   if (bus == nullptr || bus->wire == nullptr || data == nullptr) {
     return BME68X_E_NULL_PTR;
   }
@@ -222,13 +210,7 @@ int8_t Bme680Driver::rawI2cWrite(uint8_t registerAddress,
 
 void Bme680Driver::rawDelayUs(uint32_t periodUs, void* context) {
   (void)context;
-  if (periodUs >= 1000U) {
-    delay(periodUs / 1000U);
-    periodUs %= 1000U;
-  }
-  if (periodUs > 0U) {
-    delayMicroseconds(periodUs);
-  }
+  measurementWaitUs(periodUs);
 }
 
 bool Bme680Driver::beginRaw(uint8_t address) {
@@ -263,16 +245,14 @@ bool Bme680Driver::beginRaw(uint8_t address) {
 }
 
 bool Bme680Driver::tryAddress(uint8_t address) {
-  communication_ = bme68xScommT{};
-  communication_.i2c.wireobj = &Wire;
-  communication_.i2c.i2cAddr = address;
-  return bsec_.begin(BME68X_I2C_INTF, bme68xI2cRead, bme68xI2cWrite,
-                     bme68xDelayUs, &communication_, bsecLogicalMillis) &&
+  rawContext_ = RawI2cContext{&Wire, address};
+  return bsec_.begin(BME68X_I2C_INTF, rawI2cRead, rawI2cWrite,
+                     rawDelayUs, &rawContext_, bsecLogicalMillis) &&
          bsec_.status >= BSEC_OK && bsec_.sensor.status >= BME68X_OK;
 }
 
 void Bme680Driver::seedClockOverflowCounter() {
-  const uint64_t absoluteMs = rtcBsecState.logicalTimeMs + bootElapsedMs();
+  const uint64_t absoluteMs = sensor::logicalTimeMs();
   const uint32_t wraps = static_cast<uint32_t>(absoluteMs >> 32U);
   clockOverride = true;
   for (uint32_t wrap = 0; wrap < wraps; ++wrap) {
@@ -289,11 +269,11 @@ void Bme680Driver::restoreState() {
     return;
   }
   if (!bsec_.setState(rtcBsecState.state)) {
-    Serial.printf("[BME680] BSEC-Zustand verworfen, Status %d\n",
-                  static_cast<int>(bsec_.status));
+    SENSOR_LOG_PRINTF("[BME680] Discarded BSEC state, status %d\n",
+                      static_cast<int>(bsec_.status));
     rtcBsecState.stateValid = false;
   } else {
-    Serial.println("[BME680] Gespeicherten BSEC-Lernzustand geladen");
+    SENSOR_LOG_PRINTLN("[BME680] Restored saved BSEC learning state");
   }
 }
 
@@ -301,13 +281,10 @@ EnvironmentalReading Bme680Driver::read() {
   if (bsecReady_) {
     EnvironmentalReading bsecReading = readBsec();
     if (bsecReading.valid) {
-      rtcBsecState.consecutiveBsecFailures = 0;
       return bsecReading;
     }
-    if (rtcBsecState.consecutiveBsecFailures < UINT8_MAX) {
-      ++rtcBsecState.consecutiveBsecFailures;
-    }
   }
+  if (!rawReady_ && !measurementBudgetExpired()) beginRaw(address_);
   return readRaw();
 }
 
@@ -322,23 +299,26 @@ EnvironmentalReading Bme680Driver::readBsec() {
   int64_t newestTimestampNs = INT64_MIN;
   const uint32_t startedMs = millis();
   for (;;) {
+    if (measurementBudgetExpired()) return reading;
     const bool ran = bsec_.run();
     if (!ran || bsec_.status < BSEC_OK ||
         bsec_.sensor.status < BME68X_OK) {
-      Serial.printf("[BME680] BSEC-Zyklus ohne Ausgabe (BSEC %d, Sensor %d)\n",
-                    static_cast<int>(bsec_.status),
-                    static_cast<int>(bsec_.sensor.status));
+      SENSOR_LOG_PRINTF(
+          "[BME680] BSEC cycle produced no output (BSEC %d, sensor %d)\n",
+          static_cast<int>(bsec_.status),
+          static_cast<int>(bsec_.sensor.status));
       return reading;
     }
     const int64_t nextCallNs = bsec_.getNextCallNs();
     if (nextCallNs > 0) {
+      scheduleUpdated_ = true;
       rtcBsecState.nextBsecCallLogicalMs =
           static_cast<uint64_t>((nextCallNs + 999999LL) / 1000000LL);
     }
     if (bsec_.status > BSEC_OK || bsec_.sensor.status > BME68X_OK) {
-      Serial.printf("[BME680] BSEC-Warnung %d, Sensor-Warnung %d\n",
-                    static_cast<int>(bsec_.status),
-                    static_cast<int>(bsec_.sensor.status));
+      SENSOR_LOG_PRINTF("[BME680] BSEC warning %d, sensor warning %d\n",
+                        static_cast<int>(bsec_.status),
+                        static_cast<int>(bsec_.sensor.status));
     }
 
     outputs = bsec_.getOutputs();
@@ -379,12 +359,12 @@ EnvironmentalReading Bme680Driver::readBsec() {
       }
       waitMs = static_cast<uint32_t>(max<uint64_t>(1, untilNextMs));
     }
-    delay(min(waitMs, kBsecOutputTimeoutMs - elapsedMs));
+    measurementWaitUs(
+        min(waitMs, kBsecOutputTimeoutMs - elapsedMs) * 1000UL);
   }
   if (outputs == nullptr) {
-    Serial.printf(
-        "[BME680] BSEC lieferte innerhalb von %lu ms keinen frischen "
-        "Ausgabedatensatz\n",
+    SENSOR_LOG_PRINTF(
+        "[BME680] BSEC produced no fresh output within %lu ms\n",
         static_cast<unsigned long>(kBsecOutputTimeoutMs));
     return reading;
   }
@@ -459,9 +439,9 @@ EnvironmentalReading Bme680Driver::readBsec() {
                   (reading.capabilities & lil::protocol::kPressure) != 0;
   updateCalibrationStatus(reading);
   saveState(reading.iaqAccuracy);
-  Serial.printf(
+  SENSOR_LOG_PRINTF(
       "[BME680] BSEC ULP: T=%.2f C, H=%.2f %%, P=%.1f hPa, "
-      "Gas=%.0f Ohm, IAQ=%.1f, Accuracy=%u, Stabilisierung=%d, "
+      "gas=%.0f ohm, IAQ=%.1f, accuracy=%u, stabilization=%d, "
       "Run-in=%d\n",
       reading.temperatureC, reading.humidityPercent, reading.pressureHpa,
       reading.gasResistanceOhms, reading.iaq, reading.iaqAccuracy,
@@ -478,12 +458,12 @@ EnvironmentalReading Bme680Driver::readRaw() {
   EnvironmentalReading reading{};
   reading.sensorType = lil::protocol::EnvironmentalSensorType::kBme680;
   reading.bme680RawFallback = true;
-  if (!rawReady_ ||
+  if (measurementBudgetExpired() || !rawReady_ ||
       bme68x_set_conf(&rawConfiguration_, &rawDevice_) != BME68X_OK ||
       bme68x_set_heatr_conf(BME68X_FORCED_MODE, &rawHeater_, &rawDevice_) !=
           BME68X_OK ||
       bme68x_set_op_mode(BME68X_FORCED_MODE, &rawDevice_) != BME68X_OK) {
-    Serial.println("[BME680] Forced-Mode-Konfiguration fehlgeschlagen");
+    SENSOR_LOG_PRINTLN("[BME680] Forced-mode configuration failed");
     updateCalibrationStatus(reading);
     return reading;
   }
@@ -501,17 +481,17 @@ EnvironmentalReading Bme680Driver::readRaw() {
   for (uint8_t attempt = 0; attempt < 3 && fields == 0; ++attempt) {
     status = bme68x_get_data(BME68X_FORCED_MODE, &data, &fields, &rawDevice_);
     if (status < BME68X_OK) {
-      Serial.printf("[BME680] Lesen fehlgeschlagen, Bosch-Status %d\n",
-                    static_cast<int>(status));
+      SENSOR_LOG_PRINTF("[BME680] Read failed, Bosch status %d\n",
+                        static_cast<int>(status));
       updateCalibrationStatus(reading);
       return reading;
     }
     if (fields == 0) {
-      delay(10);
+      measurementWaitUs(10000);
     }
   }
   if (fields == 0) {
-    Serial.println("[BME680] Kein neuer Datensatz nach Forced Mode");
+    SENSOR_LOG_PRINTLN("[BME680] No new data after forced-mode measurement");
     updateCalibrationStatus(reading);
     return reading;
   }
@@ -535,6 +515,7 @@ EnvironmentalReading Bme680Driver::readRaw() {
       validReading(reading.gasResistanceOhms) &&
       reading.gasResistanceOhms > 0.0F;
   const bool heaterStable = (data.status & BME68X_HEAT_STAB_MSK) != 0;
+  (void)heaterStable;
   if (gasValid) {
     reading.capabilities |= lil::protocol::kGasResistance;
   }
@@ -555,9 +536,9 @@ EnvironmentalReading Bme680Driver::readRaw() {
   // Raw gas resistance is useful diagnostic data, but it is not Bosch Static
   // IAQ. Deliberately leave the IAQ capability unset instead of presenting a
   // locally invented score as a calibrated BSEC result.
-  Serial.printf(
-      "[BME680] Direktmessung: %.2f C, %.2f %%, %.1f hPa, %.0f Ohm "
-      "(gas_valid=%u, heat_stab=%u; kein IAQ-Ersatzwert)\n",
+  SENSOR_LOG_PRINTF(
+      "[BME680] Direct reading: %.2f C, %.2f %%, %.1f hPa, %.0f ohm "
+      "(gas_valid=%u, heat_stable=%u; no substitute IAQ value)\n",
       reading.temperatureC, reading.humidityPercent, reading.pressureHpa,
       reading.gasResistanceOhms, gasValid, heaterStable);
   return reading;
@@ -617,8 +598,7 @@ void Bme680Driver::saveState(uint8_t iaqAccuracy) {
       rtcBsecState.lastNvsSaveLogicalMs != 0 &&
       nowMs >= rtcBsecState.lastNvsSaveLogicalMs &&
       nowMs - rtcBsecState.lastNvsSaveLogicalMs >= kNvsSaveIntervalMs;
-  if (stateStoreReady_ &&
-      (accuracyImproved || periodicSaveDue)) {
+  if ((accuracyImproved || periodicSaveDue) && ensureStateStore()) {
     if (stateStore_.save(rtcBsecState.state, sizeof(rtcBsecState.state))) {
       rtcBsecState.lastNvsSaveLogicalMs = nowMs;
       rtcBsecState.lastSavedAccuracy = iaqAccuracy;
@@ -627,14 +607,14 @@ void Bme680Driver::saveState(uint8_t iaqAccuracy) {
             currentCalibrationElapsedSeconds();
       }
       saveCalibrationMetadata();
-      Serial.printf("[BME680] BSEC-Zustand gespeichert (Accuracy %u)\n",
-                    iaqAccuracy);
+      SENSOR_LOG_PRINTF("[BME680] Saved BSEC state (accuracy %u)\n",
+                        iaqAccuracy);
     }
   }
 }
 
 void Bme680Driver::saveCalibrationMetadata() {
-  if (stateStoreReady_) {
+  if (ensureStateStore()) {
     stateStore_.saveCalibration(rtcBsecState.calibrationElapsedSeconds,
                                 rtcBsecState.calibrationReady);
   }
@@ -651,9 +631,6 @@ uint32_t Bme680Driver::currentCalibrationElapsedSeconds() const {
 
 void Bme680Driver::prepareForDeepSleep(uint32_t seconds) {
   if (rtcBsecState.signature == kRtcSignature) {
-    rtcBsecState.logicalTimeMs +=
-        bootElapsedMs() +
-        static_cast<uint64_t>(seconds) * 1000ULL;
     if (!rtcBsecState.calibrationReady) {
       const uint32_t elapsed = currentCalibrationElapsedSeconds();
       rtcBsecState.calibrationElapsedSeconds =
@@ -664,29 +641,19 @@ void Bme680Driver::prepareForDeepSleep(uint32_t seconds) {
 
 uint32_t Bme680Driver::recommendedSleepSeconds(
     uint32_t fallbackSeconds) const {
-  if (rtcBsecState.signature != kRtcSignature ||
+  if (!scheduleUpdated_ || rtcBsecState.signature != kRtcSignature ||
       rtcBsecState.nextBsecCallLogicalMs == 0) {
     return fallbackSeconds;
   }
-  const uint64_t nowMs = logicalNowMs();
-  if (rtcBsecState.nextBsecCallLogicalMs <= nowMs) {
-    return 1;
-  }
-  const uint64_t remainingMs = rtcBsecState.nextBsecCallLogicalMs - nowMs;
-  const uint64_t remainingSeconds = (remainingMs + 999ULL) / 1000ULL;
-  return static_cast<uint32_t>(
-      min<uint64_t>(max<uint64_t>(1, remainingSeconds), fallbackSeconds));
+  return lil::power::scheduledSleepSeconds(
+      scheduleUpdated_, logicalNowMs(), rtcBsecState.nextBsecCallLogicalMs,
+      fallbackSeconds);
 }
 
 void Bme680Driver::clearPersistentState() {
   rtcBsecState = BsecRtcState{};
-  if (stateStoreReady_) {
+  if (ensureStateStore()) {
     stateStore_.clear();
-  } else {
-    BsecStateStore store;
-    if (store.begin()) {
-      store.clear();
-    }
   }
 }
 

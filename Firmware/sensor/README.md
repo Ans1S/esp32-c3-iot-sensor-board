@@ -1,5 +1,8 @@
 # W-Charger Sensor Firmware
 
+Firmware 4.1.3 supports LSM6DSOX motion acquisition on PCB V3/V4 and local
+second-scale charts. See [LSM6DSOX setup and recording limits](../LSM6DSOX.md).
+
 One shared firmware codebase supports PCB V3 and V4. The only differences are
 the build environment and the `hardware_profile`.
 
@@ -21,11 +24,12 @@ still scans all 13 channels on every attempt. A short randomized radio delay is
 used only during discovery so that sensors powered together do not repeatedly
 collide.
 
-A newly flashed firmware image is identified by its ELF SHA fingerprint. On
-the first start of that image, the old station assignment and initial IAQ state
-are cleared even if the upload tool did not erase the NVS partition. Restarts,
-deep sleep and complete power loss with the same firmware image preserve the
-stored state. For each scheduled transmission, the sensor first tries the known
+Firmware changes are identified by the ELF SHA fingerprint. A new image
+invalidates the RTC configuration cache but preserves station assignment and
+compatible calibration data in NVS. Use an explicit factory reset to clear
+pairing. Signed firmware updates can now be uploaded through the station;
+see [the OTA guide](../OTA.md) for initial USB installation and recovery.
+For each scheduled transmission, the sensor first tries the known
 channel twice. A newly paired sensor retains a commissioning recovery guard: if
 the saved setup-AP channel stops responding, it scans all 12 other channels in
 the same wake. This guarantees recovery when the station joins the configured
@@ -57,15 +61,18 @@ mode with broadcast traffic and complete channel scans.
 
 The sensor type is no longer compiled into a separate firmware image. When a
 sensor is added or edited on the station, select **Automatic**, **BME280**,
-**BME680** or **No environmental sensor**. The selection and BME680 temperature
+**BME680**, **LSM6DSOX** or **No environmental sensor**. The selection and BME680 temperature
 correction are transferred with the next ESP-NOW response. Automatic mode
-checks the Bosch chip IDs at `0x76` and `0x77`.
+checks the Bosch chip IDs at `0x76` and `0x77`, then the LSM6DSOX
+at `0x6A` and `0x6B`.
 
 A normal BME280 cycle performs only these steps:
 
-1. Enable sensor power and read the BME280 in forced mode with 1x oversampling.
-2. Read battery voltage; on V4, enable the divider only for the measurement and
-   wait 100 ms for its 100 kOhm / 100 nF ADC filter to settle.
+1. Enable sensor power and, when a report is due, start the battery-divider
+   settling period.
+2. Read the BME280 in forced mode with 1x oversampling, then sample the battery;
+   on V4, only any part of the 100 ms ADC settling period not hidden by the
+   sensor conversion is waited explicitly.
 3. Send a validated telemetry packet over ESP-NOW.
 4. Wait briefly for the station's configuration response.
 5. Write the new configuration to NVS only when its revision has changed.
@@ -89,7 +96,7 @@ interval.
 | Battery scaling | field-validated software factor 1.67 | 100 kOhm / 150 kOhm, factor 1.667 |
 
 The station can logically restore a sensor to factory settings on its next
-contact. The web interface allows any interval from one minute to 24 hours,
+contact. The web interface allows integer-second intervals from one second to 24 hours,
 covering both short tests and energy-efficient long-term operation.
 
 ## BME680 and indoor air quality
@@ -108,6 +115,9 @@ Commissioning and long-term operation deliberately use the same routine:
 - `BSEC_SAMPLE_RATE_ULP` is the only mode used from the first start throughout
   the device's lifetime, with exactly one internal BME680 measurement every
   five minutes;
+- while the BME680 completes its forced TPH/heater conversion, the ESP32-C3
+  uses timer Light-sleep with the switched sensor rail latched at its active
+  level; a failed Light-sleep setup falls back to the original timed delay;
 - there is no switch between LP and ULP, avoiding a jump in the learned BSEC
   baseline caused by an operating-mode change;
 - sensor power is off and the ESP32-C3 is in deep sleep between measurements;
@@ -158,12 +168,14 @@ subject to the [Bosch BSEC license](https://github.com/boschsensortec/Bosch-BSEC
 During a build, the pinned BSEC2 2.1.5 source is automatically adjusted with a
 small timing patch. In forced mode, BSEC2 initially starts only the measurement;
 the patch waits for the configured temperature/pressure/humidity and heater
-duration plus a conservative margin, then retries `NO_NEW_DATA` for up to
-500 ms. The driver accepts only a genuinely new BSEC output and keeps sensor
-power enabled for no more than five seconds in total. If the next ULP deadline
-is further in the future, the board and BME680 are switched off completely and
-woken exactly at that deadline; the board does not wait for five minutes with
-the sensor powered. This is required because this design removes sensor power
+duration plus a conservative margin in Light-sleep, then retries `NO_NEW_DATA`
+inside a 500-ms fetch budget propagated into the I2C and wait callbacks. One
+in-flight I2C transaction may finish after a deadline (20-ms bus timeout).
+Initialization, recovery and acquisition share a cooperative six-second budget;
+the outer BSEC output wait also retains its five-second limit. Only fresh BSEC
+output is accepted. A current future ULP deadline controls sleep, rounded up to
+whole seconds. An expired or unavailable schedule falls back to the normal
+cadence, avoiding repeated one-second error wakes. This is required because this design removes sensor power
 after every cycle. The downloaded Bosch library itself is not copied into the
 repository.
 
@@ -210,5 +222,20 @@ voltage-divider tolerance and the remaining measurement error:
 The permitted range of 0.7 to 1.3 prevents accidental extreme values. The
 calibration corrects gain under the reasonable assumption of a zero point at
 0 V; a true two-point characteristic would require two precise reference
-voltages. The ADC and voltage-divider paths remain enabled only for the few
-milliseconds required by a measurement.
+voltages. The ADC and voltage-divider paths remain enabled only for a due
+report. On V4, the required settling time overlaps the environmental conversion
+where possible, and intermediate BME680 maintenance wakes leave the divider
+off.
+
+Release builds compile sensor serial logging out and do not initialize UART.
+For hardware diagnosis, add `-DSENSOR_DIAGNOSTIC_LOGGING=1` to the desired
+sensor environment's `build_flags`; remove it again for battery-life testing.
+
+
+## Performance changes and verification
+
+See [power management](../POWER_MANAGEMENT.md) for default operating modes,
+energy tradeoffs and validation limits. Reproducible host and browser checks
+are in [tests/README.md](../tests/README.md); physical acceptance checks are in
+[HARDWARE_TESTPLAN.md](../HARDWARE_TESTPLAN.md). Current package information is
+in [releases](../releases/README.md).

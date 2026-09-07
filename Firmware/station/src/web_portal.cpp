@@ -1,4 +1,6 @@
 #include "web_portal.h"
+#include "ota_service.h"
+#include "ota_page.h"
 
 #include <ArduinoJson.h>
 #include <SHA2Builder.h>
@@ -224,6 +226,54 @@ bool WebPortal::begin(StationConfig& config, ConfigStore& store,
   });
   server_.on("/api/status", HTTP_GET, [this]() {
     if (requireAuthentication()) sendJsonStatus();
+  });
+  server_.on("/api/ota", HTTP_GET, [this]() {
+    if (!requireAuthentication()) return;
+    JsonDocument doc;
+    otaService.json(doc.to<JsonObject>());
+    String body; serializeJson(doc, body);
+    sendNoCache(server_); server_.send(200, "application/json", body);
+  });
+  server_.on("/updates", HTTP_GET, [this]() {
+    if (!requireAuthentication(true)) return;
+    sendNoCache(server_); server_.send_P(200, "text/html; charset=utf-8", kOtaPage);
+  });
+  server_.on("/api/ota/cancel", HTTP_POST, [this]() {
+    if (requireAuthentication() && verifyCsrf())
+      sendJsonResult(otaService.cancel(), "Update cancellation saved; a reboot already initiated cannot be cancelled");
+  });
+  server_.on("/api/ota/upload", HTTP_POST, [this]() {
+    if (!otaUploadAuthorized_) return;
+    sendJsonResult(otaUploadOk_, otaUploadOk_ ? "Update queued for the next node contact" : otaUploadError_);
+    otaUploadAuthorized_ = false;
+  }, [this]() {
+    HTTPUpload& upload = server_.upload();
+    if (upload.status == UPLOAD_FILE_START) {
+      otaUploadAuthorized_ = requireAuthentication() && verifyCsrf();
+      otaUploadOk_ = false; otaUploadError_ = "Upload failed";
+      if (!otaUploadAuthorized_) return;
+      uint8_t mac[6]; unsigned int parsed[6]; char extra;
+      const String value = server_.arg("mac");
+      if (sscanf(value.c_str(), "%2x:%2x:%2x:%2x:%2x:%2x%c", &parsed[0], &parsed[1],
+          &parsed[2], &parsed[3], &parsed[4], &parsed[5], &extra) != 6) {
+        otaUploadError_ = "Invalid node address"; return;
+      }
+      for (size_t i = 0; i < 6; ++i) mac[i] = parsed[i];
+      SensorConfig node{};
+      if (!registry_->findConfig(mac, node) || !node.provisioned) {
+        otaUploadError_ = "Select a configured node"; return;
+      }
+      otaUploadOk_ = otaService.startUpload(mac, otaUploadError_);
+    } else if (upload.status == UPLOAD_FILE_WRITE && otaUploadAuthorized_ && otaUploadOk_) {
+      if (!otaService.upload(upload.buf, upload.currentSize)) {
+        otaUploadOk_ = false; otaUploadError_ = "Firmware exceeds capacity or flash write failed";
+        otaService.abortUpload();
+      }
+    } else if (upload.status == UPLOAD_FILE_END && otaUploadAuthorized_ && otaUploadOk_) {
+      otaUploadOk_ = otaService.finishUpload(otaUploadError_);
+    } else if (upload.status == UPLOAD_FILE_ABORTED && otaUploadAuthorized_) {
+      otaService.abortUpload(); otaUploadOk_ = false;
+    }
   });
   server_.on("/api/history", HTTP_GET, [this]() {
     if (requireAuthentication()) sendJsonHistory();
@@ -633,6 +683,8 @@ void WebPortal::sendJsonStatus() {
   espnow["received"] = gateway_->receivedPackets();
   espnow["invalid"] = gateway_->invalidPackets();
   espnow["dropped"] = gateway_->droppedPackets();
+  espnow["persistenceDrops"] = gateway_->persistenceDrops();
+  espnow["peerFailures"] = gateway_->peerFailures();
   JsonObject cloud = document["cloud"].to<JsonObject>();
   cloud["lastHttpStatus"] = thingSpeak_->lastHttpStatus();
   cloud["lastEntryId"] = thingSpeak_->lastEntryId();
@@ -660,7 +712,7 @@ void WebPortal::sendJsonStatus() {
                                ? millis() - view.runtime.lastSeenMs
                                : 0;
     const uint32_t onlineLimitMs =
-        max(120000UL, view.config.sleepSeconds * 3000UL);
+        max(view.config.sleepSeconds < 60 ? 5000UL : 120000UL, view.config.sleepSeconds * 3000UL);
     JsonObject item = sensors.add<JsonObject>();
     item["mac"] = SensorRegistry::formatMac(view.config.mac);
     item["name"] = view.config.name;
@@ -690,6 +742,19 @@ void WebPortal::sendJsonStatus() {
     item["online"] = view.runtime.hasTelemetry && ageMs <= onlineLimitMs;
     item["ageMs"] = ageMs;
     item["rssi"] = view.runtime.stationRssi;
+    item["sensorTxPowerDbm"] =
+        static_cast<float>(view.runtime.sensorTxPowerQuarterDbm) / 4.0F;
+    const auto& motion = view.runtime.telemetry.motion;
+    const char* accelerationKeys[] = {"ax", "ay", "az"};
+    const char* angularKeys[] = {"gx", "gy", "gz"};
+    for (size_t axis = 0; axis < 3; ++axis) {
+      item[accelerationKeys[axis]] = motion.accelerationG[axis];
+      item[angularKeys[axis]] = motion.angularRateDps[axis];
+    }
+    item["peakAcceleration"] = motion.peakAccelerationG;
+    item["peakAngularRate"] = motion.peakAngularRateDps;
+    item["motionSamples"] = motion.sampleCount;
+    item["motionOverrun"] = motion.fifoOverrun != 0;
     item["temperature"] = view.runtime.telemetry.temperatureC;
     item["humidity"] = view.runtime.telemetry.humidityPercent;
     item["pressure"] = view.runtime.telemetry.pressureHpa;
@@ -752,7 +817,9 @@ void WebPortal::sendJsonHistory() {
     samples = static_cast<HistorySample*>(heap_caps_malloc(
         capacity * sizeof(HistorySample),
         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-    if (samples == nullptr) {
+    if (samples == nullptr &&
+        heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) >
+            capacity * sizeof(HistorySample) + 96U * 1024U) {
       samples = static_cast<HistorySample*>(heap_caps_malloc(
           capacity * sizeof(HistorySample), MALLOC_CAP_8BIT));
     }
@@ -773,9 +840,12 @@ void WebPortal::sendJsonHistory() {
   server_.sendContent(opening);
   String chunk;
   chunk.reserve(2048);
+  const uint32_t since = static_cast<uint32_t>(max(0L, server_.arg("since").toInt()));
+  size_t emitted = 0;
   for (size_t i = 0; i < count; ++i) {
     const HistorySample& sample = samples[i];
-    String point = i == 0 ? "{" : ",{";
+    if (sample.timestamp < since) continue;
+    String point = emitted++ == 0 ? "{" : ",{";
     point.reserve(256);
     point += "\"t\":";
     point += String(static_cast<unsigned long long>(sample.timestamp) *
@@ -786,6 +856,17 @@ void WebPortal::sendJsonHistory() {
     point += String(sample.pcbVersion);
     point += ",\"iaqAccuracy\":";
     point += String(sample.iaqAccuracy);
+    if ((sample.capabilities & lil::protocol::kMotion) != 0) {
+      const char* keys[] = {"ax", "ay", "az", "gx", "gy", "gz"};
+      for (size_t axis = 0; axis < 6; ++axis) {
+        point += ",\""; point += keys[axis]; point += "\":";
+        point += String(axis < 3 ? sample.accelerationMilliG[axis] / 1000.0F :
+                        sample.angularRateDeciDps[axis - 3] / 10.0F, 3);
+      }
+      point += ",\"peakAcceleration\":"; point += String(sample.peakAccelerationMilliG / 1000.0F, 3);
+      point += ",\"peakAngularRate\":"; point += String(sample.peakAngularRateDeciDps / 10.0F, 1);
+      point += ",\"motionOverrun\":"; point += sample.motionOverrun ? "true" : "false";
+    }
     if ((sample.capabilities & lil::protocol::kTemperature) != 0) {
       point += ",\"temperature\":";
       point += String(sample.temperatureCentiC / 100.0F, 2);
@@ -946,6 +1027,7 @@ void WebPortal::saveSetupSensor() {
   const bool validSensorType =
       sensorType == lil::protocol::EnvironmentalSensorType::kAutoDetect ||
       sensorType == lil::protocol::EnvironmentalSensorType::kBme280 ||
+      sensorType == lil::protocol::EnvironmentalSensorType::kLsm6dsox ||
       sensorType == lil::protocol::EnvironmentalSensorType::kBme680 ||
       sensorType == lil::protocol::EnvironmentalSensorType::kDisabled;
   if (!wifi_->setupPortalActive() ||
@@ -1093,6 +1175,7 @@ void WebPortal::saveSensor() {
   const bool validSensorType =
       sensorType == lil::protocol::EnvironmentalSensorType::kAutoDetect ||
       sensorType == lil::protocol::EnvironmentalSensorType::kBme280 ||
+      sensorType == lil::protocol::EnvironmentalSensorType::kLsm6dsox ||
       sensorType == lil::protocol::EnvironmentalSensorType::kBme680 ||
       sensorType == lil::protocol::EnvironmentalSensorType::kDisabled;
   SensorView existingView{};
@@ -1156,7 +1239,7 @@ void WebPortal::saveSensor() {
   if (!validThingSpeakFields(fields, uploadEnabled)) {
     sendJsonResult(
         false,
-        "Do not assign ThingSpeak fields 1–8 more than once. At least "
+        "Do not assign ThingSpeak fields 1â€“8 more than once. At least "
         "one measurement must be enabled.");
     return;
   }
@@ -1554,6 +1637,7 @@ void WebPortal::deleteSensor() {
   uint8_t mac[6];
   const bool ok = SensorRegistry::parseMac(server_.arg("mac"), mac) &&
                   registry_->deleteSensor(mac);
+  if (ok) otaService.forget(mac);
   sendJsonResult(
       ok,
       ok ? "Sensor removed from the station. A powered sensor will be detected again at its next check-in."
@@ -1566,6 +1650,7 @@ void WebPortal::factoryReset() {
     return;
   }
   const bool cleared = store_->factoryReset();
+  if (cleared) otaService.forget();
   sendJsonResult(cleared,
                  cleared
                      ? "Factory settings cleared. W-Charger is restarting."

@@ -11,7 +11,7 @@ namespace sensor {
 
 class Bme680Driver {
  public:
-  bool begin(float temperatureOffsetC);
+  bool begin(uint8_t address, float temperatureOffsetC);
   EnvironmentalReading read();
   void prepareForDeepSleep(uint32_t seconds);
   uint32_t recommendedSleepSeconds(uint32_t fallbackSeconds) const;
@@ -36,12 +36,12 @@ class Bme680Driver {
   void restoreState();
   void saveState(uint8_t iaqAccuracy);
   void saveCalibrationMetadata();
+  bool ensureStateStore();
   void updateCalibrationStatus(EnvironmentalReading& reading);
   uint32_t currentCalibrationElapsedSeconds() const;
 
   Bsec2 bsec_;
   uint8_t bsecMemory_[BSEC_INSTANCE_SIZE]{};
-  bme68xScommT communication_{};
   RawI2cContext rawContext_{};
   bme68x_dev rawDevice_{};
   bme68x_conf rawConfiguration_{};
@@ -51,6 +51,8 @@ class Bme680Driver {
   bool rawReady_ = false;
   bool bsecReady_ = false;
   bool stateStoreReady_ = false;
+  bool scheduleUpdated_ = false;
+  uint8_t address_ = 0;
   uint64_t calibrationAwakeStartedMs_ = 0;
   uint32_t calibrationElapsedAtBeginSeconds_ = 0;
 };

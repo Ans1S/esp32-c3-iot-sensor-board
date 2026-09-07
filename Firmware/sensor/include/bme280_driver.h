@@ -8,7 +8,7 @@ namespace sensor {
 
 class Bme280Driver {
  public:
-  bool begin();
+  bool begin(uint8_t address);
   EnvironmentalReading read();
 
  private:

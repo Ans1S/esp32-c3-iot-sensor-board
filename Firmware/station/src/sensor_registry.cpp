@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <esp_heap_caps.h>
+#include <iterator>
 #include <limits.h>
 #include <string.h>
 #include <time.h>
@@ -10,10 +11,18 @@ namespace station {
 
 namespace {
 constexpr uint32_t kHistoryMagic = 0x48495354UL;  // "HIST"
-constexpr uint16_t kHistoryVersion = 3;
+constexpr uint16_t kHistoryVersion = 4;
 constexpr size_t kLegacyHistoryBucketCount = 48;
 constexpr uint32_t kLatestTelemetryMagic = 0x4C415354UL;  // "LAST"
 constexpr time_t kMinimumValidTime = 1577836800;  // 2020-01-01 UTC
+constexpr int8_t kTxPowerLevelsQuarterDbm[] = {34, 44, 52, 60};
+constexpr int8_t kDefaultTxPowerQuarterDbm = 52;  // 13 dBm.
+constexpr int8_t kPcbV4TxPowerQuarterDbm = 44;    // 11 dBm.
+constexpr int8_t kStrongSignalRssi = -55;
+constexpr int8_t kWeakSignalRssi = -72;
+constexpr int8_t kEmergencySignalRssi = -82;
+constexpr uint8_t kStrongSamplesBeforeReduction = 8;
+constexpr uint8_t kWeakSamplesBeforeIncrease = 2;
 
 #pragma pack(push, 1)
 struct PersistedHistoryHeader {
@@ -48,7 +57,7 @@ struct LegacyStoredHistoryV2 {
   LegacyHistorySampleV2 samples[kLegacyHistoryBucketCount]{};
 };
 
-static_assert(sizeof(HistorySample) == 23,
+static_assert(sizeof(HistorySample) == 40,
               "History samples must remain compact");
 static_assert(sizeof(LegacyStoredHistoryV2) == 1596,
               "Legacy history layout changed unexpectedly");
@@ -59,7 +68,7 @@ uint32_t normalizedHistoryBucketSeconds(uint32_t bucketSeconds) {
 
 size_t historyBucketCount(uint32_t bucketSeconds) {
   const uint32_t normalized = normalizedHistoryBucketSeconds(bucketSeconds);
-  return (kHistoryWindowSeconds + normalized - 1) / normalized;
+  return normalized < 60 ? 900 : (kHistoryWindowSeconds + normalized - 1) / normalized;
 }
 
 HistorySample* allocateHistorySamples(size_t count) {
@@ -68,7 +77,9 @@ HistorySample* allocateHistorySamples(size_t count) {
   }
   auto* samples = static_cast<HistorySample*>(heap_caps_calloc(
       count, sizeof(HistorySample), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-  if (samples == nullptr) {
+  if (samples == nullptr &&
+      heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) >
+          count * sizeof(HistorySample) + 96U * 1024U) {
     samples = static_cast<HistorySample*>(
         heap_caps_calloc(count, sizeof(HistorySample), MALLOC_CAP_8BIT));
   }
@@ -133,19 +144,77 @@ class LockGuard {
   explicit LockGuard(SemaphoreHandle_t mutex) : mutex_(mutex) {
     xSemaphoreTake(mutex_, portMAX_DELAY);
   }
-  ~LockGuard() { xSemaphoreGive(mutex_); }
+  ~LockGuard() { unlock(); }
+  void unlock() { if (held_) { xSemaphoreGive(mutex_); held_ = false; } }
+  void relock() { if (!held_) { xSemaphoreTake(mutex_, portMAX_DELAY); held_ = true; } }
 
  private:
   SemaphoreHandle_t mutex_;
+  bool held_ = true;
 };
 }  // namespace
+
+void SensorRegistry::updateTxPowerLocked(size_t index, int8_t rssi,
+                                         uint8_t pcbVersion) {
+  SensorRuntime& current = runtime_[index];
+  const bool validRssi = rssi < 0;
+  if (!current.txPowerInitialized) {
+    // V4 starts one documented hardware power step below V3 only when the
+    // first received packet still has comfortable link margin.
+    current.sensorTxPowerQuarterDbm =
+        pcbVersion >= 4 && validRssi && rssi >= -68
+            ? kPcbV4TxPowerQuarterDbm
+            : kDefaultTxPowerQuarterDbm;
+    current.txPowerInitialized = true;
+  }
+  if (!validRssi) {
+    return;
+  }
+
+  if (rssi <= kEmergencySignalRssi) {
+    current.weakSignalSamples = kWeakSamplesBeforeIncrease;
+    current.strongSignalSamples = 0;
+  } else if (rssi <= kWeakSignalRssi) {
+    current.strongSignalSamples = 0;
+    if (current.weakSignalSamples < kWeakSamplesBeforeIncrease) {
+      ++current.weakSignalSamples;
+    }
+  } else if (rssi >= kStrongSignalRssi) {
+    current.weakSignalSamples = 0;
+    if (current.strongSignalSamples < kStrongSamplesBeforeReduction) {
+      ++current.strongSignalSamples;
+    }
+  } else {
+    current.strongSignalSamples = 0;
+    current.weakSignalSamples = 0;
+  }
+
+  size_t level = 0;
+  while (level + 1 < std::size(kTxPowerLevelsQuarterDbm) &&
+         kTxPowerLevelsQuarterDbm[level] <
+             current.sensorTxPowerQuarterDbm) {
+    ++level;
+  }
+  const size_t minimumLevel = pcbVersion >= 4 ? 0 : 1;
+  if (current.weakSignalSamples >= kWeakSamplesBeforeIncrease &&
+      level + 1 < std::size(kTxPowerLevelsQuarterDbm)) {
+    current.sensorTxPowerQuarterDbm = kTxPowerLevelsQuarterDbm[level + 1];
+    current.weakSignalSamples = 0;
+  } else if (current.strongSignalSamples >=
+                 kStrongSamplesBeforeReduction &&
+             level > minimumLevel) {
+    current.sensorTxPowerQuarterDbm = kTxPowerLevelsQuarterDbm[level - 1];
+    current.strongSignalSamples = 0;
+  }
+}
 
 bool SensorRegistry::begin(ConfigStore& store, uint32_t defaultSleepSeconds) {
   store_ = &store;
   defaultSleepSeconds_ = constrain(defaultSleepSeconds, kMinSleepSeconds,
                                    kMaxSleepSeconds);
   mutex_ = xSemaphoreCreateMutex();
-  if (mutex_ == nullptr || !store_->loadSensorConfigs(configs_, kMaxSensors)) {
+  storageMutex_ = xSemaphoreCreateMutex();
+  if (mutex_ == nullptr || storageMutex_ == nullptr || !store_->loadSensorConfigs(configs_, kMaxSensors)) {
     return false;
   }
   for (size_t i = 0; i < kMaxSensors; ++i) {
@@ -171,6 +240,8 @@ bool SensorRegistry::loadHistoryLocked(size_t index) {
   if (index >= kMaxSensors || !configs_[index].occupied) {
     return false;
   }
+  if (configs_[index].sleepSeconds < 60)
+    return configureHistoryLocked(index, configs_[index].sleepSeconds, false, false);
   const size_t storedLength = store_->historyBytesLength(index);
   const uint32_t desiredBucketSeconds =
       normalizedHistoryBucketSeconds(configs_[index].sleepSeconds);
@@ -213,6 +284,26 @@ bool SensorRegistry::loadHistoryLocked(size_t index) {
   }
 
   PersistedHistoryHeader header{};
+  // Expand the V3 environmental prefix without discarding existing history.
+  if (storedLength >= sizeof(header) &&
+      store_->loadHistoryRange(index, 0, &header, sizeof(header)) &&
+      header.magic == kHistoryMagic && header.version == 3 &&
+      header.sampleSize == 23 && header.bucketSeconds >= 30 &&
+      header.bucketSeconds <= kMaxSleepSeconds &&
+      header.capacity == (kHistoryWindowSeconds + header.bucketSeconds - 1) / header.bucketSeconds &&
+      storedLength == sizeof(header) + header.capacity * 23) {
+    if (!configureHistoryLocked(index, desiredBucketSeconds, false, false)) return false;
+    for (size_t slot = 0; slot < header.capacity; ++slot) {
+      HistorySample sample{};
+      if (!store_->loadHistoryRange(index, sizeof(header) + slot * 23, &sample, 23)) return false;
+      if (!sample.timestamp) continue;
+      const size_t destination = (sample.timestamp / desiredBucketSeconds) % history_[index].capacity;
+      if (sample.timestamp >= history_[index].samples[destination].timestamp)
+        history_[index].samples[destination] = sample;
+    }
+    history_[index].revision = header.revision;
+    return persistHistoryLocked(index);
+  }
   if (storedLength < sizeof(header) ||
       !store_->loadHistoryRange(index, 0, &header, sizeof(header)) ||
       header.magic != kHistoryMagic || header.version != kHistoryVersion ||
@@ -307,6 +398,7 @@ bool SensorRegistry::configureHistoryLocked(size_t index,
 }
 
 bool SensorRegistry::persistHistoryLocked(size_t index) {
+  if (index < kMaxSensors && history_[index].bucketSeconds < 60) return true;
   if (index >= kMaxSensors || history_[index].samples == nullptr ||
       history_[index].capacity == 0) {
     return false;
@@ -350,20 +442,16 @@ int SensorRegistry::allocateIndexLocked(const uint8_t mac[6]) {
   for (size_t i = 0; i < kMaxSensors; ++i) {
     if (!configs_[i].occupied) {
       configs_[i] = SensorConfig{};
+      runtime_[i] = SensorRuntime{};
       configs_[i].occupied = true;
       memcpy(configs_[i].mac, mac, 6);
       configs_[i].sleepSeconds = defaultSleepSeconds_;
       configs_[i].revision = 1;
-      copyText(configs_[i].name, "Sensor " + formatMac(mac).substring(9));
-      if (!store_->saveSensorConfig(i, configs_[i])) {
-        configs_[i] = SensorConfig{};
-        return -1;
-      }
-      store_->deleteHistory(i);
-      if (!configureHistoryLocked(i, configs_[i].sleepSeconds, false)) {
-        Serial.printf("[History] Could not allocate history for sensor %u\n",
-                      static_cast<unsigned>(i));
-      }
+      snprintf(configs_[i].name, sizeof(configs_[i].name),
+               "Sensor %02X:%02X:%02X", mac[3], mac[4], mac[5]);
+      ++generations_[i];
+      runtime_[i].configPersistencePending = true;
+      runtime_[i].storageInitializationPending = true;
       return static_cast<int>(i);
     }
   }
@@ -373,7 +461,8 @@ int SensorRegistry::allocateIndexLocked(const uint8_t mac[6]) {
 bool SensorRegistry::registerTelemetry(
     const uint8_t mac[6], uint32_t sequence,
     const lil::protocol::TelemetryPayload& telemetry, int8_t rssi,
-    SensorConfig& responseConfig, bool& duplicate) {
+    SensorConfig& responseConfig, int8_t& txPowerQuarterDbm, bool& duplicate,
+    uint32_t& generation) {
   LockGuard lock(mutex_);
   int index = findIndexLocked(mac);
   if (index < 0) {
@@ -383,6 +472,7 @@ bool SensorRegistry::registerTelemetry(
     return false;
   }
 
+  generation = generations_[index];
   SensorConfig& config = configs_[index];
   auto& current = runtime_[index];
   const bool discoveryMode =
@@ -401,6 +491,9 @@ bool SensorRegistry::registerTelemetry(
   if (staleWithinSameBoot) {
     duplicate = true;
     responseConfig = config;
+    txPowerQuarterDbm = current.txPowerInitialized
+                            ? current.sensorTxPowerQuarterDbm
+                            : kDefaultTxPowerQuarterDbm;
     return true;
   }
   if (telemetry.appliedConfigRevision == config.revision) {
@@ -413,9 +506,7 @@ bool SensorRegistry::registerTelemetry(
     }
     if (acknowledgedFlags != 0) {
       config.pendingFlags &= ~acknowledgedFlags;
-      if (!store_->saveSensorConfig(index, config)) {
-        return false;
-      }
+      current.configPersistencePending = true;
     }
   }
   // Once provisioning has previously been confirmed, a new discovery packet
@@ -430,9 +521,7 @@ bool SensorRegistry::registerTelemetry(
     if (config.revision == 0) {
       config.revision = 1;
     }
-    if (!store_->saveSensorConfig(index, config)) {
-      return false;
-    }
+    current.configPersistencePending = true;
   }
 
   lil::protocol::TelemetryPayload displayTelemetry = telemetry;
@@ -458,30 +547,59 @@ bool SensorRegistry::registerTelemetry(
   current.stationRssi = rssi;
   current.lastSeenMs = millis();
   current.receivedPackets++;
-  // Keep the setup measurement across the station restart. Discovery packets
-  // contain a real, periodically refreshed sensor snapshot even though they
-  // are intentionally excluded from history charts and cloud uploads.
-  if (!discoveryMode || !current.hasPersistedTelemetry) {
-    current.hasPersistedTelemetry = saveLatestTelemetryLocked(
-        static_cast<size_t>(index), displayTelemetry, rssi);
-  }
-  if (!duplicate) {
-    current.lastSequence = sequence;
-    current.hasSequence = true;
-  }
-  if (!discoveryMode) {
-    recordHistoryLocked(static_cast<size_t>(index), telemetry);
-  }
+  updateTxPowerLocked(static_cast<size_t>(index), rssi, telemetry.pcbVersion);
+  current.lastSequence = sequence;
+  current.hasSequence = true;
   if (!config.bme680QuickStartComplete) {
     // Compatibility with configurations created before ULP-only operation.
     // There is no longer a separate quick-start acknowledgement.
     config.bme680QuickStartComplete = true;
-    if (!store_->saveSensorConfig(index, config)) {
-      return false;
-    }
+    current.configPersistencePending = true;
   }
   responseConfig = config;
+  txPowerQuarterDbm = current.sensorTxPowerQuarterDbm;
   return true;
+}
+
+bool SensorRegistry::persistTelemetry(
+    const uint8_t mac[6], uint32_t sequence,
+    const lil::protocol::TelemetryPayload& telemetry, int8_t rssi,
+    uint32_t generation, uint32_t receivedAt) {
+  // Lock order is storage -> registry. Radio registration takes registry only.
+  LockGuard storage(storageMutex_);
+  LockGuard lock(mutex_);
+  const int index = findIndexLocked(mac);
+  if (index < 0 || generations_[index] != generation) return false;
+  const SensorRuntime snapshot = runtime_[index];
+  const SensorConfig config = configs_[index];
+  lock.unlock();
+  bool success = true;
+  bool initialized = !snapshot.storageInitializationPending;
+  if (!initialized) initialized = store_->deleteHistory(index);
+  bool configSaved = false;
+  if (snapshot.configPersistencePending) {
+    configSaved = store_->saveSensorConfig(index, config);
+    success = configSaved;
+  }
+  const bool discovery = (telemetry.flags & lil::protocol::kDiscoveryBeacon) != 0;
+  bool latestSaved = false;
+  if (snapshot.hasSequence && snapshot.lastSequence == sequence &&
+      (!discovery || !snapshot.hasPersistedTelemetry) && config.sleepSeconds >= 60) {
+    latestSaved = saveLatestTelemetryLocked(index, snapshot.telemetry, rssi);
+    success = latestSaved && success;
+  }
+  if (!discovery && initialized) {
+    success = recordHistoryLocked(index, telemetry, config.sleepSeconds,
+                                  receivedAt) && success;
+  }
+  lock.relock();
+  // A new radio packet can change pending commands while the flash is busy.
+  if (configSaved && memcmp(&config, &configs_[index], sizeof(config)) == 0) {
+    runtime_[index].configPersistencePending = false;
+  }
+  runtime_[index].storageInitializationPending = !initialized;
+  runtime_[index].hasPersistedTelemetry |= latestSaved;
+  return success && initialized;
 }
 
 size_t SensorRegistry::views(SensorView* output, size_t capacity) const {
@@ -509,6 +627,7 @@ bool SensorRegistry::updateConfig(const uint8_t mac[6], const String& name,
                                   lil::protocol::EnvironmentalSensorType sensorType,
                                   float temperatureOffsetC,
                                   float batteryCalibrationFactor) {
+  LockGuard storage(storageMutex_);
   LockGuard lock(mutex_);
   const int index = findIndexLocked(mac);
   if (index < 0) {
@@ -521,12 +640,6 @@ bool SensorRegistry::updateConfig(const uint8_t mac[6], const String& name,
   copyText(config.name, name);
   const uint32_t newSleepSeconds =
       constrain(sleepSeconds, kMinSleepSeconds, kMaxSleepSeconds);
-  if (history_[index].bucketSeconds != newSleepSeconds &&
-      !configureHistoryLocked(static_cast<size_t>(index), newSleepSeconds,
-                              true)) {
-    Serial.printf("[History] Could not apply the new interval for sensor %u\n",
-                  static_cast<unsigned>(index));
-  }
   config.sleepSeconds = newSleepSeconds;
   const bool channelChanged = config.thingSpeakChannelId != channelId;
   config.thingSpeakChannelId = channelId;
@@ -553,13 +666,20 @@ bool SensorRegistry::updateConfig(const uint8_t mac[6], const String& name,
   if (config.revision == 0) {
     config.revision = 1;
   }
-  return store_->saveSensorConfig(index, config);
+  runtime_[index].configPersistencePending = true;
+  const SensorConfig snapshot = configs_[index];
+  lock.unlock();
+  if (history_[index].bucketSeconds != snapshot.sleepSeconds) {
+    configureHistoryLocked(index, snapshot.sleepSeconds, true);
+  }
+  return store_->saveSensorConfig(index, snapshot);
 }
 
 bool SensorRegistry::setThingSpeakChannel(const uint8_t mac[6],
                                            uint32_t channelId,
                                            const String& writeKey,
                                            uint8_t thingSpeakProfileSlot) {
+  LockGuard storage(storageMutex_);
   LockGuard lock(mutex_);
   const int index = findIndexLocked(mac);
   if (index < 0) {
@@ -579,7 +699,10 @@ bool SensorRegistry::setThingSpeakChannel(const uint8_t mac[6],
       config.revision = 1;
     }
   }
-  return store_->saveSensorConfig(index, config);
+  runtime_[index].configPersistencePending = true;
+  const SensorConfig snapshot = configs_[index];
+  lock.unlock();
+  return store_->saveSensorConfig(index, snapshot);
 }
 
 bool SensorRegistry::syncThingSpeakProfile(
@@ -587,6 +710,7 @@ bool SensorRegistry::syncThingSpeakProfile(
   if (slot >= kMaxThingSpeakChannels || !profile.occupied) {
     return false;
   }
+  LockGuard storage(storageMutex_);
   LockGuard lock(mutex_);
   bool success = true;
   for (size_t i = 0; i < kMaxSensors; ++i) {
@@ -599,7 +723,11 @@ bool SensorRegistry::syncThingSpeakProfile(
     if (profile.channelId == 0 || profile.writeApiKey[0] == '\0') {
       configs_[i].cloudUploadEnabled = false;
     }
-    success = store_->saveSensorConfig(i, configs_[i]) && success;
+    runtime_[i].configPersistencePending = true;
+    const SensorConfig snapshot = configs_[i];
+    lock.unlock();
+    success = store_->saveSensorConfig(i, snapshot) && success;
+    lock.relock();
   }
   return success;
 }
@@ -608,6 +736,7 @@ bool SensorRegistry::removeThingSpeakProfile(uint8_t slot) {
   if (slot >= kMaxThingSpeakChannels) {
     return false;
   }
+  LockGuard storage(storageMutex_);
   LockGuard lock(mutex_);
   bool success = true;
   for (size_t i = 0; i < kMaxSensors; ++i) {
@@ -619,12 +748,17 @@ bool SensorRegistry::removeThingSpeakProfile(uint8_t slot) {
     configs_[i].thingSpeakChannelId = 0;
     configs_[i].thingSpeakWriteKey[0] = '\0';
     configs_[i].cloudUploadEnabled = false;
-    success = store_->saveSensorConfig(i, configs_[i]) && success;
+    runtime_[i].configPersistencePending = true;
+    const SensorConfig snapshot = configs_[i];
+    lock.unlock();
+    success = store_->saveSensorConfig(i, snapshot) && success;
+    lock.relock();
   }
   return success;
 }
 
 bool SensorRegistry::requestFactoryReset(const uint8_t mac[6]) {
+  LockGuard storage(storageMutex_);
   LockGuard lock(mutex_);
   const int index = findIndexLocked(mac);
   if (index < 0) {
@@ -638,10 +772,14 @@ bool SensorRegistry::requestFactoryReset(const uint8_t mac[6]) {
   if (config.revision == 0) {
     config.revision = 1;
   }
-  return store_->saveSensorConfig(index, config);
+  runtime_[index].configPersistencePending = true;
+  const SensorConfig snapshot = configs_[index];
+  lock.unlock();
+  return store_->saveSensorConfig(index, snapshot);
 }
 
 bool SensorRegistry::requestIaqCalibrationReset(const uint8_t mac[6]) {
+  LockGuard storage(storageMutex_);
   LockGuard lock(mutex_);
   const int index = findIndexLocked(mac);
   if (index < 0) {
@@ -653,19 +791,28 @@ bool SensorRegistry::requestIaqCalibrationReset(const uint8_t mac[6]) {
   if (configs_[index].revision == 0) {
     configs_[index].revision = 1;
   }
-  return store_->saveSensorConfig(index, configs_[index]);
+  runtime_[index].configPersistencePending = true;
+  const SensorConfig snapshot = configs_[index];
+  lock.unlock();
+  return store_->saveSensorConfig(index, snapshot);
 }
 
 bool SensorRegistry::deleteSensor(const uint8_t mac[6]) {
+  LockGuard storage(storageMutex_);
   LockGuard lock(mutex_);
   const int index = findIndexLocked(mac);
-  if (index < 0 || !store_->deleteSensorConfig(index) ||
+  if (index < 0) return false;
+  lock.unlock();
+  if (!store_->deleteSensorConfig(index) ||
       !store_->deleteHistory(index) ||
       !store_->deleteLatestTelemetry(index)) {
     return false;
   }
+  lock.relock();
+  ++generations_[index];
   configs_[index] = SensorConfig{};
   runtime_[index] = SensorRuntime{};
+  lock.unlock();
   if (history_[index].samples != nullptr) {
     heap_caps_free(history_[index].samples);
   }
@@ -685,13 +832,14 @@ bool SensorRegistry::saveLatestTelemetryLocked(
 }
 
 bool SensorRegistry::recordHistoryLocked(
-    size_t index, const lil::protocol::TelemetryPayload& telemetry) {
-  const time_t now = time(nullptr);
+    size_t index, const lil::protocol::TelemetryPayload& telemetry,
+    uint32_t bucketSeconds, uint32_t receivedAt) {
+  const time_t now = receivedAt;
   if (index >= kMaxSensors || now < kMinimumValidTime) {
     return false;
   }
   const uint32_t desiredBucketSeconds =
-      normalizedHistoryBucketSeconds(configs_[index].sleepSeconds);
+      normalizedHistoryBucketSeconds(bucketSeconds);
   if ((history_[index].samples == nullptr ||
        history_[index].bucketSeconds != desiredBucketSeconds) &&
       !configureHistoryLocked(index, desiredBucketSeconds, true)) {
@@ -706,9 +854,22 @@ bool SensorRegistry::recordHistoryLocked(
   // A bucket contains the newest received measurement in one configured
   // sensor interval. The ring size changes with that interval while its time
   // span remains 24 hours.
+  if (sample.timestamp > bucket) return true;
   sample = HistorySample{};
   sample.timestamp = bucket;
   sample.capabilities = telemetry.capabilities;
+  if ((telemetry.flags & lil::protocol::kBme680RawFallback) != 0) {
+    sample.capabilities &= ~lil::protocol::kIaq;
+  }
+  if ((telemetry.flags & lil::protocol::kSensorReadFailed) != 0)
+    sample.capabilities &= lil::protocol::kBattery;
+  for (size_t axis = 0; axis < 3; ++axis) {
+    sample.accelerationMilliG[axis] = static_cast<int16_t>(lroundf(constrain(telemetry.motion.accelerationG[axis], -32.0F, 32.0F) * 1000));
+    sample.angularRateDeciDps[axis] = static_cast<int16_t>(lroundf(constrain(telemetry.motion.angularRateDps[axis], -3000.0F, 3000.0F) * 10));
+  }
+  sample.peakAccelerationMilliG = encodeUnsigned(telemetry.motion.peakAccelerationG, 1000.0F);
+  sample.peakAngularRateDeciDps = encodeUnsigned(telemetry.motion.peakAngularRateDps, 10.0F);
+  sample.motionOverrun = telemetry.motion.fifoOverrun;
   sample.temperatureCentiC = encodeSignedHundredths(telemetry.temperatureC);
   sample.humidityCentiPercent =
       encodeUnsigned(telemetry.humidityPercent, 100.0F);
@@ -723,7 +884,7 @@ bool SensorRegistry::recordHistoryLocked(
   if (history_[index].revision == 0) {
     history_[index].revision = 1;
   }
-  return persistHistorySampleLocked(index, slot);
+  return desiredBucketSeconds < 60 || persistHistorySampleLocked(index, slot);
 }
 
 size_t SensorRegistry::history(const uint8_t mac[6], HistorySample* output,
@@ -731,11 +892,13 @@ size_t SensorRegistry::history(const uint8_t mac[6], HistorySample* output,
   if (output == nullptr || capacity == 0) {
     return 0;
   }
+  LockGuard storage(storageMutex_);
   LockGuard lock(mutex_);
   const int index = findIndexLocked(mac);
   if (index < 0) {
     return 0;
   }
+  lock.unlock();
   const time_t now = time(nullptr);
   const uint32_t cutoff =
       now >= kMinimumValidTime
@@ -749,6 +912,7 @@ size_t SensorRegistry::history(const uint8_t mac[6], HistorySample* output,
       output[count++] = sample;
     }
   }
+  storage.unlock();
   std::sort(output, output + count,
             [](const HistorySample& first, const HistorySample& second) {
               return first.timestamp < second.timestamp;
@@ -757,12 +921,14 @@ size_t SensorRegistry::history(const uint8_t mac[6], HistorySample* output,
 }
 
 size_t SensorRegistry::historyCapacity(const uint8_t mac[6]) const {
+  LockGuard storage(storageMutex_);
   LockGuard lock(mutex_);
   const int index = findIndexLocked(mac);
   return index < 0 ? 0 : history_[index].capacity;
 }
 
 uint32_t SensorRegistry::historyBucketSeconds(const uint8_t mac[6]) const {
+  LockGuard storage(storageMutex_);
   LockGuard lock(mutex_);
   const int index = findIndexLocked(mac);
   if (index < 0) {
@@ -774,12 +940,29 @@ uint32_t SensorRegistry::historyBucketSeconds(const uint8_t mac[6]) const {
 }
 
 uint32_t SensorRegistry::historyRevision(const uint8_t mac[6]) const {
+  LockGuard storage(storageMutex_);
   LockGuard lock(mutex_);
   const int index = findIndexLocked(mac);
   if (index < 0) {
     return 0;
   }
   return history_[index].revision;
+}
+
+bool SensorRegistry::channelShared(uint32_t channelId) const {
+  LockGuard lock(mutex_);
+  unsigned count = 0;
+  for (const auto& config : configs_) {
+    if (config.occupied && config.provisioned && config.cloudUploadEnabled &&
+        config.thingSpeakChannelId == channelId && ++count > 1) return true;
+  }
+  return false;
+}
+
+bool SensorRegistry::generationMatches(const uint8_t mac[6], uint32_t generation) const {
+  LockGuard lock(mutex_);
+  const int index = findIndexLocked(mac);
+  return index >= 0 && generations_[index] == generation;
 }
 
 bool SensorRegistry::findConfig(const uint8_t mac[6], SensorConfig& output) const {
