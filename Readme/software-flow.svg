@@ -1,34 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="410" viewBox="0 0 1200 410" role="img" aria-labelledby="title desc">
-  <title id="title">The W-Charger station makes a sensor fleet easy to use</title>
-  <desc id="desc">Multiple battery-powered sensor nodes send measurements to one station, which provides a local dashboard, configuration, history, optional cloud upload and over-the-air updates.</desc>
-  <defs>
-    <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f7f8f5"/><stop offset="1" stop-color="#eaf4ed"/></linearGradient>
-    <linearGradient id="hub" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#198955"/><stop offset="1" stop-color="#0f5e3a"/></linearGradient>
-    <filter id="s" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#183522" flood-opacity=".12"/></filter>
-  </defs>
-  <rect width="1200" height="410" rx="30" fill="url(#bg2)"/>
-  <g font-family="system-ui,-apple-system,Segoe UI,sans-serif">
-    <text x="600" y="44" text-anchor="middle" fill="#172019" font-size="27" font-weight="800">One station. Every sensor. No cable hunt.</text>
-    <g fill="none" stroke="#7ca58b" stroke-width="4" stroke-dasharray="8 10">
-      <path d="M263 126C390 126 393 168 500 168"/><path d="M263 205h237"/><path d="M263 284c127 0 130-42 237-42"/>
-      <path d="M700 205h185"/>
-    </g>
-    <g filter="url(#s)">
-      <g transform="translate(70 88)"><rect width="193" height="76" rx="18" fill="#fff"/><circle cx="38" cy="38" r="22" fill="#e4f4ea"/><g fill="none" stroke="#146c43" stroke-width="3" stroke-linecap="round"><path d="M38 20v28"/><circle cx="38" cy="53" r="7"/><path d="M32 25h6M32 34h6"/></g><text x="72" y="33" fill="#172019" font-size="17" font-weight="750">Climate node</text><text x="72" y="56" fill="#667168" font-size="13">BME280 / BME680</text></g>
-      <g transform="translate(70 167)"><rect width="193" height="76" rx="18" fill="#fff"/><circle cx="38" cy="38" r="22" fill="#e4f4ea"/><g fill="none" stroke="#146c43" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M25 51V25h26"/><path d="m25 25 6 6M25 25l6-6M51 25l-6 6M51 25l-6-6M25 51l6-6M25 51l6 6"/></g><text x="72" y="33" fill="#172019" font-size="17" font-weight="750">Motion node</text><text x="72" y="56" fill="#667168" font-size="13">LSM6DSOX</text></g>
-      <g transform="translate(70 246)"><rect width="193" height="76" rx="18" fill="#fff"/><circle cx="38" cy="38" r="22" fill="#e4f4ea"/><g fill="none" stroke="#146c43" stroke-width="4" stroke-linecap="round"><path d="M38 24v25M30 31h16M32 22v9M44 22v9"/></g><text x="72" y="33" fill="#172019" font-size="17" font-weight="750">Your next sensor</text><text x="72" y="56" fill="#667168" font-size="13">Shared I²C connection</text></g>
-      <g transform="translate(500 117)"><rect width="200" height="176" rx="28" fill="url(#hub)"/><circle cx="100" cy="61" r="37" fill="#ffffff20"/><path d="m106 32-24 34h17l-8 25 28-39h-18z" fill="#fff"/><text x="100" y="123" text-anchor="middle" fill="#fff" font-size="24" font-weight="800">W-Charger</text><text x="100" y="149" text-anchor="middle" fill="#d7eee0" font-size="15">ESP32-S3 station</text></g>
-      <g transform="translate(885 75)"><rect width="245" height="260" rx="24" fill="#fff"/><g fill="none" stroke="#146c43" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m29 43 13-11 13 11"/><path d="M34 40v14h16V40"/></g><text x="68" y="47" fill="#172019" font-size="19" font-weight="760">Local web app</text><g fill="#e4f4ea"><rect x="29" y="76" width="187" height="39" rx="11"/><rect x="29" y="125" width="89" height="39" rx="11"/><rect x="128" y="125" width="88" height="39" rx="11"/><rect x="29" y="174" width="187" height="57" rx="11"/></g><path d="M43 214l31-20 29 7 35-27 33 14 30-33" fill="none" stroke="#198955" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></g>
-    </g>
-    <g text-anchor="middle" font-size="14" font-weight="750">
-      <rect x="361" y="184" width="100" height="42" rx="21" fill="#fff"/><text x="411" y="210" fill="#146c43">ESP-NOW</text>
-      <rect x="748" y="184" width="96" height="42" rx="21" fill="#fff"/><text x="796" y="210" fill="#146c43">Browser</text>
-    </g>
-    <g text-anchor="middle" font-size="14" font-weight="750">
-      <rect x="334" y="332" width="170" height="38" rx="19" fill="#fff"/><text x="419" y="356" fill="#146c43">✓ Automatic discovery</text>
-      <rect x="515" y="332" width="170" height="38" rx="19" fill="#fff"/><text x="600" y="356" fill="#146c43">✓ Local history</text>
-      <rect x="696" y="332" width="170" height="38" rx="19" fill="#fff"/><text x="781" y="356" fill="#146c43">✓ Signed OTA updates</text>
-    </g>
-    <text x="600" y="388" text-anchor="middle" fill="#667168" font-size="14">Optional ThingSpeak export stays optional; the dashboard and history work locally.</text>
-  </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="520" viewBox="0 0 840 520">
+<title>Sensors, station and browser connected in one system</title>
+<rect width="840" height="520" rx="24" fill="#edf5f0"/>
+<g font-family="Arial, sans-serif">
+<text x="32" y="49" fill="#172b20" font-size="27" font-weight="700">One station. Every sensor.</text>
+<rect x="32" y="82" width="340" height="224" rx="18" fill="#fff"/>
+<g x="56" fill="#172b20"><text x="56" y="122" font-size="25" font-weight="700">Your sensor nodes</text>
+<text x="56" y="170" font-size="22">Climate · BME280 / BME680</text><text x="56" y="213" font-size="22">Motion · LSM6DSOX</text><text x="56" y="256" font-size="22">More sensors in development</text></g>
+<rect x="500" y="82" width="308" height="224" rx="18" fill="#146c43"/>
+<text x="654" y="162" text-anchor="middle" fill="#fff" font-size="32" font-weight="700">W-Charger</text><text x="654" y="203" text-anchor="middle" fill="#fff" font-size="24">ESP32-S3 station</text><text x="654" y="257" text-anchor="middle" fill="#e4f4ea" font-size="21">Receive · store · update</text>
+<path d="M384 200h102m-10-8 10 8-10 8" fill="none" stroke="#146c43" stroke-width="3"/>
+<text x="436" y="180" text-anchor="middle" fill="#146c43" font-size="19">ESP-NOW</text>
+<path d="M654 310v30m-8-10 8 10 8-10" fill="none" stroke="#146c43" stroke-width="3"/>
+<rect x="32" y="350" width="776" height="138" rx="18" fill="#fff"/>
+<text x="56" y="390" fill="#172b20" font-size="26" font-weight="700">Open your browser</text>
+<text x="56" y="430" fill="#455c4e" font-size="22">Readings and history · Sensor settings · Signed OTA updates</text>
+<text x="56" y="464" fill="#455c4e" font-size="21">Works locally. Optional ThingSpeak export.</text>
+</g></svg>
