@@ -4,7 +4,7 @@
 
 ### Give a discarded vape battery a second life — as a useful, low-power sensor
 
-<img src="Readme/pcb-v4-with-battery.webp" alt="W-Charger PCB V4 powered by a carefully recovered vape battery" width="820">
+<img src="Readme/pcb-v4-with-battery-framed.webp" alt="W-Charger PCB V4 powered by a carefully recovered vape battery" width="840">
 
 <br>
 
@@ -113,10 +113,12 @@ The hardware is intentionally open-ended: one compact node, different sensor
 boards, and a growing firmware library instead of a separate product for every
 measurement.
 
-<p align="center">
-  <img src="Readme/pcb-v4-closeup.webp" alt="Close-up photograph of the assembled W-Charger PCB V4" width="48%">
-  <img src="Readme/esp32_pcb.webp" alt="W-Charger sensor PCB connected to an external sensor board" width="48%">
-</p>
+<table>
+  <tr>
+    <td width="50%" align="center" valign="top"><img src="Readme/pcb-v4-closeup-framed.webp" alt="Assembled W-Charger PCB V4, cropped to remove empty margins" width="420"><br><strong>Assembled PCB V4</strong></td>
+    <td width="50%" align="center" valign="top"><img src="Readme/prototype-framed.webp" alt="W-Charger prototype with a recovered cell and USB cable" width="420"><br><strong>Prototype with recovered cell</strong></td>
+  </tr>
+</table>
 
 KiCad sources, BOMs and manufacturing files are available in [`PCB/`](PCB/).
 The current V4 production package is under
