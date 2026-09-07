@@ -4,18 +4,9 @@
 
 namespace sensor {
 
-namespace {
-constexpr uint8_t kAddresses[] = {0x76, 0x77};
-}
-
-bool Bme280Driver::begin() {
+bool Bme280Driver::begin(uint8_t address) {
   initialized_ = false;
-  for (const uint8_t address : kAddresses) {
-    if (sensor_.begin(address, &Wire)) {
-      initialized_ = true;
-      break;
-    }
-  }
+  initialized_ = sensor_.begin(address, &Wire);
   if (!initialized_) {
     return false;
   }

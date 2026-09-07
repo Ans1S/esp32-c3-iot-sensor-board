@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lsm6dsox_driver.h"
 #include "bme280_driver.h"
 #include "bme680_driver.h"
 #include "environmental_reading.h"
@@ -13,6 +14,7 @@ class EnvironmentalSensor {
              lil::protocol::EnvironmentalSensorType requestedType,
              float temperatureOffsetC);
   EnvironmentalReading read();
+  bool pollMotion() { return lsm6dsox_.poll(); }
   void end();
   void prepareForDeepSleep(
       uint32_t seconds,
@@ -23,14 +25,15 @@ class EnvironmentalSensor {
   lil::protocol::EnvironmentalSensorType detectedType() const;
 
  private:
-  lil::protocol::EnvironmentalSensorType probeSensorType() const;
+  lil::protocol::EnvironmentalSensorType probeSensorType(uint8_t& address) const;
   bool startDetectedSensor(
       lil::protocol::EnvironmentalSensorType requestedType,
       float temperatureOffsetC);
   bool beginType(lil::protocol::EnvironmentalSensorType type,
-                 float temperatureOffsetC);
+                 uint8_t address, float temperatureOffsetC);
 
   PowerController* power_ = nullptr;
+  Lsm6dsoxDriver lsm6dsox_;
   Bme280Driver bme280_;
   Bme680Driver bme680_;
   lil::protocol::EnvironmentalSensorType requestedType_ =
@@ -38,6 +41,7 @@ class EnvironmentalSensor {
   lil::protocol::EnvironmentalSensorType detectedType_ =
       lil::protocol::EnvironmentalSensorType::kAutoDetect;
   bool initialized_ = false;
+  bool typeMismatch_ = false;
 };
 
 }  // namespace sensor

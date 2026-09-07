@@ -4,6 +4,7 @@
 
 # PlatformIO
 .pio/
+.tools/
 .pioenvs/
 .piolibdeps/
 .vscode/
@@ -50,6 +51,7 @@ monitor*.log
 *.local.*
 *.pem
 *.key
+Firmware/shared/include/ota_public_key.h
 *.p12
 *.pfx
 
