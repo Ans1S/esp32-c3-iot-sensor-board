@@ -43,8 +43,10 @@ Coverage:
   and early-error deep sleep.
 - The actual patched Bosch C driver with acknowledged but permanently stuck
   mode status and missing measurement fields.
-- All three build patches against pristine pinned upstream sources, repeated
-  application, and incompatible input rejection.
+- BSEC/BME68x build patches and the retained historical BME280 patch against
+  pristine pinned upstream sources, repeated application and incompatible input
+  rejection. The active BME280 driver now uses checked register transfers and
+  no longer depends on the Adafruit library or its build patch.
 
 The RTOS substitutes detect lock-order violations and deterministic event
 interleavings. They do not replace on-device concurrent-load, RF, TLS, GPIO,
@@ -54,7 +56,7 @@ BSEC algorithm or current measurements. See `../HARDWARE_TESTPLAN.md`.
 
 The C++ runner also tests the LSM6DSOX register driver against a FIFO/I2C
 substitute, signed scaling, interval peaks, overflow and fault handling.
-Registry tests cover a 900-slot fast ring without per-report flash writes and
+Registry tests cover a 1201-slot live ring without per-report flash writes and
 migration from the persisted V3 environmental history layout.
 
 Run `node Firmware/tests/test_motion_dashboard.cjs` with Playwright available.
@@ -78,3 +80,37 @@ trial-boot retries. OTA tests cover both board voltage thresholds at equality
 and one millivolt below, as well as boot-confirmation failure handling.
 Run `python Firmware/tests/test_web_scripts.py` to syntax-check embedded scripts
 with Node.js. Python package tests require `cryptography`.
+
+Precision sensor tests use register/FIFO substitutes and a synthetic 120 bpm waveform.
+They check TMP117 averaging and signed resolution, freshness, MAX30102 warmup,
+contact loss, overflow, and optical telemetry length. Live history tests retain
+601 reports at 100 ms and expire them after one minute without flash writes.
+
+
+Manual recording tests additionally exercise the production codec/journal,
+button debounce, adaptive cadence boundary, sensor lifecycle/clock recovery,
+and station filesystem append/deduplication/paging. `test_motion_dashboard.cjs`
+loads a 30-minute saved recording and checks minute navigation and full CSV
+export. Hardware acceptance is described in [RECORDINGS.md](../RECORDINGS.md).
+
+Quick-feedback tests cover raw-rate motion estimation, unchanged compact record
+capacity, stable/drifting/stale temperatures, pulse recovery coverage and the
+feedback panels on desktop/mobile. See [definitions](../SENSOR_FEEDBACK.md).
+
+## Sensor accuracy and battery protection regression checks
+
+`battery_boot_test.cpp` executes the production `main.cpp` flow with substituted
+hardware: strict 2800 mV entry, 2950 mV RTC recovery, invalid ADC, offline and
+unpaired stations, no sensor startup, battery-only packets, 24-hour sleep,
+deferred commands/OTA and stopping live mode. Driver checks cover Bosch reference
+compensation, signed humidity trims, coherent bursts, failed I2C reads/writes,
+configuration/calibration faults and bounded waits. TMP117 tests cover all four
+addresses, endpoints, the startup sentinel and preserved EEPROM/offset registers.
+MAX30102 tests cover nine synthetic rates from 35 to 195 bpm, ambient-light
+overflow, exactly full FIFO, brownout and long polling gaps. IMU tests reject
+both current and latched overruns and require reinitialization after bus faults.
+
+The registry and browser tests verify persisted battery-only status for live
+sensor types and a protection badge without misleading zero sensor values.
+These are software checks; use the [review's hardware acceptance table](../SENSOR_REVIEW.md)
+to measure absolute accuracy, supply integrity, threshold calibration and current.

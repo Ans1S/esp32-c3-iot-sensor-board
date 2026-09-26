@@ -61,6 +61,16 @@ void finishOtaBootGuard() {
   }
 }
 bool otaBootPending() { return pendingBoot; }
+bool confirmOtaBootAfterContact() {
+  if (!pendingBoot) return true;
+  Preferences prefs;
+  if (!prefs.begin("ota_sensor", false) || prefs.getUInt("attempted", 0) != lil::ota::kRelease)
+    return false;
+  if (esp_ota_mark_app_valid_cancel_rollback() != ESP_OK) return false;
+  pendingBoot = false;
+  if (bootTimer) { esp_timer_stop(bootTimer); esp_timer_delete(bootTimer); bootTimer = nullptr; }
+  return true;
+}
 void checkOta(EspNowTransport& radio, const SensorRuntimeConfig& config,
               AdcReader& adc, uint16_t batteryMv) {
   using namespace lil::ota;

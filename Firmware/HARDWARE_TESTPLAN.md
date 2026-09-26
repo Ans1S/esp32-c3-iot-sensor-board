@@ -292,7 +292,10 @@ BME680 and disabled environmental sensing.
     reset, cloud field mapping and existing login behavior.
 13. Only on a controlled supply, test an explicitly selected voltage-guard
     threshold, hysteresis, ADC failure while paused and recovery after charging.
-    Default firmware keeps the guard disabled. The storage experiment must
+    Default V4 firmware uses 2.8 V entry, 2.95 V recovery and daily battery-only
+    reporting. Also verify no sensor startup below threshold, no early retry
+    when the station is offline, and a live session stopping on undervoltage.
+    See [detailed voltage/accuracy checks](SENSOR_REVIEW.md). The storage experiment must
     retain full channel coverage despite longer discovery intervals.
 14. Compare normal `-Os`/80-MHz, `-O2`, 160-MHz and LTO images using integrated
     charge per complete cycle, timing, code size and repeated cold/deep-sleep

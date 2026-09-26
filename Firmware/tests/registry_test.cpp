@@ -143,17 +143,28 @@ int main() {
   assert(registry.persistTelemetry(mac, 4, telemetry, -60, generation, received));
   const unsigned fastWrites = writes;
   for (uint32_t i = 1; i <= 901; ++i) {
+    testMillis += 100;
     assert(registry.registerTelemetry(mac, 4 + i, telemetry, -60, response, txPower, duplicate, generation));
     assert(registry.persistTelemetry(mac, 4 + i, telemetry, -60, generation, received + i));
   }
   assert(writes == fastWrites); // No per-report flash writes in fast mode.
-  station::HistorySample motionSamples[900]{};
-  assert(registry.history(mac, motionSamples, 900) == 900);
-  assert(motionSamples[0].timestamp == received + 2);
-  assert(motionSamples[899].timestamp == received + 901);
-  assert(motionSamples[899].accelerationMilliG[0] == -1234);
-  assert(motionSamples[899].angularRateDeciDps[1] == -1234);
-  assert(motionSamples[899].peakAccelerationMilliG == 2500 && motionSamples[899].motionOverrun);
+  station::LiveSample motionSamples[station::kLiveCapacity]{};
+  assert(registry.liveHistory(mac, motionSamples, station::kLiveCapacity) == 601);
+  assert(motionSamples[600].receivedMs - motionSamples[0].receivedMs == 60000);
+  assert(motionSamples[600].telemetry.motion.accelerationG[0] == -1.234F);
+  assert(motionSamples[600].telemetry.motion.fifoOverrun);
+  testMillis += 60001;
+  assert(registry.liveHistory(mac, motionSamples, station::kLiveCapacity) == 0);
+  telemetry.flags = lil::protocol::kBatteryProtectionActive;
+  telemetry.operatingMode = lil::protocol::SensorOperatingMode::kBatteryProtection;
+  telemetry.capabilities = lil::protocol::kBattery;
+  telemetry.batteryMillivolts = 2790;
+  assert(registry.registerTelemetry(mac, 1000, telemetry, -60, response, txPower, duplicate, generation));
+  assert(registry.persistTelemetry(mac, 1000, telemetry, -60, generation, received + 200));
+  assert(registry.liveHistory(mac, motionSamples, station::kLiveCapacity) == 0);
+  assert(registry.findView(mac, view) && view.runtime.telemetry.capabilities == lil::protocol::kBattery);
+  assert(view.runtime.hasPersistedTelemetry && view.runtime.telemetry.batteryMillivolts == 2790);
+  telemetry.flags = 0;
   assert(registry.deleteSensor(mac));
   assert(registry.registerTelemetry(mac, 1, telemetry, -60, response,
                                      txPower, duplicate, generation));

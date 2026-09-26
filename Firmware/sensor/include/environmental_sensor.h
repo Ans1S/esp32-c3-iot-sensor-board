@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lsm6dsox_driver.h"
+#include "precision_sensors.h"
 #include "bme280_driver.h"
 #include "bme680_driver.h"
 #include "environmental_reading.h"
@@ -14,7 +15,9 @@ class EnvironmentalSensor {
              lil::protocol::EnvironmentalSensorType requestedType,
              float temperatureOffsetC);
   EnvironmentalReading read();
-  bool pollMotion() { return lsm6dsox_.poll(); }
+  bool pollLive() { return detectedType_ == lil::protocol::EnvironmentalSensorType::kLsm6dsox ? lsm6dsox_.poll() : precision_.poll(); }
+  bool freshTemperature() const { return precision_.freshTemperature(); }
+  void resetMotionFeedback() { lsm6dsox_.resetFeedback(); }
   void end();
   void prepareForDeepSleep(
       uint32_t seconds,
@@ -34,6 +37,7 @@ class EnvironmentalSensor {
 
   PowerController* power_ = nullptr;
   Lsm6dsoxDriver lsm6dsox_;
+  PrecisionSensors precision_;
   Bme280Driver bme280_;
   Bme680Driver bme680_;
   lil::protocol::EnvironmentalSensorType requestedType_ =

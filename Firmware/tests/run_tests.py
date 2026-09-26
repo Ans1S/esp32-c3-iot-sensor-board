@@ -25,6 +25,14 @@ def main():
         command += ["c++"]
     driver = ROOT / "sensor/.pio/libdeps/sensor_pcb_v3/BME68x Sensor library/src/bme68x"
     suites = {
+        "power_pins": ["tests/power_pins_test.cpp", "sensor/src/power_controller.cpp"],
+        "battery_boot": ["tests/battery_boot_test.cpp", "shared/src/lil_protocol.cpp"],
+        "bme280": ["tests/bme280_test.cpp", "sensor/src/bme280_driver.cpp"],
+        "motion_feedback": ["tests/motion_feedback_test.cpp"],
+        "recording": ["tests/recording_test.cpp", "shared/src/recording_journal.cpp", "shared/src/lil_protocol.cpp"],
+        "recording_archive": ["tests/recording_archive_test.cpp", "station/src/recording_archive.cpp", "shared/src/lil_protocol.cpp"],
+        "recording_store": ["tests/recording_store_test.cpp", "sensor/src/recording_store.cpp", "shared/src/recording_journal.cpp", "shared/src/lil_protocol.cpp"],
+        "precision_sensors": ["tests/precision_sensors_test.cpp", "sensor/src/precision_sensors.cpp"],
         "lsm6dsox": ["tests/lsm6dsox_test.cpp", "sensor/src/lsm6dsox_driver.cpp"],
         "ota_client": ["tests/ota_client_test.cpp", "sensor/src/ota_client.cpp", "shared/src/lil_protocol.cpp"],
         "power_and_upload": ["tests/power_and_upload_test.cpp", "shared/src/lil_protocol.cpp"],
@@ -41,9 +49,28 @@ def main():
             includes = [ROOT / directory for directory in
                         ["tests/stubs", "shared/include", "station/include", "sensor/include"]]
             includes.append(driver)
+            if name == "bme280":
+                includes.insert(0, ROOT / "tests/bme280_stubs")
+            if name == "precision_sensors":
+                includes.insert(0, ROOT / "tests/precision_stubs")
+            if name == "recording_store":
+                includes.insert(0, ROOT / "tests/recording_stubs")
             if name == "ota_client":
                 includes.insert(0, ROOT / "tests/ota_stubs")
             compile_command = command + ["-std=c++17", "-O2", "-UNDEBUG", "-Wall", "-Wextra"]
+            if name == "recording_archive":
+                includes.insert(0, ROOT / "tests/archive_stubs")
+                archive_path = Path(output) / "archive"
+                archive_path.mkdir()
+                compile_command += [f'-DRECORDING_MOUNT_PATH="{archive_path.as_posix()}"']
+                if os.name == "nt":
+                    compile_command += ["-Dfsync=_commit", "-include", "io.h"]
+            if name == "battery_boot":
+                includes.insert(0, ROOT / "tests/boot_stubs")
+                compile_command += ["-DPCB_VERSION=4"]
+            if name == "power_pins":
+                includes.insert(0, ROOT / "tests/power_stubs")
+                compile_command += ["-DPCB_VERSION=4"]
             for include in includes:
                 compile_command += ["-I", str(include)]
             base_command = list(compile_command)

@@ -2,8 +2,12 @@
 
 #include <esp_random.h>
 #include <esp_timer.h>
+#include <esp_sleep.h>
+#include <driver/gpio.h>
 
 #include "adc_reader.h"
+#include "live_acquisition.h"
+#include "recording_store.h"
 #include "ota_client.h"
 #include "environmental_sensor.h"
 #include "espnow_transport.h"
@@ -22,8 +26,8 @@ namespace {
 // Discovery is deliberately limited to sensors which have not been added to a
 // station yet.  A configured sensor must never keep waking every ten seconds:
 // that would defeat the configured measurement interval and waste battery.
-// Revision C shares the acquisition clock and tracks attempted reports.
-constexpr uint32_t kRtcSignature = 0x52544343UL;  // "RTCC"
+// Revision D also preserves the last detected type for battery-only reports.
+constexpr uint32_t kRtcSignature = 0x52544344UL;  // "RTCD"
 constexpr uint32_t kPairingMeasurementSeconds = 5UL * 60UL;
 constexpr uint32_t kInitialSleepPhaseWindowMs = 1000UL;
 constexpr uint8_t kRecoveryChannelsPerReport = 3;
@@ -46,6 +50,7 @@ struct RtcState {
   bool hasAttemptedReport;
   bool hasPairingSnapshot;
   bool batteryPaused;
+  lil::protocol::EnvironmentalSensorType lastSensorType;
 };
 
 RTC_DATA_ATTR RtcState rtcState{};
@@ -162,6 +167,8 @@ bool applyStationConfig(const lil::protocol::ConfigResponsePayload& response) {
           lil::protocol::EnvironmentalSensorType::kAutoDetect ||
       response.sensorType == lil::protocol::EnvironmentalSensorType::kBme280 ||
       response.sensorType == lil::protocol::EnvironmentalSensorType::kLsm6dsox ||
+      response.sensorType == lil::protocol::EnvironmentalSensorType::kTmp117 ||
+      response.sensorType == lil::protocol::EnvironmentalSensorType::kMax30102 ||
       response.sensorType == lil::protocol::EnvironmentalSensorType::kBme680 ||
       response.sensorType ==
           lil::protocol::EnvironmentalSensorType::kDisabled;
@@ -235,7 +242,7 @@ lil::protocol::TelemetryPacket makeTelemetryPacket(
           : runtimeConfig.revision;
   packet.payload.bootCount = rtcState.bootCount;
   packet.payload.capabilities = environment.capabilities |
-                                lil::protocol::kBattery;
+                                (battery.valid ? lil::protocol::kBattery : 0);
   if (sensor::kHardware.pcbVersion == 4) {
     packet.payload.capabilities |= lil::protocol::kPcbV4PowerGates;
   }
@@ -246,6 +253,9 @@ lil::protocol::TelemetryPacket makeTelemetryPacket(
     packet.payload.flags |= lil::protocol::kBatteryReadFailed;
   }
   packet.payload.motion = environment.motion;
+  packet.payload.motionFeedback = environment.motionFeedback;
+  packet.payload.pulse = environment.pulse;
+  packet.payload.live = environment.live;
   packet.payload.temperatureC = environment.temperatureC;
   packet.payload.humidityPercent = environment.humidityPercent;
   packet.payload.pressureHpa = environment.pressureHpa;
@@ -276,6 +286,7 @@ lil::protocol::TelemetryPacket makeTelemetryPacket(
           lil::protocol::EnvironmentalSensorType::kAutoDetect &&
       runtimeConfig.environmentalSensorType !=
           lil::protocol::EnvironmentalSensorType::kDisabled &&
+      environment.sensorType != lil::protocol::EnvironmentalSensorType::kAutoDetect &&
       environment.sensorType != runtimeConfig.environmentalSensorType) {
     packet.payload.flags |= lil::protocol::kSensorTypeMismatch;
   }
@@ -284,42 +295,131 @@ lil::protocol::TelemetryPacket makeTelemetryPacket(
   return packet;
 }
 
-// Motion acquisition continues while reports/OTA use the radio. The hardware
-// FIFO bridges blocking exchanges; overflow is reported instead of hidden.
-void runMotionMode(sensor::BatteryReading battery) {
-  if (!battery.valid) battery = adcReader.readBattery(runtimeConfig.batteryCalibrationFactor);
-  uint32_t lastReport = millis() - runtimeConfig.sleepSeconds * 1000UL + 25UL;
-  uint32_t lastBattery = millis(), lastOta = millis() - 30000UL;
-  uint32_t lastRecovery = millis();
-  uint8_t readFailures = 0;
+bool batteryProtectionRequired(const sensor::BatteryReading& battery) {
+  return lil::power::batteryProtectionRequired(rtcState.batteryPaused,
+      battery.valid, battery.millivolts, SENSOR_LOW_BATTERY_PAUSE_MV,
+      SENSOR_LOW_BATTERY_RESUME_MARGIN_MV);
+}
+
+[[noreturn]] void reportBatteryAndSleep(const sensor::BatteryReading& battery) {
+  rtcState.batteryPaused = true;
+  rtcState.hasPairingSnapshot = false;
+  powerController.prepareForDeepSleep();
+  // No sensor initialization, cached measurements, OTA download, channel scan
+  // or configuration command may turn this into a normal measurement wake.
+  sensor::EnvironmentalReading suppressed{};
+  suppressed.valid = true;
+  suppressed.sensorType = runtimeConfig.environmentalSensorType ==
+      lil::protocol::EnvironmentalSensorType::kAutoDetect ?
+      rtcState.lastSensorType : runtimeConfig.environmentalSensorType;
+  ++rtcState.sequence;
+  auto packet = makeTelemetryPacket(suppressed, battery,
+      lil::protocol::SensorOperatingMode::kBatteryProtection);
+  packet.payload.flags |= lil::protocol::kBatteryProtectionActive;
+  lil::protocol::finalize(packet, lil::protocol::MessageType::kTelemetry,
+                         rtcState.sequence);
+  if (operatingMode(runtimeConfig) == OperatingMode::kEnergySaving &&
+      espNowTransport.begin()) {
+    // One bounded reporting window on the saved channel, even if the station
+    // is offline. A failed delivery must not trigger an early retry wake.
+    const auto exchange = espNowTransport.exchangeLpChannel(
+        packet, runtimeConfig, runtimeConfig.wifiChannel);
+    if (exchange.configReceived) {
+      rtcState.lastStationRssi = exchange.stationRssi;
+      sensor::confirmOtaBootAfterContact();
+    }
+    espNowTransport.end();
+  }
+  rtcState.lastReportLogicalMs = logicalNowMs();
+  rtcState.hasAttemptedReport = true;
+  SENSOR_LOG_PRINTLN("[POWER] Battery protection: sensors off, next report in 24 hours");
+  sensor::finishOtaBootGuard();
+  sensor::SleepController::deepSleep(kBatteryProtectionSleepSeconds, powerController);
+}
+
+// Manual live sessions have their own acquisition clock and persistent journal.
+// Environmental sleep / BSEC paths never allocate or initialize these objects.
+void runLiveMode(sensor::BatteryReading battery) {
+  const auto activeType = environmentalSensor.detectedType();
+  sensor::RecordingStore recordings;
+  recordings.begin(activeType);
+  sensor::LiveAcquisition acquisition;
+  if (!acquisition.begin(environmentalSensor, powerController, activeType,
+                         runtimeConfig.temperatureOffsetC)) {
+    sensor::SleepController::deepSleep(5, powerController);
+  }
+  const auto mode = activeType == lil::protocol::EnvironmentalSensorType::kLsm6dsox ?
+      lil::protocol::SensorOperatingMode::kContinuousMotion : lil::protocol::SensorOperatingMode::kContinuousPrecision;
+  uint32_t handledPresses = 0, lastTelemetry = millis() - 5000, lastStatus = millis() - 1000;
+  uint32_t lastBattery = millis(), batteryStarted = 0, lastOta = millis() - 30000;
+  uint32_t lastRecovery = millis(), nextRadio = 0, nextSync = 0;
+  bool batteryPending = false, radioReady = espNowTransport.begin(), haveLatest = false;
+  lil::protocol::TelemetryPacket latest{};
+  uint64_t latestCapturedMs = 0;
+  auto collect = [&]() {
+    sensor::LiveCapture capture{};
+    while (acquisition.take(capture)) {
+      ++rtcState.sequence;
+      latest = makeTelemetryPacket(capture.reading, battery, mode);
+      latestCapturedMs = capture.capturedMs; haveLatest = true;
+      if (recordings.recording() && !recordings.append(capture.capturedMs, latest.payload)) acquisition.stop();
+    }
+  };
   for (;;) {
-    environmentalSensor.pollMotion();
+    if (handledPresses != acquisition.presses()) {
+      ++handledPresses;
+      if (recordings.recording()) {
+        acquisition.stop();
+        while (acquisition.active()) { collect(); delay(1); }
+        collect(); recordings.stop();
+      } else {
+        acquisition.stop();
+        while (acquisition.active()) delay(1);
+        sensor::LiveCapture discarded{};
+        while (acquisition.take(discarded)) {}
+        if (recordings.start()) acquisition.start();
+      }
+      lastStatus = millis() - 1000;
+    }
+    collect();
     const uint32_t now = millis();
-    if (now - lastBattery >= 60000UL) {
-      battery = adcReader.readBattery(runtimeConfig.batteryCalibrationFactor);
-      lastBattery = now;
+    if (!batteryPending && now - lastBattery >=
+        (SENSOR_LOW_BATTERY_PAUSE_MV > 0 ? 10000UL : 60000UL)) {
+      adcReader.startBatteryMeasurement(); batteryStarted = now; batteryPending = true;
+    }
+    if (batteryPending && now - batteryStarted >= sensor::kHardware.adcSettleMs) {
+      battery = adcReader.finishBatteryMeasurement(runtimeConfig.batteryCalibrationFactor);
+      batteryPending = false; lastBattery = now;
       if constexpr (SENSOR_LOW_BATTERY_PAUSE_MV > 0) {
-        if (battery.valid && battery.millivolts < SENSOR_LOW_BATTERY_PAUSE_MV) {
-          rtcState.batteryPaused = true;
-          environmentalSensor.end();
-          sensor::SleepController::deepSleep(3600, powerController);
+        if (batteryProtectionRequired(battery)) {
+          acquisition.stop(); while (acquisition.active()) { collect(); delay(1); }
+          collect(); if (recordings.recording()) recordings.stop();
+          if (radioReady) { espNowTransport.end(); radioReady = false; }
+          reportBatteryAndSleep(battery);
         }
       }
     }
-    if (now - lastReport < runtimeConfig.sleepSeconds * 1000UL) {
-      delay(5);
-      continue;
-    }
-    lastReport = now; // Start-to-start cadence; never replay an overdue burst.
-    const auto reading = environmentalSensor.read();
-    ++rtcState.sequence;
-    auto packet = makeTelemetryPacket(reading, battery,
-        lil::protocol::SensorOperatingMode::kContinuousMotion);
-    if (espNowTransport.begin()) {
-      auto exchange = espNowTransport.exchange(packet, runtimeConfig, sensor::otaBootPending());
-      if (!exchange.delivered && !exchange.configReceived && now - lastRecovery >= 5000UL) {
+    if (static_cast<int32_t>(now - nextRadio) >= 0 &&
+        (haveLatest || now - lastTelemetry >= 5000)) {
+      if (!radioReady) radioReady = espNowTransport.begin();
+      if (!haveLatest) {
+        sensor::EnvironmentalReading idle{}; idle.sensorType = activeType;
+        ++rtcState.sequence; latest = makeTelemetryPacket(idle, battery, mode);
+      } else {
+        const uint64_t elapsed = uint64_t(esp_timer_get_time() / 1000) - latestCapturedMs;
+        auto addAge = [elapsed](uint16_t age) { return age == UINT16_MAX ? age :
+            static_cast<uint16_t>(min(uint64_t(65534), uint64_t(age) + elapsed)); };
+        latest.payload.live.acquisitionAgeMs = addAge(latest.payload.live.acquisitionAgeMs);
+        latest.payload.live.estimateAgeMs = addAge(latest.payload.live.estimateAgeMs);
+        for (auto& frame : latest.payload.live.optical) frame.ageMs = addAge(frame.ageMs);
+        lil::protocol::finalize(latest, lil::protocol::MessageType::kTelemetry, latest.header.sequence);
+      }
+      haveLatest = false; lastTelemetry = now;
+      sensor::ExchangeResult exchange{};
+      if (radioReady) exchange = espNowTransport.exchange(latest, runtimeConfig, sensor::otaBootPending());
+      if (radioReady && !exchange.configReceived && now - lastRecovery >= 5000) {
         lastRecovery = now;
-        exchange = espNowTransport.exchangeLpChannel(packet, runtimeConfig,
+        exchange = espNowTransport.exchangeLpChannel(latest, runtimeConfig,
             takeNextRecoveryChannel(runtimeConfig.wifiChannel), true);
       }
       if (exchange.configReceived) {
@@ -327,28 +427,56 @@ void runMotionMode(sensor::BatteryReading battery) {
         applyStationConfig(exchange.config);
         if (!runtimeConfig.provisioned ||
             (runtimeConfig.environmentalSensorType != lil::protocol::EnvironmentalSensorType::kAutoDetect &&
-             runtimeConfig.environmentalSensorType != lil::protocol::EnvironmentalSensorType::kLsm6dsox)) {
-          environmentalSensor.end();
+             runtimeConfig.environmentalSensorType != activeType)) {
+          acquisition.stop(); while (acquisition.active()) { collect(); delay(1); }
+          collect(); if (recordings.recording()) recordings.stop();
           esp_restart();
         }
-        if (sensor::otaBootPending() || now - lastOta >= 30000UL) {
+        if (!recordings.recording() && !acquisition.active() &&
+            (sensor::otaBootPending() || now - lastOta >= 30000)) {
           lastOta = now;
           sensor::checkOta(espNowTransport, runtimeConfig, adcReader, battery.millivolts);
         }
+        nextRadio = millis();
+      } else {
+        nextRadio = millis() + 1000;
+        if (radioReady) { espNowTransport.end(); radioReady = false; }
       }
-      espNowTransport.end();
+    }
+    if (radioReady && now - lastStatus >= 1000) {
+      lil::recording::StatusPacket status{};
+      status.payload = recordings.status(acquisition.dropped());
+      lil::protocol::finalize(status, lil::recording::kStatusMessage, ++rtcState.sequence);
+      lil::recording::Ack ack{}; const uint32_t started = millis();
+      if (espNowTransport.recordingExchange(runtimeConfig, &status, sizeof(status),
+          status.payload.session, status.payload.elapsedMs, 0, ack))
+        recordings.anchor(ack.stationEpochMs, status.payload.elapsedMs, millis() - started);
+      lastStatus = millis();
+    }
+    if (radioReady && !recordings.recording() && static_cast<int32_t>(now - nextSync) >= 0) {
+      lil::recording::UploadPacket upload{};
+      if (recordings.next(upload.payload)) {
+        lil::protocol::finalize(upload, lil::recording::kRecordMessage, ++rtcState.sequence);
+        lil::recording::Ack ack{}; const auto& record = upload.payload.record;
+        if (espNowTransport.recordingExchange(runtimeConfig, &upload, sizeof(upload),
+            record.session, record.sampleMs, lil::recording::checksum(record), ack) && ack.stored)
+          recordings.acknowledge(record);
+        else nextSync = millis() + 1000;
+      }
     }
     sensor::finishOtaBootGuard();
-    readFailures = reading.valid ? 0 : readFailures + 1;
-    if (readFailures >= 3) {
-      environmentalSensor.end();
-      if (!environmentalSensor.begin(powerController, runtimeConfig.environmentalSensorType,
-                                      runtimeConfig.temperatureOffsetC)) {
-        sensor::SleepController::deepSleep(5, powerController);
-      }
-      readFailures = 0;
+    if (!recordings.recording() && !acquisition.active() && !recordings.status(0).pending && !batteryPending) {
+      if (radioReady) { espNowTransport.end(); radioReady = false; }
+      // GPIO9 can wake from light sleep, but not from C3 deep sleep. This path
+      // exists only for manual live sensors; BME deep-sleep cadence is unchanged.
+      gpio_wakeup_enable(GPIO_NUM_9, GPIO_INTR_LOW_LEVEL);
+      esp_sleep_enable_gpio_wakeup(); esp_sleep_enable_timer_wakeup(100000);
+      esp_light_sleep_start();
+      esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
+      esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+      gpio_wakeup_disable(GPIO_NUM_9);
     }
-    delay(1);
+    delay(5);
   }
 }
 
@@ -361,7 +489,8 @@ void setup() {
 
   if (!configStore.begin()) {
     powerController.begin();
-    sensor::SleepController::deepSleep(60, powerController);
+    sensor::SleepController::deepSleep(sensor::kHardware.pcbVersion == 4 ?
+        kBatteryProtectionSleepSeconds : 60, powerController);
   }
   if (configStore.firmwareChanged()) {
     SENSOR_LOG_PRINTLN(
@@ -382,14 +511,8 @@ void setup() {
   sensor::BatteryReading preflightBattery{};
   if constexpr (SENSOR_LOW_BATTERY_PAUSE_MV > 0) {
     preflightBattery = adcReader.readBattery(runtimeConfig.batteryCalibrationFactor);
-    if (preflightBattery.valid) {
-      const uint16_t threshold = SENSOR_LOW_BATTERY_PAUSE_MV +
-          (rtcState.batteryPaused ? SENSOR_LOW_BATTERY_RESUME_MARGIN_MV : 0);
-      rtcState.batteryPaused = preflightBattery.millivolts < threshold;
-    }
-    if (rtcState.batteryPaused) {
-      sensor::SleepController::deepSleep(3600, powerController);
-    }
+    if (batteryProtectionRequired(preflightBattery)) reportBatteryAndSleep(preflightBattery);
+    rtcState.batteryPaused = false;
   }
   sensor::EnvironmentalReading environment{};
   sensor::BatteryReading battery{};
@@ -407,9 +530,9 @@ void setup() {
            uint64_t(kPairingMeasurementSeconds) * 1000);
   const bool measurementDue = !discoveryMode || pairingMeasurementDue;
   if (measurementDue) {
-    // On PCB V4 the gated divider needs 100 ms to settle. Start it before the
-    // environmental conversion so both waits overlap. BME680-only maintenance
-    // wakes do not report, so they leave the divider completely off.
+    // Reuse the protection preflight voltage. With protection disabled, start
+    // the divider before the environmental conversion to overlap settling;
+    // maintenance wakes without a report then need no battery conversion.
     bool batteryMeasurementStarted = false;
     if (reportDue && !preflightBattery.valid) {
       adcReader.startBatteryMeasurement();
@@ -419,11 +542,12 @@ void setup() {
         powerController, runtimeConfig.environmentalSensorType,
         runtimeConfig.temperatureOffsetC);
     if (sensorStarted) {
-      environment = environmentalSensor.read();
+      rtcState.lastSensorType = environmentalSensor.detectedType();
     }
-    const bool continuousMotion = sensorStarted && energySavingMode &&
-        environment.sensorType == lil::protocol::EnvironmentalSensorType::kLsm6dsox;
-    if (!continuousMotion) environmentalSensor.end();
+    environment = environmentalSensor.read();
+    const bool continuousLive = sensorStarted && energySavingMode &&
+        lil::protocol::isLiveSensor(environment.sensorType);
+    if (!continuousLive) environmentalSensor.end();
     // Preserve the original report timing when a long BME680 conversion
     // crosses the configured deadline. This rare boundary case deliberately
     // pays the full ADC settling time instead of delaying data by five minutes.
@@ -439,7 +563,7 @@ void setup() {
                     : adcReader.readBattery(
                           runtimeConfig.batteryCalibrationFactor);
     }
-    if (continuousMotion) runMotionMode(battery);
+    if (continuousLive) runLiveMode(battery);
     if (discoveryMode) {
       rtcState.cachedEnvironment = environment;
       rtcState.cachedBattery = battery;
