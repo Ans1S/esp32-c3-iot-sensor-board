@@ -2,6 +2,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "sensor_timing.h"
 
 namespace lil {
 namespace protocol {
@@ -25,6 +26,8 @@ enum Capability : uint16_t {
   kPcbV4PowerGates = 1U << 5,
   kGasResistance = 1U << 6,
   kMotion = 1U << 7,
+  kOptical = 1U << 8,
+  kHeartRate = 1U << 9,
 };
 
 enum class EnvironmentalSensorType : uint8_t {
@@ -32,8 +35,21 @@ enum class EnvironmentalSensorType : uint8_t {
   kBme280 = 1,
   kBme680 = 2,
   kLsm6dsox = 3,
+  kTmp117 = 4,
+  kMax30102 = 5,
   kDisabled = 255,
 };
+
+constexpr bool isLiveSensor(EnvironmentalSensorType type) {
+  return type == EnvironmentalSensorType::kLsm6dsox || type == EnvironmentalSensorType::kTmp117 || type == EnvironmentalSensorType::kMax30102;
+}
+constexpr uint32_t liveReportIntervalMs(EnvironmentalSensorType type) {
+  return type == EnvironmentalSensorType::kLsm6dsox ? timing::kImuReportMs :
+      type == EnvironmentalSensorType::kMax30102 ? timing::kOpticalReportMs : timing::kTemperatureCycleMs;
+}
+constexpr uint32_t liveHistoryIntervalMs(EnvironmentalSensorType type) {
+  return type == EnvironmentalSensorType::kLsm6dsox ? timing::kImuShortSessionMs : liveReportIntervalMs(type);
+}
 
 enum class SensorOperatingMode : uint8_t {
   kUnknown = 0,
@@ -41,6 +57,8 @@ enum class SensorOperatingMode : uint8_t {
   kEnergySaving = 2,
   kChannelRecovery = 3,
   kContinuousMotion = 4,
+  kContinuousPrecision = 5,
+  kBatteryProtection = 6,
 };
 
 enum ConfigFlag : uint16_t {
@@ -64,6 +82,7 @@ enum TelemetryFlag : uint16_t {
   // Retained so stations can safely interpret packets from older sensors.
   kBme680Commissioning = 1U << 6,
   kCommissioningBlockedLowBattery = 1U << 7,
+  kBatteryProtectionActive = 1U << 8,
 };
 
 enum class IaqCalibrationPhase : uint8_t {
@@ -95,6 +114,30 @@ struct MotionReading {
   uint8_t fifoOverrun = 0;
 };
 
+struct PulseReading {
+  float beatsPerMinute = 0;
+  uint32_t red = 0, infrared = 0;
+  uint8_t quality = 0;
+  uint8_t status = 0; // 0: no contact, 1: settling/poor signal, 2: periodic signal, 3: FIFO gap
+};
+
+struct MotionFeedback { uint16_t steps = 0, activeSeconds = 0; };
+constexpr uint8_t kMotionFeedbackPresent = 16, kMotionStoredOverrun = 32;
+
+constexpr uint8_t kLiveSampleFresh = 1, kLiveEstimateFresh = 2, kLiveGap = 4, kLiveTimingKnown = 8;
+constexpr size_t kOpticalBatchSize = 8;
+struct OpticalFrame { uint32_t red = 0, infrared = 0; uint16_t ageMs = 0; };
+struct LiveReading {
+  uint16_t acquisitionAgeMs = UINT16_MAX;
+  uint16_t windowMs = 0;
+  uint16_t estimateAgeMs = UINT16_MAX;
+  uint16_t warmupMs = 0;
+  uint16_t processingMs = 0;
+  uint16_t samplePeriodUs = 0;
+  uint8_t count = 0, flags = 0;
+  OpticalFrame optical[kOpticalBatchSize]{};
+};
+
 struct TelemetryPayload {
   uint32_t appliedConfigRevision;
   uint32_t bootCount;
@@ -115,9 +158,16 @@ struct TelemetryPayload {
   uint16_t iaqCalibrationElapsedMinutes;
   uint16_t iaqCalibrationRemainingMinutes;
   MotionReading motion;
+  PulseReading pulse;
+  LiveReading live;
+  MotionFeedback motionFeedback;
 };
 
+constexpr size_t kTimedTelemetryPayloadSize = offsetof(TelemetryPayload, motionFeedback);
+
 // V5 prefix retained for OTA migration from 4.0.0; station accepts both sizes.
+constexpr size_t kPrecisionTelemetryPayloadSize = offsetof(TelemetryPayload, live);
+constexpr size_t kMotionTelemetryPayloadSize = offsetof(TelemetryPayload, pulse);
 constexpr size_t kLegacyTelemetryPayloadSize = offsetof(TelemetryPayload, motion);
 
 struct ConfigResponsePayload {

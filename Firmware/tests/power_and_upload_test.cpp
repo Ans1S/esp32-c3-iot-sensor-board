@@ -16,6 +16,16 @@ struct Job { uint32_t channelId; uint32_t value; };
 
 int main() {
   using namespace lil::power;
+  assert(!batteryProtectionRequired(false, true, 2800, 2800, 150));
+  assert(batteryProtectionRequired(false, true, 2799, 2800, 150));
+  assert(batteryProtectionRequired(true, true, 2800, 2800, 150));
+  assert(batteryProtectionRequired(true, true, 2949, 2800, 150));
+  assert(!batteryProtectionRequired(true, true, 2950, 2800, 150));
+  assert(batteryProtectionRequired(false, false, 4000, 2800, 150));
+  assert(batteryProtectionRequired(true, false, 4000, 2800, 150));
+  assert(!batteryProtectionRequired(false, false, 0, 0, 150));
+  assert(!reportDue(true, 86399999, 0, 86400));
+  assert(reportDue(true, 86400000, 0, 86400));
   assert(discoverySleepSeconds(599) == 10);
   assert(discoverySleepSeconds(600) == 300);
   assert(discoverySleepSeconds(360000) == 300);

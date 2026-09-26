@@ -57,7 +57,8 @@ bool OtaService::startUpload(const uint8_t mac[6], String& error) {
 }
 bool OtaService::upload(const uint8_t* bytes, size_t size) {
   Lock lock(mutex_);
-  if (!uploading_ || uploadFailed_ || size > sizeof(lil::ota::Manifest) + lil::ota::kSlotSize - written_) {
+  const size_t capacity = partition_ ? min(size_t(partition_->size), sizeof(lil::ota::Manifest) + size_t(lil::ota::kSlotSize)) : 0;
+  if (!uploading_ || uploadFailed_ || written_ > capacity || size > capacity - written_) {
     uploadFailed_ = true; return false;
   }
   const uint32_t end = written_ + size;

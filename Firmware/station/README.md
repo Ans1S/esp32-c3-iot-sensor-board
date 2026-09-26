@@ -1,7 +1,7 @@
 # W-Charger Station Firmware
 
-Firmware 4.1.3 supports LSM6DSOX motion acquisition on PCB V3/V4 and local
-second-scale charts. See [LSM6DSOX setup and recording limits](../LSM6DSOX.md).
+Firmware 4.3.1 supports LSM6DSOX, TMP117 and MAX30102 live acquisition on PCB V3/V4.
+See [precision sensor operation and timing](../PRECISION_SENSORS.md).
 
 The station runs on the existing Seeed XIAO ESP32-S3. It keeps Wi-Fi and
 ESP-NOW active at the same time, so the web interface remains available and
@@ -175,7 +175,7 @@ unintended access by other participants on the home network, but it does not
 replace transport encryption against active interception on that network.
 
 The 8 MB OTA station layout reserves two 2.25 MiB application slots, a
-1.375 MiB measurement filesystem and a separate 2 MiB firmware staging
+1.625 MiB measurement filesystem and a separate 1.75 MiB firmware staging
 partition. Install this layout once by USB. The **Firmware updates** page
 accepts signed sensor packages, queues one node at a time, and displays actual
 reported software/build versions and confirmed transfer progress. See
@@ -188,3 +188,10 @@ energy tradeoffs and validation limits. Reproducible host and browser checks
 are in [tests/README.md](../tests/README.md); physical acceptance checks are in
 [HARDWARE_TESTPLAN.md](../HARDWARE_TESTPLAN.md). Current package information is
 in [releases](../releases/README.md).
+
+## Live precision sensors (4.3.1)
+
+TMP117 and MAX30102 join LSM6DSOX as manually started live sensors (SW2 / GPIO9).
+Reports arrive every 1 s (TMP117), 200 ms (MAX30102 waveform) or 100 ms
+(LSM6DSOX means); pulse estimates update every second, with a
+one-minute live graph and persistent, replayable manual recordings. See [operation, accuracy limits and OTA migration](../PRECISION_SENSORS.md).

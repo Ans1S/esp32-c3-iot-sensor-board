@@ -50,6 +50,9 @@ class WebPortal {
   bool verifyCsrf();
   void sendJsonStatus();
   void sendJsonHistory();
+  void sendRecordings();
+  void sendRecording();
+  void deleteRecording();
   void sendJsonConfig();
   void sendWifiScan();
   void saveSetup();
