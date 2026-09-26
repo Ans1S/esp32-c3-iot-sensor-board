@@ -1,5 +1,7 @@
 #include "espnow_gateway.h"
 #include "ota_service.h"
+#include "recording_archive.h"
+#include <sys/time.h>
 
 #include <esp_wifi.h>
 #include <time.h>
@@ -21,10 +23,12 @@ bool EspNowGateway::begin(SensorRegistry& registry,
   registry_ = &registry;
   thingSpeak_ = &thingSpeak;
   wifi_ = &wifi;
+  if (!recordingArchive.begin()) return false;
   receiveQueue_ = xQueueCreate(kReceiveQueueSize, sizeof(EspNowRxEvent));
   persistenceQueue_ =
       xQueueCreate(kPersistenceQueueSize, sizeof(EspNowPersistenceEvent));
-  if (receiveQueue_ == nullptr || persistenceQueue_ == nullptr) {
+  archiveQueue_ = xQueueCreate(8, sizeof(EspNowArchiveEvent));
+  if (receiveQueue_ == nullptr || persistenceQueue_ == nullptr || archiveQueue_ == nullptr) {
     return false;
   }
 
@@ -38,6 +42,7 @@ bool EspNowGateway::begin(SensorRegistry& registry,
                   &persistenceTask_) != pdPASS) {
     return false;
   }
+  if (xTaskCreate(archiveTaskEntry, "recording-store", 6144, this, 1, &archiveTask_) != pdPASS) return false;
   return xTaskCreate(taskEntry, "espnow-gateway", 6144, this, 3, &task_) ==
          pdPASS;
 }
@@ -82,6 +87,16 @@ void EspNowGateway::taskEntry(void* context) {
 void EspNowGateway::persistenceTaskEntry(void* context) {
   static_cast<EspNowGateway*>(context)->persistenceTaskLoop();
 }
+void EspNowGateway::archiveTaskEntry(void* context) {
+  auto* gateway = static_cast<EspNowGateway*>(context);
+  EspNowArchiveEvent event{};
+  for (;;) {
+    if (xQueueReceive(gateway->archiveQueue_, &event, portMAX_DELAY) == pdTRUE) gateway->persistArchive(event);
+    // Archive replay gets a separate bounded queue and yields between writes;
+    // it cannot evict BME telemetry from the normal persistence queue.
+    vTaskDelay(pdMS_TO_TICKS(1));
+  }
+}
 
 void EspNowGateway::taskLoop() {
   EspNowRxEvent event{};
@@ -101,6 +116,22 @@ void EspNowGateway::persistenceTaskLoop() {
   }
 }
 
+void EspNowGateway::persistArchive(const EspNowArchiveEvent& event) {
+    SensorConfig config{};
+    if (!registry_->findConfig(event.sourceMac, config) || !config.provisioned) return;
+    lil::recording::AckPacket ack{};
+    const auto& record = event.recording.record;
+    ack.payload.session = record.session; ack.payload.sampleMs = record.sampleMs;
+    ack.payload.recordCrc = lil::recording::checksum(record);
+    ack.payload.stored = recordingArchive.append(event.sourceMac, event.recording);
+    lil::protocol::finalize(ack, lil::recording::kAckMessage, event.sequence);
+    EspNowRxEvent reply{}; reply.archiveReply = true;
+    memcpy(reply.sourceMac, event.sourceMac, 6); memcpy(reply.data, &ack, sizeof(ack));
+    reply.length = sizeof(ack);
+    // A dropped ACK is retried by the sensor; the archive deduplicates it.
+    xQueueSend(receiveQueue_, &reply, 0);
+}
+
 void EspNowGateway::persist(const EspNowPersistenceEvent& event) {
   if (!registry_->persistTelemetry(event.sourceMac, event.sequence,
                                    event.telemetry, event.rssi, event.generation,
@@ -116,6 +147,40 @@ void EspNowGateway::persist(const EspNowPersistenceEvent& event) {
 }
 
 void EspNowGateway::handle(const EspNowRxEvent& event) {
+  if (event.archiveReply || event.length == sizeof(lil::recording::StatusPacket) ||
+      event.length == sizeof(lil::recording::UploadPacket)) {
+    SensorConfig config{};
+    if (!registry_->findConfig(event.sourceMac, config) || !config.provisioned) return;
+    lil::recording::AckPacket ack{};
+    if (event.archiveReply) memcpy(&ack, event.data, sizeof(ack));
+    else if (event.length == sizeof(lil::recording::UploadPacket)) {
+      lil::recording::UploadPacket request{}; memcpy(&request, event.data, sizeof(request));
+      if (!lil::protocol::validate(request, event.length, lil::recording::kRecordMessage) ||
+          !lil::recording::valid(request.payload.record)) return;
+      EspNowArchiveEvent persistence{};
+      persistence.recording = request.payload;
+      persistence.sequence = request.header.sequence; memcpy(persistence.sourceMac, event.sourceMac, 6);
+      // Do not evict environmental telemetry or another archive entry.
+      if (xQueueSend(archiveQueue_, &persistence, 0) != pdTRUE) persistenceDrops_.fetch_add(1);
+      return;
+    } else {
+      lil::recording::StatusPacket request{}; memcpy(&request, event.data, sizeof(request));
+      if (!lil::protocol::validate(request, event.length, lil::recording::kStatusMessage) ||
+          !lil::protocol::isLiveSensor(request.payload.type) || static_cast<uint8_t>(request.payload.state) > 7) return;
+      registry_->updateRecording(event.sourceMac, request.payload);
+      ack.payload.session = request.payload.session; ack.payload.sampleMs = request.payload.elapsedMs;
+      timeval now{}; gettimeofday(&now, nullptr);
+      if (now.tv_sec >= 1577836800) ack.payload.stationEpochMs = uint64_t(now.tv_sec)*1000 + now.tv_usec/1000;
+      lil::protocol::finalize(ack, lil::recording::kAckMessage, request.header.sequence);
+    }
+    if (sendPending_.load(std::memory_order_acquire)) ulTaskNotifyTake(pdTRUE, kResponseCompletionWait);
+    if (sendPending_.load(std::memory_order_acquire) || !ensurePeer(event.sourceMac)) return;
+    ulTaskNotifyTake(pdTRUE, 0); sendPending_.store(true, std::memory_order_release);
+    if (esp_now_send(event.sourceMac, reinterpret_cast<const uint8_t*>(&ack), sizeof(ack)) == ESP_OK)
+      ulTaskNotifyTake(pdTRUE, kResponseCompletionWait);
+    else sendPending_.store(false, std::memory_order_release);
+    return;
+  }
   if (event.length == sizeof(lil::ota::Packet)) {
     lil::ota::Packet request{}, response{};
     memcpy(&request, event.data, sizeof(request));
@@ -137,7 +202,10 @@ void EspNowGateway::handle(const EspNowRxEvent& event) {
   }
   const bool legacy = event.length == sizeof(lil::protocol::PacketHeader) +
       lil::protocol::kLegacyTelemetryPayloadSize;
-  if (!legacy && event.length != sizeof(lil::protocol::TelemetryPacket)) {
+  const bool motionLegacy = event.length == sizeof(lil::protocol::PacketHeader) + lil::protocol::kMotionTelemetryPayloadSize;
+  const bool precisionLegacy = event.length == sizeof(lil::protocol::PacketHeader) + lil::protocol::kPrecisionTelemetryPayloadSize;
+  const bool timedLegacy = event.length == sizeof(lil::protocol::PacketHeader) + lil::protocol::kTimedTelemetryPayloadSize;
+  if (!legacy && !motionLegacy && !precisionLegacy && !timedLegacy && event.length != sizeof(lil::protocol::TelemetryPacket)) {
     invalidPackets_.fetch_add(1, std::memory_order_relaxed);
     return;
   }
@@ -146,7 +214,7 @@ void EspNowGateway::handle(const EspNowRxEvent& event) {
   memcpy(&packet, event.data, event.length);
   if (!lil::protocol::validatePacket(event.data, event.length,
           lil::protocol::MessageType::kTelemetry,
-          legacy ? lil::protocol::kLegacyTelemetryPayloadSize : sizeof(packet.payload))) {
+          legacy ? lil::protocol::kLegacyTelemetryPayloadSize : motionLegacy ? lil::protocol::kMotionTelemetryPayloadSize : precisionLegacy ? lil::protocol::kPrecisionTelemetryPayloadSize : timedLegacy ? lil::protocol::kTimedTelemetryPayloadSize : sizeof(packet.payload))) {
     invalidPackets_.fetch_add(1, std::memory_order_relaxed);
     return;
   }
@@ -208,7 +276,9 @@ void EspNowGateway::handle(const EspNowRxEvent& event) {
     }
   }
 
-  if (!duplicate) {
+  const bool liveTelemetry = lil::protocol::isLiveSensor(packet.payload.sensorType) &&
+      !(packet.payload.flags & lil::protocol::kBatteryProtectionActive);
+  if (!duplicate && (!liveTelemetry || registry_->needsPersistence(event.sourceMac))) {
     EspNowPersistenceEvent persistence{};
     persistence.receivedAt = event.receivedAt;
     persistence.generation = generation;
@@ -218,7 +288,7 @@ void EspNowGateway::handle(const EspNowRxEvent& event) {
     persistence.rssi = event.rssi;
     persistence.telemetry = packet.payload;
     persistence.responseConfig = responseConfig;
-    persistence.queueCloudUpload =
+    persistence.queueCloudUpload = !liveTelemetry &&
         (packet.payload.flags &
          (lil::protocol::kDiscoveryBeacon |
           lil::protocol::kBme680Commissioning)) == 0;

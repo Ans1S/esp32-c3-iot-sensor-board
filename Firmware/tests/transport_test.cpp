@@ -184,5 +184,14 @@ int main() {
   assert(transport.begin());
   assert(transport.exchange(packet, config).configReceived);
   transport.end();
+  reset(); responseDelay = 4;
+  packet.payload.sensorType = lil::protocol::EnvironmentalSensorType::kMax30102;
+  packet.payload.capabilities = lil::protocol::kOptical | lil::protocol::kHeartRate;
+  packet.payload.pulse.beatsPerMinute = 72;
+  lil::protocol::finalize(packet, lil::protocol::MessageType::kTelemetry, 44);
+  assert(transport.begin());
+  assert(transport.exchange(packet, config).configReceived);
+  assert(lastTelemetrySize == sizeof(packet));
+  transport.end();
   puts("ESP-NOW timing and V5 environmental/IMU wire compatibility tests passed");
 }

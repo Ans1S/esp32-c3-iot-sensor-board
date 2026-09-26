@@ -1,6 +1,8 @@
 #include "web_portal.h"
 #include "ota_service.h"
 #include "ota_page.h"
+#include "recording_archive.h"
+#include <memory>
 
 #include <ArduinoJson.h>
 #include <SHA2Builder.h>
@@ -277,6 +279,11 @@ bool WebPortal::begin(StationConfig& config, ConfigStore& store,
   });
   server_.on("/api/history", HTTP_GET, [this]() {
     if (requireAuthentication()) sendJsonHistory();
+  });
+  server_.on("/api/recordings", HTTP_GET, [this]() { if (requireAuthentication()) sendRecordings(); });
+  server_.on("/api/recording", HTTP_GET, [this]() { if (requireAuthentication()) sendRecording(); });
+  server_.on("/api/recording/delete", HTTP_POST, [this]() {
+    if (requireAuthentication() && verifyCsrf()) deleteRecording();
   });
   server_.on("/api/config", HTTP_GET, [this]() {
     if (requireAuthentication()) sendJsonConfig();
@@ -700,7 +707,8 @@ void WebPortal::sendJsonStatus() {
           : millis() - thingSpeak_->lastSuccessMs();
   cloud["droppedJobs"] = thingSpeak_->droppedJobs();
 
-  SensorView sensorViews[kMaxSensors];
+  // WebServer handlers are serialized; keep the enlarged snapshots off the task stack.
+  static SensorView sensorViews[kMaxSensors];
   const size_t count = registry_->views(sensorViews, kMaxSensors);
   size_t provisionedCount = 0;
   size_t pendingCount = 0;
@@ -708,10 +716,14 @@ void WebPortal::sendJsonStatus() {
   JsonArray sensors = document["sensors"].to<JsonArray>();
   for (size_t i = 0; i < count; ++i) {
     const SensorView& view = sensorViews[i];
+    const bool batteryProtection =
+        (view.runtime.telemetry.flags & lil::protocol::kBatteryProtectionActive) != 0;
     const uint32_t ageMs = view.runtime.hasTelemetry
                                ? millis() - view.runtime.lastSeenMs
                                : 0;
     const uint32_t onlineLimitMs =
+        batteryProtection ? 26UL * 60UL * 60UL * 1000UL :
+        lil::protocol::isLiveSensor(view.runtime.telemetry.sensorType) ? 15000UL :
         max(view.config.sleepSeconds < 60 ? 5000UL : 120000UL, view.config.sleepSeconds * 3000UL);
     JsonObject item = sensors.add<JsonObject>();
     item["mac"] = SensorRegistry::formatMac(view.config.mac);
@@ -744,6 +756,32 @@ void WebPortal::sendJsonStatus() {
     item["rssi"] = view.runtime.stationRssi;
     item["sensorTxPowerDbm"] =
         static_cast<float>(view.runtime.sensorTxPowerQuarterDbm) / 4.0F;
+    const auto& timing = view.runtime.telemetry.live;
+    item["timingKnown"] = (timing.flags & lil::protocol::kLiveTimingKnown) != 0;
+    item["acquisitionAgeMs"] = timing.acquisitionAgeMs == UINT16_MAX ? -1 : int64_t(timing.acquisitionAgeMs) + ageMs;
+    item["estimateAgeMs"] = timing.estimateAgeMs == UINT16_MAX ? -1 : int64_t(timing.estimateAgeMs) + ageMs;
+    item["measurementWindowMs"] = timing.windowMs;
+    item["warmupMs"] = timing.warmupMs;
+    item["processingMs"] = timing.processingMs;
+    item["receivedIntervalMs"] = view.runtime.receivedIntervalMs;
+    if (view.runtime.hasRecordingStatus && !batteryProtection) {
+      const auto& recording = view.runtime.recording;
+      auto r = item["recording"].to<JsonObject>();
+      r["state"] = static_cast<uint8_t>(recording.state);
+      r["pending"] = recording.pending; r["capacity"] = recording.capacity;
+      r["elapsedMs"] = recording.elapsedMs; r["dropped"] = recording.dropped;
+      char session[17]; snprintf(session, sizeof(session), "%016llx", static_cast<unsigned long long>(recording.session));
+      r["session"] = session;
+    }
+    const auto& pulse = view.runtime.telemetry.pulse;
+    item["heartRate"] = (view.runtime.telemetry.capabilities & lil::protocol::kHeartRate) ? pulse.beatsPerMinute : 0;
+    item["red"] = pulse.red; item["infrared"] = pulse.infrared;
+    item["pulseQuality"] = pulse.quality; item["pulseStatus"] = pulse.status;
+    item["live"] = !batteryProtection && lil::protocol::isLiveSensor(view.runtime.telemetry.sensorType);
+    item["batteryProtection"] = batteryProtection;
+    item["liveRevision"] = view.runtime.receivedPackets;
+    item["reportIntervalMs"] = batteryProtection ? 86400000UL : lil::protocol::isLiveSensor(view.runtime.telemetry.sensorType) ?
+        lil::protocol::liveReportIntervalMs(view.runtime.telemetry.sensorType) : view.config.sleepSeconds * 1000;
     const auto& motion = view.runtime.telemetry.motion;
     const char* accelerationKeys[] = {"ax", "ay", "az"};
     const char* angularKeys[] = {"gx", "gy", "gz"};
@@ -799,6 +837,91 @@ void WebPortal::sendJsonStatus() {
   server_.send(200, "application/json", output);
 }
 
+
+namespace {
+uint64_t recordingSession(const String& text) {
+  if (text.length() != 16) return 0;
+  for (size_t i = 0; i < text.length(); ++i) if (!isxdigit(static_cast<unsigned char>(text[i]))) return 0;
+  return strtoull(text.c_str(), nullptr, 16);
+}
+void recordingInfoJson(JsonObject object, const RecordingInfo& info) {
+  char session[17]; snprintf(session, sizeof(session), "%016llx", static_cast<unsigned long long>(info.session));
+  object["session"] = session; object["epochMs"] = info.epochMs;
+  object["durationMs"] = info.durationMs; object["expected"] = info.expected;
+  object["stored"] = info.stored; object["complete"] = info.stored == info.expected;
+  object["sensorType"] = static_cast<uint8_t>(info.type);
+}
+}
+void WebPortal::sendRecordings() {
+  uint8_t mac[6]{}; SensorConfig config{};
+  if (!SensorRegistry::parseMac(server_.arg("mac"), mac) || !registry_->findConfig(mac, config)) {
+    sendJsonResult(false, "Sensor not found"); return;
+  }
+  JsonDocument doc; doc["freeBytes"] = recordingArchive.freeBytes();
+  auto sessions = doc["sessions"].to<JsonArray>();
+  for (const auto& info : recordingArchive.list(mac)) recordingInfoJson(sessions.add<JsonObject>(), info);
+  String json; serializeJson(doc, json); sendNoCache(server_); server_.send(200, "application/json", json);
+}
+void WebPortal::sendRecording() {
+  uint8_t mac[6]{}; SensorConfig config{};
+  const uint64_t session = recordingSession(server_.arg("session"));
+  if (!session || !SensorRegistry::parseMac(server_.arg("mac"), mac) || !registry_->findConfig(mac, config)) {
+    sendJsonResult(false, "Invalid recording"); return;
+  }
+  std::unique_ptr<lil::recording::Record[]> records(new (std::nothrow) lil::recording::Record[128]);
+  if (!records) { sendJsonResult(false, "Recording buffer unavailable"); return; }
+  uint32_t offset = strtoul(server_.arg("offset").c_str(), nullptr, 10);
+  const uint32_t fromMs = server_.hasArg("fromMs") ? strtoul(server_.arg("fromMs").c_str(), nullptr, 10) : UINT32_MAX;
+  RecordingInfo info{};
+  const size_t count = recordingArchive.read(mac, session, offset, records.get(), 128, info, fromMs);
+  if (!info.session) { sendJsonResult(false, "Recording not found"); return; }
+  JsonDocument metadata; recordingInfoJson(metadata.to<JsonObject>(), info);
+  metadata["nextOffset"] = offset;
+  String opening; serializeJson(metadata, opening); opening.remove(opening.length()-1);
+  sendNoCache(server_); server_.setContentLength(CONTENT_LENGTH_UNKNOWN); server_.send(200, "application/json", "");
+  server_.sendContent(opening + ",\"points\":[");
+  for (size_t i = 0; i < count; ++i) {
+    const auto& record = records[i]; const auto t = lil::recording::decode(record);
+    JsonDocument point; point["sampleMs"] = record.sampleMs;
+    point["t"] = int64_t(record.sampleMs) - (record.ageMs == UINT16_MAX ? 0 : record.ageMs);
+    point["estimateT"] = int64_t(record.sampleMs) - (t.live.estimateAgeMs == UINT16_MAX ? 0 : t.live.estimateAgeMs);
+    point["windowMs"] = record.windowMs;
+    point["gap"] = bool(record.flags & lil::protocol::kLiveGap) || t.motion.fifoOverrun;
+    if ((t.capabilities & lil::protocol::kTemperature) && (t.live.flags & lil::protocol::kLiveSampleFresh)) point["temperature"] = t.temperatureC;
+    if (t.capabilities & lil::protocol::kMotion) {
+      const char* keys[] = {"ax","ay","az","gx","gy","gz"};
+      for (int axis = 0; axis < 6; ++axis) point[keys[axis]] = axis < 3 ? t.motion.accelerationG[axis] : t.motion.angularRateDps[axis-3];
+      point["peakAcceleration"] = t.motion.peakAccelerationG; point["peakAngularRate"] = t.motion.peakAngularRateDps;
+      point["sampleCount"] = t.motion.sampleCount;
+      if (t.live.flags & lil::protocol::kMotionFeedbackPresent) {
+        point["steps"] = t.motionFeedback.steps;
+        point["activeSeconds"] = t.motionFeedback.activeSeconds;
+      }
+    }
+    if ((t.capabilities & lil::protocol::kHeartRate) && (t.live.flags & lil::protocol::kLiveEstimateFresh)) point["heartRate"] = t.pulse.beatsPerMinute;
+    point["pulseStatus"] = t.pulse.status; point["quality"] = t.pulse.quality;
+    point["battery"] = record.batteryMv / 1000.0F;
+    auto wave = point["wave"].to<JsonArray>();
+    for (uint8_t j = 0; j < t.live.count; ++j) {
+      auto frame = wave.add<JsonObject>(); frame["t"] = int64_t(record.sampleMs) - t.live.optical[j].ageMs;
+      frame["red"] = t.live.optical[j].red; frame["infrared"] = t.live.optical[j].infrared;
+    }
+    String json; serializeJson(point, json); if (i) server_.sendContent(","); server_.sendContent(json);
+  }
+  server_.sendContent("]}"); server_.sendContent("");
+}
+void WebPortal::deleteRecording() {
+  uint8_t mac[6]{}; SensorView view{};
+  const uint64_t session = recordingSession(server_.arg("session"));
+  if (!session || !SensorRegistry::parseMac(server_.arg("mac"), mac) || !registry_->findView(mac, view)) {
+    sendJsonResult(false, "Invalid recording"); return;
+  }
+  // A partial session still being replayed cannot be removed underneath ACKs.
+  if (view.runtime.hasRecordingStatus && view.runtime.recording.session == session &&
+      view.runtime.recording.pending) { sendJsonResult(false, "Wait for synchronization or start a replacement recording on the sensor"); return; }
+  sendJsonResult(recordingArchive.remove(mac, session), "Recording deleted");
+}
+
 void WebPortal::sendJsonHistory() {
   uint8_t mac[6]{};
   if (!SensorRegistry::parseMac(server_.arg("mac"), mac)) {
@@ -811,6 +934,67 @@ void WebPortal::sendJsonHistory() {
     return;
   }
 
+  SensorView liveView{};
+  if (registry_->findView(mac, liveView) && lil::protocol::isLiveSensor(liveView.runtime.telemetry.sensorType) &&
+      !(liveView.runtime.telemetry.flags & lil::protocol::kBatteryProtectionActive)) {
+    const size_t liveCapacity = 60000 / lil::protocol::liveHistoryIntervalMs(liveView.runtime.telemetry.sensorType) + 1;
+    auto* samples = static_cast<LiveSample*>(heap_caps_malloc(liveCapacity * sizeof(LiveSample), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!samples && heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) > liveCapacity * sizeof(LiveSample) + 96U * 1024U)
+      samples = static_cast<LiveSample*>(heap_caps_malloc(liveCapacity * sizeof(LiveSample), MALLOC_CAP_8BIT));
+    if (!samples) { sendJsonResult(false, "Live history is temporarily unavailable"); return; }
+    const size_t count = registry_->liveHistory(mac, samples, liveCapacity);
+    const uint32_t now = millis();
+    sendNoCache(server_); server_.setContentLength(CONTENT_LENGTH_UNKNOWN);
+    server_.send(200, "application/json", "");
+    server_.sendContent(String("{\"live\":true,\"bucketSeconds\":") +
+        String(lil::protocol::liveReportIntervalMs(liveView.runtime.telemetry.sensorType) / 1000.0F, 1) + ",\"points\":[");
+    size_t emitted = 0;
+    const uint32_t afterMs = strtoul(server_.arg("afterMs").c_str(), nullptr, 10);
+    for (size_t i = 0; i < count; ++i) {
+      if (server_.hasArg("afterMs") && static_cast<int32_t>(samples[i].receivedMs - afterMs) <= 0) continue;
+      const auto& sample = samples[i]; const auto& t = sample.telemetry;
+      JsonDocument doc;
+      doc["id"] = sample.receivedMs;
+      doc["sensorType"] = static_cast<uint8_t>(t.sensorType);
+      doc["ageMs"] = uint32_t(now - sample.receivedMs);
+      const bool timed = t.live.flags & lil::protocol::kLiveTimingKnown;
+      doc["measurementAgeMs"] = uint32_t(now - sample.receivedMs) + (timed && t.live.acquisitionAgeMs != UINT16_MAX ? t.live.acquisitionAgeMs : 0);
+      doc["windowMs"] = t.live.windowMs;
+      doc["estimateAgeMs"] = uint32_t(now - sample.receivedMs) + (timed && t.live.estimateAgeMs != UINT16_MAX ? t.live.estimateAgeMs : 0);
+      doc["gap"] = t.motion.fifoOverrun || (t.live.flags & lil::protocol::kLiveGap);
+      if (timed && t.live.count <= lil::protocol::kOpticalBatchSize) {
+        JsonArray wave = doc["wave"].to<JsonArray>();
+        for (uint8_t j = 0; j < t.live.count; ++j) {
+          JsonObject frame = wave.add<JsonObject>();
+          frame["ageMs"] = uint32_t(now - sample.receivedMs) + t.live.optical[j].ageMs;
+          frame["red"] = t.live.optical[j].red; frame["infrared"] = t.live.optical[j].infrared;
+        }
+      }
+      if (!(t.flags & lil::protocol::kSensorReadFailed)) {
+        if ((t.capabilities & lil::protocol::kTemperature) && (!timed || (t.live.flags & lil::protocol::kLiveSampleFresh))) doc["temperature"] = t.temperatureC;
+        if ((t.capabilities & lil::protocol::kMotion) && !t.motion.fifoOverrun) {
+          const char* keys[] = {"ax", "ay", "az", "gx", "gy", "gz"};
+          for (int axis = 0; axis < 6; ++axis) doc[keys[axis]] = axis < 3 ? t.motion.accelerationG[axis] : t.motion.angularRateDps[axis-3];
+          doc["peakAcceleration"] = t.motion.peakAccelerationG;
+          doc["peakAngularRate"] = t.motion.peakAngularRateDps;
+        }
+        if (t.capabilities & lil::protocol::kOptical) { doc["red"] = t.pulse.red; doc["infrared"] = t.pulse.infrared; }
+        if ((t.capabilities & lil::protocol::kHeartRate) && (!timed || (t.live.flags & lil::protocol::kLiveEstimateFresh))) doc["heartRate"] = t.pulse.beatsPerMinute;
+      }
+      doc["motionOverrun"] = t.motion.fifoOverrun;
+      doc["pulseStatus"] = t.pulse.status;
+      doc["quality"] = t.pulse.quality;
+      if (t.live.flags & lil::protocol::kMotionFeedbackPresent) {
+        doc["steps"] = t.motionFeedback.steps;
+        doc["activeSeconds"] = t.motionFeedback.activeSeconds;
+      }
+      if (t.capabilities & lil::protocol::kBattery) doc["battery"] = t.batteryMillivolts / 1000.0F;
+      String point; serializeJson(doc, point);
+      if (emitted++) server_.sendContent(",");
+      server_.sendContent(point);
+    }
+    heap_caps_free(samples); server_.sendContent("]}"); server_.sendContent(""); return;
+  }
   const size_t capacity = registry_->historyCapacity(mac);
   HistorySample* samples = nullptr;
   if (capacity > 0) {
@@ -1028,6 +1212,8 @@ void WebPortal::saveSetupSensor() {
       sensorType == lil::protocol::EnvironmentalSensorType::kAutoDetect ||
       sensorType == lil::protocol::EnvironmentalSensorType::kBme280 ||
       sensorType == lil::protocol::EnvironmentalSensorType::kLsm6dsox ||
+      sensorType == lil::protocol::EnvironmentalSensorType::kTmp117 ||
+      sensorType == lil::protocol::EnvironmentalSensorType::kMax30102 ||
       sensorType == lil::protocol::EnvironmentalSensorType::kBme680 ||
       sensorType == lil::protocol::EnvironmentalSensorType::kDisabled;
   if (!wifi_->setupPortalActive() ||
@@ -1176,6 +1362,8 @@ void WebPortal::saveSensor() {
       sensorType == lil::protocol::EnvironmentalSensorType::kAutoDetect ||
       sensorType == lil::protocol::EnvironmentalSensorType::kBme280 ||
       sensorType == lil::protocol::EnvironmentalSensorType::kLsm6dsox ||
+      sensorType == lil::protocol::EnvironmentalSensorType::kTmp117 ||
+      sensorType == lil::protocol::EnvironmentalSensorType::kMax30102 ||
       sensorType == lil::protocol::EnvironmentalSensorType::kBme680 ||
       sensorType == lil::protocol::EnvironmentalSensorType::kDisabled;
   SensorView existingView{};
@@ -1239,7 +1427,7 @@ void WebPortal::saveSensor() {
   if (!validThingSpeakFields(fields, uploadEnabled)) {
     sendJsonResult(
         false,
-        "Do not assign ThingSpeak fields 1â€“8 more than once. At least "
+        "Do not assign ThingSpeak fields 1ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ8 more than once. At least "
         "one measurement must be enabled.");
     return;
   }

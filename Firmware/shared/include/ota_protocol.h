@@ -4,8 +4,8 @@
 
 namespace lil::ota {
 constexpr uint32_t kPackageMagic = 0x3141544f; // OTA1
-constexpr uint32_t kRelease = 40103;
-#define WCH_FIRMWARE_VERSION "4.1.3"
+constexpr uint32_t kRelease = 40304;
+#define WCH_FIRMWARE_VERSION "4.3.1"
 constexpr char kVersion[] = WCH_FIRMWARE_VERSION;
 constexpr size_t kBlockSize = 192;
 constexpr uint32_t kSlotSize = 0x1e0000;

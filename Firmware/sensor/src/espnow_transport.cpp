@@ -74,6 +74,14 @@ void EspNowTransport::sendCallback(const wifi_tx_info_t* info,
 void EspNowTransport::receiveCallback(const esp_now_recv_info_t* info,
                                       const uint8_t* data, int length) {
   if (instance_ && info && info->src_addr && data &&
+      length == sizeof(lil::recording::AckPacket) && instance_->recordingResponses_) {
+    RecordingEvent event{};
+    memcpy(event.mac, info->src_addr, 6); memcpy(&event.packet, data, sizeof(event.packet));
+    if (lil::protocol::validate(event.packet, length, lil::recording::kAckMessage))
+      xQueueSend(instance_->recordingResponses_, &event, 0);
+    return;
+  }
+  if (instance_ && info && info->src_addr && data &&
       length == sizeof(lil::ota::Packet) && instance_->otaResponses_) {
     OtaEvent event{};
     memcpy(event.mac, info->src_addr, 6);
@@ -201,10 +209,14 @@ bool EspNowTransport::tryChannel(
   }
   // Environmental telemetry never needs the IMU suffix. Preserve the V5
   // wire size so an existing 4.0.0 station can acknowledge a trial boot.
+  const uint32_t preparedMs = millis();
   auto wirePacket = packet;
   const bool motion = packet.payload.sensorType == lil::protocol::EnvironmentalSensorType::kLsm6dsox ||
                       (packet.payload.capabilities & lil::protocol::kMotion) != 0;
-  const size_t payloadSize = motion ? sizeof(packet.payload) : lil::protocol::kLegacyTelemetryPayloadSize;
+  const bool optical = packet.payload.sensorType == lil::protocol::EnvironmentalSensorType::kMax30102 ||
+      (packet.payload.capabilities & (lil::protocol::kOptical | lil::protocol::kHeartRate)) != 0;
+  const size_t payloadSize = (optical || lil::protocol::isLiveSensor(packet.payload.sensorType)) ? sizeof(packet.payload) : motion ?
+      lil::protocol::kMotionTelemetryPayloadSize : lil::protocol::kLegacyTelemetryPayloadSize;
   const size_t wireSize = sizeof(lil::protocol::PacketHeader) + payloadSize;
   lil::protocol::finalizePacket(&wirePacket, wireSize,
       lil::protocol::MessageType::kTelemetry, packet.header.sequence, payloadSize);
@@ -224,6 +236,14 @@ bool EspNowTransport::tryChannel(
                           pdMS_TO_TICKS(8U + (esp_random() % 35U)))) return true;
     }
     if (receiveResponse(result, destination, 0)) return true;
+    wirePacket = packet;
+    const uint32_t waitMs = millis() - preparedMs;
+    auto addAge = [waitMs](uint16_t age) { return age == UINT16_MAX ? age : static_cast<uint16_t>(min(uint32_t(65534), uint32_t(age) + waitMs)); };
+    wirePacket.payload.live.acquisitionAgeMs = addAge(packet.payload.live.acquisitionAgeMs);
+    wirePacket.payload.live.estimateAgeMs = addAge(packet.payload.live.estimateAgeMs);
+    for (uint8_t i = 0; i < min(size_t(packet.payload.live.count), lil::protocol::kOpticalBatchSize); ++i)
+      wirePacket.payload.live.optical[i].ageMs = addAge(packet.payload.live.optical[i].ageMs);
+    lil::protocol::finalizePacket(&wirePacket, wireSize, lil::protocol::MessageType::kTelemetry, packet.header.sequence, payloadSize);
     sendState_.store(1, std::memory_order_release);
     if (esp_now_send(destination, reinterpret_cast<const uint8_t*>(&wirePacket),
                      wireSize) != ESP_OK) {
@@ -277,6 +297,7 @@ void EspNowTransport::end() {
   esp_now_unregister_send_cb();
   esp_now_deinit();
   instance_ = nullptr;
+  if (recordingResponses_) { vQueueDelete(recordingResponses_); recordingResponses_ = nullptr; }
   if (otaResponses_) { vQueueDelete(otaResponses_); otaResponses_ = nullptr; }
   if (responses_ != nullptr) {
     vQueueDelete(responses_);
@@ -310,6 +331,29 @@ bool EspNowTransport::otaExchange(const uint8_t mac[6],
         response = event.packet; return true;
       }
     }
+  }
+  return false;
+}
+
+bool EspNowTransport::recordingExchange(const SensorRuntimeConfig& config,
+    const void* request, size_t length, uint64_t session, uint32_t sampleMs,
+    uint32_t crc, lil::recording::Ack& response) {
+  // Environmental wake cycles never allocate an archive-response queue.
+  if (!recordingResponses_) recordingResponses_ = xQueueCreate(4, sizeof(RecordingEvent));
+  if (!recordingResponses_ || !config.stationKnown || !config.provisioned ||
+      sendState_.load(std::memory_order_acquire) == 1 ||
+      esp_wifi_set_channel(config.wifiChannel, WIFI_SECOND_CHAN_NONE) != ESP_OK ||
+      !ensurePeer(config.stationMac)) return false;
+  sendState_.store(1, std::memory_order_release);
+  if (esp_now_send(config.stationMac, static_cast<const uint8_t*>(request), length) != ESP_OK) {
+    sendState_.store(0, std::memory_order_release); return false;
+  }
+  const uint32_t started = millis(); RecordingEvent event{};
+  while (millis() - started < 500) {
+    if (xQueueReceive(recordingResponses_, &event, pdMS_TO_TICKS(10)) != pdTRUE) continue;
+    const auto& ack = event.packet.payload;
+    if (!memcmp(event.mac, config.stationMac, 6) && ack.session == session &&
+        ack.sampleMs == sampleMs && ack.recordCrc == crc) { response = ack; return true; }
   }
   return false;
 }

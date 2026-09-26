@@ -224,8 +224,26 @@ bool SensorRegistry::begin(ConfigStore& store, uint32_t defaultSleepSeconds) {
                     static_cast<unsigned>(i));
     }
     LatestTelemetry latest{};
-    if (configs_[i].occupied &&
-        store_->loadLatestTelemetry(i, &latest, sizeof(latest)) &&
+    bool loaded = configs_[i].occupied && store_->loadLatestTelemetry(i, &latest, sizeof(latest));
+    if (configs_[i].occupied && !loaded) {
+      struct PreviousPrecision { uint32_t magic; uint8_t version;
+        uint8_t payload[lil::protocol::kPrecisionTelemetryPayloadSize]; int8_t rssi; } previous{};
+      if (store_->loadLatestTelemetry(i, &previous, sizeof(previous))) {
+        latest.magic = previous.magic; latest.protocolVersion = previous.version;
+        memcpy(&latest.telemetry, previous.payload, sizeof(previous.payload));
+        latest.stationRssi = previous.rssi; loaded = true;
+      }
+    }
+    if (configs_[i].occupied && !loaded) {
+      struct PreviousLatest { uint32_t magic; uint8_t version;
+        uint8_t payload[lil::protocol::kMotionTelemetryPayloadSize]; int8_t rssi; } previous{};
+      if (store_->loadLatestTelemetry(i, &previous, sizeof(previous))) {
+        latest.magic = previous.magic; latest.protocolVersion = previous.version;
+        memcpy(&latest.telemetry, previous.payload, sizeof(previous.payload));
+        latest.stationRssi = previous.rssi; loaded = true;
+      }
+    }
+    if (loaded &&
         latest.magic == kLatestTelemetryMagic &&
         latest.protocolVersion == lil::protocol::kVersion) {
       runtime_[i].telemetry = latest.telemetry;
@@ -240,6 +258,7 @@ bool SensorRegistry::loadHistoryLocked(size_t index) {
   if (index >= kMaxSensors || !configs_[index].occupied) {
     return false;
   }
+  if (lil::protocol::isLiveSensor(configs_[index].environmentalSensorType)) return true;
   if (configs_[index].sleepSeconds < 60)
     return configureHistoryLocked(index, configs_[index].sleepSeconds, false, false);
   const size_t storedLength = store_->historyBytesLength(index);
@@ -545,8 +564,27 @@ bool SensorRegistry::registerTelemetry(
   current.hasTelemetry = true;
   current.telemetry = displayTelemetry;
   current.stationRssi = rssi;
+  current.receivedIntervalMs = current.receivedPackets ? millis() - current.lastSeenMs : 0;
   current.lastSeenMs = millis();
   current.receivedPackets++;
+  if (lil::protocol::isLiveSensor(telemetry.sensorType) && !discoveryMode &&
+      !(telemetry.flags & lil::protocol::kBatteryProtectionActive)) {
+    auto& live = live_[index];
+    const size_t capacity = 60000 / lil::protocol::liveHistoryIntervalMs(telemetry.sensorType) + 1;
+    if (live.samples && live.capacity != capacity) { heap_caps_free(live.samples); live = LiveHistory{}; }
+    live.capacity = capacity;
+    if (!live.samples) live.samples = static_cast<LiveSample*>(heap_caps_calloc(
+        capacity, sizeof(LiveSample), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!live.samples && heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) > capacity * sizeof(LiveSample) + 96U * 1024U)
+      live.samples = static_cast<LiveSample*>(heap_caps_calloc(capacity, sizeof(LiveSample), MALLOC_CAP_8BIT));
+    if (live.samples) {
+      live.samples[live.head] = {current.lastSeenMs, telemetry};
+      live.head = (live.head + 1) % live.capacity;
+      if (live.count < live.capacity) ++live.count;
+    }
+  } else if (live_[index].samples) {
+    heap_caps_free(live_[index].samples); live_[index] = LiveHistory{};
+  }
   updateTxPowerLocked(static_cast<size_t>(index), rssi, telemetry.pcbVersion);
   current.lastSequence = sequence;
   current.hasSequence = true;
@@ -582,14 +620,18 @@ bool SensorRegistry::persistTelemetry(
     success = configSaved;
   }
   const bool discovery = (telemetry.flags & lil::protocol::kDiscoveryBeacon) != 0;
+  const bool batteryProtection = (telemetry.flags & lil::protocol::kBatteryProtectionActive) != 0;
+  const bool live = lil::protocol::isLiveSensor(telemetry.sensorType) && !batteryProtection;
   bool latestSaved = false;
   if (snapshot.hasSequence && snapshot.lastSequence == sequence &&
-      (!discovery || !snapshot.hasPersistedTelemetry) && config.sleepSeconds >= 60) {
+      (!discovery || !snapshot.hasPersistedTelemetry) && (batteryProtection || config.sleepSeconds >= 60) &&
+      !live) {
     latestSaved = saveLatestTelemetryLocked(index, snapshot.telemetry, rssi);
     success = latestSaved && success;
   }
-  if (!discovery && initialized) {
-    success = recordHistoryLocked(index, telemetry, config.sleepSeconds,
+  if (!discovery && initialized && !live) {
+    success = recordHistoryLocked(index, telemetry,
+                                  batteryProtection && config.sleepSeconds < 60 ? 86400 : config.sleepSeconds,
                                   receivedAt) && success;
   }
   lock.relock();
@@ -600,6 +642,21 @@ bool SensorRegistry::persistTelemetry(
   runtime_[index].storageInitializationPending = !initialized;
   runtime_[index].hasPersistedTelemetry |= latestSaved;
   return success && initialized;
+}
+
+size_t SensorRegistry::liveHistory(const uint8_t mac[6], LiveSample* output, size_t capacity) const {
+  if (!output) return 0;
+  LockGuard lock(mutex_);
+  const int index = findIndexLocked(mac);
+  if (index < 0 || !live_[index].samples) return 0;
+  const auto& live = live_[index];
+  size_t count = 0;
+  const uint32_t now = millis();
+  for (size_t i = 0; i < live.count && count < capacity; ++i) {
+    const auto& sample = live.samples[(live.head + live.capacity - live.count + i) % live.capacity];
+    if (now - sample.receivedMs <= 60000) output[count++] = sample;
+  }
+  return count;
 }
 
 size_t SensorRegistry::views(SensorView* output, size_t capacity) const {
@@ -648,7 +705,7 @@ bool SensorRegistry::updateConfig(const uint8_t mac[6], const String& name,
   } else if (channelChanged || channelId == 0) {
     config.thingSpeakWriteKey[0] = '\0';
   }
-  config.cloudUploadEnabled = uploadEnabled;
+  config.cloudUploadEnabled = uploadEnabled && !lil::protocol::isLiveSensor(sensorType);
   config.thingSpeakFields = fields;
   config.thingSpeakProfileSlot = thingSpeakProfileSlot;
   config.environmentalSensorType = sensorType;
@@ -669,7 +726,10 @@ bool SensorRegistry::updateConfig(const uint8_t mac[6], const String& name,
   runtime_[index].configPersistencePending = true;
   const SensorConfig snapshot = configs_[index];
   lock.unlock();
-  if (history_[index].bucketSeconds != snapshot.sleepSeconds) {
+  if (lil::protocol::isLiveSensor(snapshot.environmentalSensorType)) {
+    if (history_[index].samples) heap_caps_free(history_[index].samples);
+    history_[index] = StoredHistory{};
+  } else if (history_[index].bucketSeconds != snapshot.sleepSeconds) {
     configureHistoryLocked(index, snapshot.sleepSeconds, true);
   }
   return store_->saveSensorConfig(index, snapshot);
@@ -810,6 +870,8 @@ bool SensorRegistry::deleteSensor(const uint8_t mac[6]) {
   }
   lock.relock();
   ++generations_[index];
+  if (live_[index].samples) heap_caps_free(live_[index].samples);
+  live_[index] = LiveHistory{};
   configs_[index] = SensorConfig{};
   runtime_[index] = SensorRuntime{};
   lock.unlock();
@@ -984,6 +1046,23 @@ bool SensorRegistry::findView(const uint8_t mac[6], SensorView& output) const {
   output.config = configs_[index];
   output.runtime = runtime_[index];
   return true;
+}
+
+void SensorRegistry::updateRecording(const uint8_t mac[6], const lil::recording::Status& status) {
+  LockGuard lock(mutex_);
+  const int index = findIndexLocked(mac);
+  if (index < 0) return;
+  if (status.session && (!runtime_[index].hasRecordingStatus ||
+      runtime_[index].recording.session != status.session)) {
+    live_[index].head = live_[index].count = 0;
+  }
+  runtime_[index].recording = status;
+  runtime_[index].hasRecordingStatus = true;
+}
+bool SensorRegistry::needsPersistence(const uint8_t mac[6]) const {
+  LockGuard lock(mutex_);
+  const int index = findIndexLocked(mac);
+  return index >= 0 && (runtime_[index].configPersistencePending || runtime_[index].storageInitializationPending);
 }
 
 String SensorRegistry::formatMac(const uint8_t mac[6]) {

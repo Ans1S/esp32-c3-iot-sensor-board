@@ -187,6 +187,8 @@ bool validSensorType(lil::protocol::EnvironmentalSensorType type) {
   return type == lil::protocol::EnvironmentalSensorType::kAutoDetect ||
          type == lil::protocol::EnvironmentalSensorType::kBme280 ||
       type == lil::protocol::EnvironmentalSensorType::kLsm6dsox ||
+      type == lil::protocol::EnvironmentalSensorType::kTmp117 ||
+      type == lil::protocol::EnvironmentalSensorType::kMax30102 ||
          type == lil::protocol::EnvironmentalSensorType::kBme680 ||
          type == lil::protocol::EnvironmentalSensorType::kDisabled;
 }

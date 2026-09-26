@@ -7,6 +7,7 @@
 #include "app_config.h"
 #include "config_store.h"
 #include "lil_protocol.h"
+#include "recording_protocol.h"
 
 namespace station {
 
@@ -33,12 +34,20 @@ struct HistorySample {
 };
 #pragma pack(pop)
 
+struct LiveSample {
+  uint32_t receivedMs = 0;
+  lil::protocol::TelemetryPayload telemetry{};
+};
+constexpr size_t kLiveCapacity = 1201;
+
 struct SensorRuntime {
+  lil::recording::Status recording{};
+  bool hasRecordingStatus = false;
   bool hasTelemetry = false;
   bool hasPersistedTelemetry = false;
   lil::protocol::TelemetryPayload telemetry{};
   int8_t stationRssi = 0;
-  uint32_t lastSeenMs = 0;
+  uint32_t lastSeenMs = 0, receivedIntervalMs = 0;
   uint32_t lastSequence = 0;
   bool hasSequence = false;
   uint32_t receivedPackets = 0;
@@ -58,6 +67,7 @@ struct SensorView {
 class SensorRegistry {
  public:
   bool begin(ConfigStore& store, uint32_t defaultSleepSeconds);
+  size_t liveHistory(const uint8_t mac[6], LiveSample* output, size_t capacity) const;
   bool registerTelemetry(const uint8_t mac[6], uint32_t sequence,
                          const lil::protocol::TelemetryPayload& telemetry,
                          int8_t rssi, SensorConfig& responseConfig,
@@ -88,6 +98,8 @@ class SensorRegistry {
   bool generationMatches(const uint8_t mac[6], uint32_t generation) const;
   bool findConfig(const uint8_t mac[6], SensorConfig& output) const;
   bool findView(const uint8_t mac[6], SensorView& output) const;
+  void updateRecording(const uint8_t mac[6], const lil::recording::Status& status);
+  bool needsPersistence(const uint8_t mac[6]) const;
   size_t history(const uint8_t mac[6], HistorySample* output,
                  size_t capacity) const;
   size_t historyCapacity(const uint8_t mac[6]) const;
@@ -135,6 +147,8 @@ class SensorRegistry {
   SensorConfig configs_[kMaxSensors]{};
   SensorRuntime runtime_[kMaxSensors]{};
   StoredHistory history_[kMaxSensors]{};
+  struct LiveHistory { LiveSample* samples = nullptr; size_t head = 0, count = 0, capacity = 0; };
+  LiveHistory live_[kMaxSensors]{};
 };
 
 }  // namespace station

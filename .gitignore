@@ -15,6 +15,7 @@
 # Build directories
 build/
 *.bin
+!Firmware/releases/*.factory.bin
 *.elf
 *.map
 *.hex

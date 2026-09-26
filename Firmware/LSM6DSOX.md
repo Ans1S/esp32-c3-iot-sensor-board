@@ -1,8 +1,8 @@
-# LSM6DSOX support in firmware 4.1.3
+# LSM6DSOX support in firmware 4.3.1
 
 PCB V3 and V4 use the same I2C driver, with their existing, different sensor
-power-gate polarities. The station and both sensor images identify as 4.1.3
-(release integer 40103).
+power-gate polarities. The station and both sensor images identify as 4.3.1
+(release integer 40304).
 
 ## Connect and configure
 
@@ -14,9 +14,8 @@ datasheet alone cannot identify the wiring of an AliExpress module. Do not
 apply 5 V directly to the chip or I2C signals. Interrupt pins are not required.
 
 Upgrade the station first, then install the matching sensor V3/V4 image. In
-the station, select LSM6DSOX or Auto detect. Newly provisioned, detected IMUs
-default to a one-second report interval. An existing sensor retains its saved
-interval until edited. Auto detection tries Bosch devices first if multiple
+the station, select LSM6DSOX or Auto detect. Provisioned IMUs
+use manual SW2 sessions, with 50 ms reports for the first five minutes and 100 ms thereafter. Auto detection tries Bosch devices first if multiple
 supported devices share the bus; explicitly select LSM6DSOX in that case.
 This firmware handles one selected external sensor per node.
 
@@ -33,22 +32,21 @@ configuration. Both sensing chains run at 104 Hz in high-performance mode:
 | Filtering | Default first-stage filtering; no high-pass removal of gravity |
 | Acquisition | Drain FIFO about every 5 ms outside blocking radio/ADC/OTA work |
 
-Provisioned IMUs remain powered and the MCU stays awake between reports, even
-for longer reporting intervals. Battery voltage is refreshed once per minute.
+During a manual recording, IMUs remain powered and the MCU stays awake between reports.
+Battery voltage is checked every ten seconds on V4 with protection enabled,
+and once per minute on V3. V4 stops acquisition below 2.8 V; see the
+[sensor review](SENSOR_REVIEW.md). FIFO overruns discard the incomplete window.
 Environmental sensors retain their existing sleep behavior, including the
 BME680 five-minute BSEC requirement. Continuous motion consumes substantially
 more board energy than the environmental deep-sleep mode.
 
 ## Timing and recording
 
-Start with **one-second sensor reports and one-second dashboard refresh**.
-This is suitable for observing position changes and activity. For a fluid
-gesture display, 100-200 ms reports would be useful, but are not implemented
-in 4.1.3: the configuration and station history use integer seconds. Intervals
-of 2-5 seconds suit slower monitoring and reduce radio traffic. They do not
-put the continuously sampling IMU to sleep.
+Sensor reports target **50 ms for five minutes, then 100 ms**, and the visible dashboard polls every 100 ms.
+The chart displays a fixed one-minute live window.
 
-Each report carries the latest acceleration and angular-rate XYZ values and
+Each report carries the mean acceleration and angular-rate XYZ values over
+the report interval and
 the maximum vector magnitude for each chain since the preceding report.
 Acceleration includes gravity: a stationary board should measure a magnitude
 near 1 g, not zero. These are sensor-frame measurements, not position, yaw or
@@ -59,56 +57,20 @@ motion starting point, not a universal optimum for impacts or vibration.
 **Reports and CSV contain interval summaries, not all 104 Hz raw samples.**
 Short peaks sampled by the chip can survive a quieter latest sample. Waveform,
 vibration-spectrum and precise event-timing work needs a separate raw-data
-stream and appropriate sample rate/filter design. Radio reports are best
-effort; an undelivered interval is not replayed. FIFO buffering bridges normal
-radio and ADC pauses, but a long pause (especially OTA) can overflow. The
-dashboard and CSV expose overflow instead of claiming an uninterrupted record.
-I2C errors or stale/missing axes produce failed measurements, not fresh zeros.
+stream and appropriate sample rate/filter design. Live radio delivery is best effort, but the manual recording is journaled
+locally and replayed after stopping. A dedicated task owns acquisition, so
+normal radio waits and ADC settling do not determine sampling cadence.
+FIFO/queue loss remains explicitly flagged. I2C errors or stale/missing axes
+produce failed measurements, not fresh zeros. OTA waits for recording to stop.
 
-The dashboard offers one-second minimum reports, refresh choices of 1/2/5/10
-seconds and chart windows of 30 seconds, 1/5/15 minutes, 1 hour or 24 hours.
-Axis values and peak magnitudes can be graphed separately. Fast-history
-updates fetch only the recent tail after the initial load.
+The dashboard refreshes active IMU graphs every 100 ms and retains a one-minute
+window. XYZ axes share an acceleration or angular-rate plot; the two physical
+units remain separate. Saved sessions can be selected and paged in one-minute
+windows. Fast live updates transfer only the recent tail after the initial load.
 
-For report intervals below 60 seconds, the station keeps a bounded 900-slot
-RAM ring: about 15 minutes at one second. It is lost on station restart and
-is not written to flash per report. CSV exports the currently loaded retained
-history; it does not start a permanent recording. At 60 seconds and above,
-the existing persistent 24-hour history remains available. Epoch timestamps
-require a synchronized station clock. Actual update latency includes radio,
-HTTP polling and rendering delays, so one second is a target cadence, not a
-hard real-time guarantee. Existing ThingSpeak rate limits remain in force;
-motion axes currently have no cloud field mapping (battery upload is available).
+Live history uses a bounded 1201-slot RAM ring for the last minute. Manual
+recordings are persisted on the sensor and synchronized after stopping; saved
+station sessions are separate from the live ring. See [recordings](RECORDINGS.md)
+and [timing](TIMING_AND_DISPLAY.md) for capacity, clocks and validation.
 
-## Compatibility and verification
-
-The V5 configuration and OTA packets are unchanged. Telemetry adds a motion
-suffix; 4.1.0 stations accept both the 4.0.0 prefix and extended packets. Old
-stations cannot receive extended telemetry: **update the station first**.
-Persistent V3 history is migrated to V4, retaining environmental samples;
-older station firmware cannot read the new history format. Configuration and
-pairing schemas are unchanged. Latest-value cache from an older image can be
-replaced by the next report; history migration is separate.
-
-Automated checks cover driver identity/reset faults, signed conversion, FIFO
-tags, peaks, stale reads and overflow; bounded RAM history, no per-report fast
-flash writes and V3 history migration; V5 prefix CRC compatibility; existing
-OTA, radio, timing, ADC, BME680 and upload regression suites. Browser checks
-exercise seconds inputs, motion tiles, chart windows, CSV and mobile layout.
-All three target builds must succeed before packaging.
-
-Hardware acceptance remains necessary on the actual breakout and both PCBs:
-
-1. Confirm both address straps and chip detection; verify supply and I2C levels.
-2. Rotate through six static faces: the corresponding axis should approach
-   +/-1 g, the other axes near zero, and stationary angular rates near zero.
-3. Rotate and briefly shake: verify axis signs, response and retained peaks.
-4. Observe a one-second run for at least 20 minutes, including ring wrap, CSV,
-   browser closure/reopening, station restart and a Wi-Fi interruption.
-5. Disconnect/reconnect I2C and confirm error reporting and recovery. Test
-   OTA interruption/overflow and power consumption before battery deployment.
-
-Source: STMicroelectronics, [LSM6DSOX datasheet DS12814 Rev 4, June 2024](https://www.st.com/resource/en/datasheet/lsm6dsox.pdf),
-especially sensitivity table, I2C interface, FIFO sections and register tables
-36-39, 49-57, 73-74, 118-121 and 194-196. The supplied `DS_lsm6dsox.pdf` is the
-same revision used for register verification.
+Session steps, active time and cadence are described in [quick feedback](SENSOR_FEEDBACK.md).
