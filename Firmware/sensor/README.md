@@ -1,7 +1,7 @@
 # W-Charger Sensor Firmware
 
-Firmware 4.1.3 supports LSM6DSOX motion acquisition on PCB V3/V4 and local
-second-scale charts. See [LSM6DSOX setup and recording limits](../LSM6DSOX.md).
+Firmware 4.3.1 supports LSM6DSOX, TMP117 and MAX30102 live acquisition on PCB V3/V4.
+See [precision sensor operation and timing](../PRECISION_SENSORS.md).
 
 One shared firmware codebase supports PCB V3 and V4. The only differences are
 the build environment and the `hardware_profile`.
@@ -68,15 +68,20 @@ at `0x6A` and `0x6B`.
 
 A normal BME280 cycle performs only these steps:
 
-1. Enable sensor power and, when a report is due, start the battery-divider
-   settling period.
-2. Read the BME280 in forced mode with 1x oversampling, then sample the battery;
-   on V4, only any part of the 100 ms ADC settling period not hidden by the
-   sensor conversion is waited explicitly.
+1. On V4, settle and read the battery divider before enabling the sensor.
+   Below 2.8 V (or on an invalid ADC reading), send only battery status and
+   deep-sleep for 24 hours. Resume at 2.95 V. V3 retains overlapping ADC settling.
+2. Read the BME280 with checked I2C transfers, one forced x1 T/P/H conversion
+   and a coherent data burst. Bosch/automatic startup uses 100 kHz I2C.
 3. Send a validated telemetry packet over ESP-NOW.
 4. Wait briefly for the station's configuration response.
 5. Write the new configuration to NVS only when its revision has changed.
 6. Safely disable the sensor and ADC paths and enter deep sleep.
+
+The V4 policy also applies before discovery/BME680 maintenance and checks live
+sessions every ten seconds. The station displays an explicit battery-protection
+state. See [sensor and low-voltage review](../SENSOR_REVIEW.md) for register
+checks, recovery behavior, limitations and the hardware acceptance procedure.
 
 The BME280 configuration deliberately follows Bosch's energy-efficient weather
 monitoring profile: forced mode, 1x oversampling for temperature, pressure and
@@ -239,3 +244,10 @@ energy tradeoffs and validation limits. Reproducible host and browser checks
 are in [tests/README.md](../tests/README.md); physical acceptance checks are in
 [HARDWARE_TESTPLAN.md](../HARDWARE_TESTPLAN.md). Current package information is
 in [releases](../releases/README.md).
+
+## Live precision sensors (4.3.1)
+
+TMP117 and MAX30102 join LSM6DSOX as manually started live sensors (SW2 / GPIO9).
+Reports arrive every 1 s (TMP117), 200 ms (MAX30102 waveform) or 100 ms
+(LSM6DSOX means); pulse estimates update every second, with a
+one-minute live graph and persistent, replayable manual recordings. See [operation, accuracy limits and OTA migration](../PRECISION_SENSORS.md).

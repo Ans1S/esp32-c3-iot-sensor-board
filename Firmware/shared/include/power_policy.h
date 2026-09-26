@@ -3,6 +3,14 @@
 #include <stdint.h>
 
 namespace lil::power {
+// An unreadable battery must not authorize powering an external sensor. Once
+// paused, require a fresh reading above the recovery threshold (hysteresis).
+constexpr bool batteryProtectionRequired(bool paused, bool valid, uint16_t mv,
+                                         uint16_t pauseMv, uint16_t marginMv) {
+  return pauseMv != 0 &&
+      (!valid || mv < uint32_t(pauseMv) + (paused ? marginMv : 0));
+}
+
 constexpr uint32_t discoverySleepSeconds(uint64_t ageSeconds,
                                          uint32_t maximumSeconds = 300) {
   if (ageSeconds < 600) return 10;

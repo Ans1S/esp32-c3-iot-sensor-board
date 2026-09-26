@@ -15,6 +15,7 @@
 namespace station {
 
 struct EspNowRxEvent {
+  bool archiveReply = false;
   uint32_t receivedAt = 0;
   uint8_t sourceMac[6]{};
   int8_t rssi = 0;
@@ -31,6 +32,11 @@ struct EspNowPersistenceEvent {
   lil::protocol::TelemetryPayload telemetry{};
   SensorConfig responseConfig{};
   bool queueCloudUpload = false;
+};
+struct EspNowArchiveEvent {
+  uint8_t sourceMac[6]{};
+  uint32_t sequence = 0;
+  lil::recording::Upload recording{};
 };
 
 class EspNowGateway {
@@ -50,10 +56,12 @@ class EspNowGateway {
                            esp_now_send_status_t status);
   static void taskEntry(void* context);
   static void persistenceTaskEntry(void* context);
+  static void archiveTaskEntry(void* context);
   void taskLoop();
   void persistenceTaskLoop();
   void handle(const EspNowRxEvent& event);
   void persist(const EspNowPersistenceEvent& event);
+  void persistArchive(const EspNowArchiveEvent& event);
   bool ensurePeer(const uint8_t mac[6]);
 
   static EspNowGateway* instance_;
@@ -62,6 +70,8 @@ class EspNowGateway {
   WifiService* wifi_ = nullptr;
   QueueHandle_t receiveQueue_ = nullptr;
   QueueHandle_t persistenceQueue_ = nullptr;
+  QueueHandle_t archiveQueue_ = nullptr;
+  TaskHandle_t archiveTask_ = nullptr;
   TaskHandle_t task_ = nullptr;
   TaskHandle_t persistenceTask_ = nullptr;
   std::atomic<bool> sendPending_{false};

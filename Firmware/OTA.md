@@ -1,5 +1,11 @@
 # Sensor firmware updates through the station
 
+For 4.3.0 release 40302, manual recordings require a one-time sensor and
+station partition migration. Follow [RECORDINGS.md](RECORDINGS.md) for layout
+sizes, history backup and NVS-preserving USB installation. Live recording
+must stop before a scheduled OTA transfer starts.
+
+
 ## Implemented scope
 
 The station accepts a signed `.ota` package for a configured PCB V3 or V4
@@ -79,17 +85,19 @@ python Firmware/ota_package.py verify --image Firmware/releases/sensor-v4.ota
 Upload the `.ota` file, NOT `firmware.factory.bin`, `bootloader.bin` or a raw
 application binary. An update must be newer than the node's reported release;
 uploading the same release is deliberately rejected. Current release information
-is in [releases](releases/README.md). Binary packages remain local because they
-include separately licensed BSEC2 components.
+is in [releases](releases/README.md), including the separately licensed BSEC2
+components included in the published binaries.
 
 The 160-byte manifest binds PCB revision, protocol, release, version, exact
 application length and SHA-256 to an ECDSA P-256 signature. Both station and
 sensor verify the signature. The maximum application size is 0x1e0000 bytes
-(1.875 MiB). Normal OTA never changes the bootloader or partition table.
+(1.875 MiB) at the protocol level; the recording layout's actual sensor slots
+are 0x140000 bytes (1.25 MiB), which the client also checks before writing.
+Normal OTA never changes the bootloader or partition table.
 
 ## Transfer and recovery
 
-- The station stages one complete package in a dedicated 2 MiB raw partition.
+- The station stages one complete package in a dedicated 1.75 MiB raw partition.
   It invalidates the old job before overwriting storage and publishes the new
   job only after signature and complete-image hash verification. Upload data
   and normal measurement history do not share a partition. A partially uploaded

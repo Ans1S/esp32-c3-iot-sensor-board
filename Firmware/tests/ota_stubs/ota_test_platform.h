@@ -122,5 +122,6 @@ class EspNowTransport {
   }
 };
 void beginOtaBootGuard(); bool otaBootPending(); void finishOtaBootGuard();
+bool confirmOtaBootAfterContact();
 void checkOta(EspNowTransport&,const SensorRuntimeConfig&,AdcReader&,uint16_t);
 }

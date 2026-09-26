@@ -8,6 +8,7 @@
 
 #include "lil_protocol.h"
 #include "ota_protocol.h"
+#include "recording_protocol.h"
 #include "sensor_config_store.h"
 
 namespace sensor {
@@ -32,6 +33,9 @@ class EspNowTransport {
   void end();
   bool otaExchange(const uint8_t mac[6], const lil::ota::Packet& request,
                    lil::ota::Packet& response);
+  bool recordingExchange(const SensorRuntimeConfig& config, const void* request,
+      size_t length, uint64_t session, uint32_t sampleMs, uint32_t crc,
+      lil::recording::Ack& response);
 
  private:
   static void sendCallback(const wifi_tx_info_t* info,
@@ -55,6 +59,8 @@ class EspNowTransport {
   QueueHandle_t responses_ = nullptr;
   struct OtaEvent { uint8_t mac[6]; lil::ota::Packet packet; };
   QueueHandle_t otaResponses_ = nullptr;
+  struct RecordingEvent { uint8_t mac[6]; lil::recording::AckPacket packet; };
+  QueueHandle_t recordingResponses_ = nullptr;
   // Release/acquire publishes completion without racing the Wi-Fi task.
   std::atomic<uint8_t> sendState_{0};  // idle, pending, success, failure
   uint32_t expectedSequence_ = 0;

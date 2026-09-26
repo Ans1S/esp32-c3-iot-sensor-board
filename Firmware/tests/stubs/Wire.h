@@ -7,6 +7,7 @@ struct WireStub {
   uint8_t registers[256]{};
   uint8_t address = 0, reg = 0;
   bool fail = false, stuckReset = false, shortRead = false, overrun = false;
+  bool latchedOverrun = false;
   std::vector<uint8_t> tx;
   std::deque<uint8_t> rx;
   std::deque<std::array<uint8_t, 7>> fifo;
@@ -16,6 +17,9 @@ struct WireStub {
     if (fail || address != 0x6A) return 2;
     reg = tx[0];
     if (tx.size() == 2) registers[reg] = reg == 0x12 && tx[1] == 1 && !stuckReset ? 0 : tx[1];
+    if (tx.size() == 2 && reg == 0x0A && tx[1] == 0) {
+      fifo.clear(); overrun = latchedOverrun = false;
+    }
     return 0;
   }
   uint8_t requestFrom(uint8_t, uint8_t n) {
@@ -23,7 +27,7 @@ struct WireStub {
     if (shortRead) return 0;
     if (reg == 0x3A) {
       rx.push_back(fifo.size() & 255);
-      rx.push_back((fifo.size() >> 8) | (overrun ? 0x40 : 0));
+      rx.push_back((fifo.size() >> 8) | (overrun ? 0x40 : 0) | (latchedOverrun ? 8 : 0));
     } else if (reg == 0x78 && !fifo.empty()) {
       for (auto b : fifo.front()) rx.push_back(b);
       fifo.pop_front();

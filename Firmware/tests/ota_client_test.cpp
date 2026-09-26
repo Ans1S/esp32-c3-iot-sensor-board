@@ -63,4 +63,9 @@ int main() {
   run(); assert(otaBootPending() && !bootConfirmed && !began);
   try {finishOtaBootGuard();} catch(Restart&) {} assert(rolledBack);
   puts("OTA production client: transfer, resume, corrupt checkpoint, rejection, low battery, flash failure and boot guard passed");
+  reset(); bootState=ESP_OTA_IMG_PENDING_VERIFY; beginOtaBootGuard();
+  assert(!confirmOtaBootAfterContact());
+  p.putUInt("attempted",lil::ota::kRelease);
+  assert(confirmOtaBootAfterContact() && bootConfirmed && !otaBootPending());
+  assert(!began && states.empty()); // No OTA request on a battery-only wake.
 }
