@@ -17,6 +17,7 @@ int responseDelay = -1;
 bool deliverySuccess = true;
 unsigned badOtaReplies = 0;
 bool wrongOtaSource = false, legacyStation = false;
+bool wrongRecordingSequence = false;
 size_t lastTelemetrySize = 0;
 unsigned droppedTelemetryReplies = 0;
 sensor::SensorRuntimeConfig config;
@@ -58,6 +59,20 @@ esp_err_t esp_now_send(const uint8_t*, const uint8_t* bytes, size_t length) {
       }});
       return ESP_OK;
     }
+    if (header.type == lil::recording::kStatusMessage) {
+      lil::recording::StatusPacket request{}; memcpy(&request, bytes, sizeof(request));
+      events.push_back({testMillis + uint32_t(responseDelay), [request] {
+        lil::recording::AckPacket response{};
+        response.payload.session = request.payload.session;
+        response.payload.sampleMs = request.payload.elapsedMs;
+        response.payload.stationEpochMs = 1700000000000ULL;
+        lil::protocol::finalize(response, lil::recording::kAckMessage,
+            request.header.sequence - (wrongRecordingSequence ? 1 : 0));
+        RxControl control; esp_now_recv_info_t info{config.stationMac, &control};
+        testReceiveCallback(&info, reinterpret_cast<const uint8_t*>(&response), sizeof(response));
+      }});
+      return ESP_OK;
+    }
     lil::protocol::TelemetryPacket request{};
     assert(length <= sizeof(request));
     memcpy(&request, bytes, length);
@@ -88,8 +103,30 @@ void reset() {
   config.provisioned = config.stationKnown = true;
   config.stationMac[0] = 2; config.wifiChannel = 6;
   WiFi.shutdowns = 0; droppedTelemetryReplies = 0;
+  wrongRecordingSequence = false;
 }
 int main() {
+  {
+    sensor::EspNowTransport radio;
+    lil::recording::StatusPacket request{};
+    request.payload.session = 123; request.payload.elapsedMs = 1000;
+    lil::protocol::finalize(request, lil::recording::kStatusMessage, 91);
+    lil::recording::Ack ack{};
+    reset(); responseDelay = 4; wrongRecordingSequence = true;
+    assert(radio.begin());
+    // Identical session/sample/checksum fields can recur in status requests.
+    // A delayed ACK from an earlier request must not supply its old UTC anchor.
+    assert(!radio.recordingExchange(config, &request, sizeof(request),
+        123, 1000, 0, ack));
+    assert(sends == 1 && testMillis >= 500);
+    radio.end();
+    reset(); responseDelay = 4;
+    assert(radio.begin());
+    assert(radio.recordingExchange(config, &request, sizeof(request),
+        123, 1000, 0, ack) && ack.stationEpochMs == 1700000000000ULL);
+    // Finish the MAC callback before shutting down the substitute.
+    delay(5); radio.end();
+  }
   {
     sensor::EspNowTransport radio;
     lil::ota::Packet q{}, r{};

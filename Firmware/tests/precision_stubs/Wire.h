@@ -44,11 +44,15 @@ struct PrecisionWire {
     return rx.size();
   }
   int read() { int b=rx.front(); rx.pop_front(); return b; }
-  void sample(uint32_t value) {
+  void sample(uint32_t red, uint32_t infrared) {
     std::array<uint8_t,6> b{};
-    for (int i=0;i<2;++i) { b[i*3]=value>>16; b[i*3+1]=value>>8; b[i*3+2]=value; }
+    for (int i=0;i<2;++i) {
+      const uint32_t value = i == 0 ? red : infrared;
+      b[i*3]=value>>16; b[i*3+1]=value>>8; b[i*3+2]=value;
+    }
     fifo.push_back(b);
     if (fifo.size() == 32) registers[0] |= 0x80;
   }
+  void sample(uint32_t value) { sample(value, value); }
 };
 inline PrecisionWire Wire;

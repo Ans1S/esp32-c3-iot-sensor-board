@@ -10,6 +10,8 @@ struct RecordingInfo {
   uint64_t session = 0, epochMs = 0;
   uint32_t expected = 0, stored = 0, durationMs = 0;
   lil::protocol::EnvironmentalSensorType type{};
+  uint32_t availableMs = 0;
+  bool readError = false;
 };
 class RecordingArchive {
  public:

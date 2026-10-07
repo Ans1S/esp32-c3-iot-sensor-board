@@ -18,7 +18,7 @@ class PrecisionSensors {
   bool invalidateOpticalCapture();
   void resetSignal();
   lil::protocol::EnvironmentalSensorType type_ = lil::protocol::EnvironmentalSensorType::kAutoDetect;
-  uint8_t address_ = 0, current_ = 0x24;
+  uint8_t address_ = 0, redCurrent_ = 0x24, infraredCurrent_ = 0x24;
   bool initialized_ = false, failed_ = false, overflow_ = false;
   uint32_t lastSampleMs_ = 0, lastAdjustMs_ = 0;
   uint32_t red_ = 0, infrared_ = 0;

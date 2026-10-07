@@ -33,8 +33,8 @@ class Preferences {
   bool remove(const char* key) { return values.erase(key); }
 };
 struct esp_partition_t { uint32_t address, size; };
-inline esp_partition_t running{0x10000, 0x1e0000}, target{0x1f0000, 0x1e0000};
-inline std::vector<uint8_t> flash(0x1e0000, 0xff);
+inline esp_partition_t running{0x10000, 0x140000}, target{0x150000, 0x140000};
+inline std::vector<uint8_t> flash(0x140000, 0xff);
 inline uint32_t cursor = 0, began = 0, resumed = UINT32_MAX;
 inline std::vector<size_t> writeSizes;
 inline bool selected = false, aborted = false, failWrite = false, failEnd = false;

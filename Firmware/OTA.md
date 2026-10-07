@@ -35,7 +35,8 @@ measurements; OTA does not itself make the existing BME-specific UI generic.
 ## Initial installation
 
 1. Back up station settings/history as needed. The existing station USB upload
-   hook deliberately erases flash. The new station partition layout MUST first
+   hook preserves settings and archives for normal uploads; the explicit
+   `station_s3_factory_reset` target erases flash. The new station partition layout MUST first
    be installed by USB; do not send its application to an old layout.
 2. Initialize the installation signing key once, before building either target:
 
@@ -90,9 +91,9 @@ components included in the published binaries.
 
 The 160-byte manifest binds PCB revision, protocol, release, version, exact
 application length and SHA-256 to an ECDSA P-256 signature. Both station and
-sensor verify the signature. The maximum application size is 0x1e0000 bytes
-(1.875 MiB) at the protocol level; the recording layout's actual sensor slots
-are 0x140000 bytes (1.25 MiB), which the client also checks before writing.
+sensor verify the signature. The maximum application size is 0x140000 bytes
+(1.25 MiB), matching both sensor OTA slots in the recording layout. The
+packager, station and client enforce this limit before writing.
 Normal OTA never changes the bootloader or partition table.
 
 ## Transfer and recovery
@@ -190,10 +191,28 @@ Required hardware acceptance on BOTH revisions:
 7. Test 19 paired nodes while updating one node; verify no unexpected history
    loss and inspect radio/persistence counters and memory headroom.
 
-## Normal operation in 4.1.3
+## Normal operation in 4.3.4
 
 Temporary serial stage logging is removed. The five-second trial-boot reply
 retry window, 60-second boot guard, rollback, packet compatibility and buffered
 writes remain active. Normal optional sensor logging defaults to disabled.
 The reply extension applies only to a pending trial boot. Environmental nodes
 return to power-gated deep sleep; see [power management](POWER_MANAGEMENT.md).
+
+
+## Release privacy checks
+
+Both PlatformIO projects run `shared/scripts/public_build_paths.py` before
+compiling, mapping source/home prefixes to relative diagnostic paths. This also
+covers Arduino framework and dependency sources below the build user's home.
+See [GCC prefix mapping](https://gcc.gnu.org/onlinedocs/gcc/Preprocessor-Options.html#index-fmacro-prefix-map)
+for the compiler behavior. Scan the final application and signed package bytes
+with `python Firmware/tools/check_publication.py` before staging them. Never
+publish flash dumps containing device NVS, credentials or recordings.
+
+The current distribution contains 4.3.4 packages only. Older binaries with
+personal compiler paths were withdrawn from the current tree and kept in an
+ignored local archive; the old objects still exist in published Git history.
+See [publication scope](PUBLICATION_REVIEW.md). Keys and the trusted public
+header stay local; the public verification key embedded in a signed firmware
+is intentionally distributable and is not the private signing key.

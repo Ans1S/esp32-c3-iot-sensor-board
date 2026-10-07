@@ -24,7 +24,7 @@ class EnvironmentalSensor {
       lil::protocol::EnvironmentalSensorType activeType =
           lil::protocol::EnvironmentalSensorType::kAutoDetect);
   uint32_t bme680RecommendedSleepSeconds(uint32_t fallbackSeconds) const;
-  void clearIaqState();
+  bool clearIaqState();
   lil::protocol::EnvironmentalSensorType detectedType() const;
 
  private:

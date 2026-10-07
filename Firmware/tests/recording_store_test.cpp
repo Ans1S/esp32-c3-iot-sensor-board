@@ -14,10 +14,24 @@ int main() {
   lil::protocol::TelemetryPayload payload{}; payload.sensorType = Type::kTmp117;
   payload.temperatureC = 37.125f;
   assert(!store.append(testMillis,payload)); // No implicit recording at boot.
+  const uint32_t firstStartedMs = testMillis;
   assert(store.start()); testMillis += 1000; assert(store.append(testMillis,payload));
   const auto first = store.status(0).session;
   lil::recording::Upload upload{}; assert(!store.next(upload)); // Replay only after stop.
   store.stop(); assert(store.next(upload) && upload.totalRecords == 1 && upload.sessionEpochMs == 0);
+  const uint32_t frozenDuration = store.status(0).elapsedMs;
+  testMillis += 60000;
+  assert(store.status(0).elapsedMs == frozenDuration);
+  store.stop();
+  assert(store.status(0).elapsedMs == frozenDuration);
+  // First station contact can arrive after recording has stopped. Do not
+  // anchor the beginning using the frozen duration and the later wall clock.
+  testMillis += 20;
+  store.anchor(1700000060010ULL, frozenDuration, 20);
+  assert(store.next(upload) && upload.sessionEpochMs ==
+      1700000060010ULL - (testMillis - firstStartedMs - 10));
+  // Keep the following reboot fixture's original unknown UTC condition.
+  recordingPreferences.erase("epoch");
   sensor::RecordingStore reboot; testMillis = 10;
   assert(reboot.begin(Type::kTmp117) && reboot.status(0).state == State::Pending);
   reboot.anchor(1700000000000ULL,1000,10);

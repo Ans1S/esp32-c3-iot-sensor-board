@@ -16,6 +16,7 @@
 build/
 *.bin
 !Firmware/releases/*.factory.bin
+!Firmware/releases/station-4.3.4.bin
 *.elf
 *.map
 *.hex

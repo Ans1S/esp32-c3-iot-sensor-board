@@ -1,6 +1,7 @@
 #include "espnow_gateway.h"
 #include "ota_service.h"
 #include "recording_archive.h"
+#include "telemetry_validation.h"
 #include <sys/time.h>
 
 #include <esp_wifi.h>
@@ -118,7 +119,9 @@ void EspNowGateway::persistenceTaskLoop() {
 
 void EspNowGateway::persistArchive(const EspNowArchiveEvent& event) {
     SensorConfig config{};
-    if (!registry_->findConfig(event.sourceMac, config) || !config.provisioned) return;
+    uint32_t generation = 0;
+    if (!registry_->findConfig(event.sourceMac, config, &generation) ||
+        !config.provisioned || generation != event.generation) return;
     lil::recording::AckPacket ack{};
     const auto& record = event.recording.record;
     ack.payload.session = record.session; ack.payload.sampleMs = record.sampleMs;
@@ -126,6 +129,7 @@ void EspNowGateway::persistArchive(const EspNowArchiveEvent& event) {
     ack.payload.stored = recordingArchive.append(event.sourceMac, event.recording);
     lil::protocol::finalize(ack, lil::recording::kAckMessage, event.sequence);
     EspNowRxEvent reply{}; reply.archiveReply = true;
+    reply.generation = event.generation;
     memcpy(reply.sourceMac, event.sourceMac, 6); memcpy(reply.data, &ack, sizeof(ack));
     reply.length = sizeof(ack);
     // A dropped ACK is retried by the sensor; the archive deduplicates it.
@@ -142,7 +146,8 @@ void EspNowGateway::persist(const EspNowPersistenceEvent& event) {
       registry_->generationMatches(event.sourceMac, event.generation)) {
     thingSpeak_->queue(event.responseConfig, event.telemetry, event.rssi,
                        event.sequence, event.receivedAt,
-                       registry_->channelShared(event.responseConfig.thingSpeakChannelId));
+                       registry_->channelShared(event.responseConfig.thingSpeakChannelId),
+                       event.generation);
   }
 }
 
@@ -150,7 +155,9 @@ void EspNowGateway::handle(const EspNowRxEvent& event) {
   if (event.archiveReply || event.length == sizeof(lil::recording::StatusPacket) ||
       event.length == sizeof(lil::recording::UploadPacket)) {
     SensorConfig config{};
-    if (!registry_->findConfig(event.sourceMac, config) || !config.provisioned) return;
+    uint32_t generation = 0;
+    if (!registry_->findConfig(event.sourceMac, config, &generation) || !config.provisioned ||
+        (event.archiveReply && event.generation != generation)) return;
     lil::recording::AckPacket ack{};
     if (event.archiveReply) memcpy(&ack, event.data, sizeof(ack));
     else if (event.length == sizeof(lil::recording::UploadPacket)) {
@@ -158,6 +165,7 @@ void EspNowGateway::handle(const EspNowRxEvent& event) {
       if (!lil::protocol::validate(request, event.length, lil::recording::kRecordMessage) ||
           !lil::recording::valid(request.payload.record)) return;
       EspNowArchiveEvent persistence{};
+      persistence.generation = generation;
       persistence.recording = request.payload;
       persistence.sequence = request.header.sequence; memcpy(persistence.sourceMac, event.sourceMac, 6);
       // Do not evict environmental telemetry or another archive entry.
@@ -215,6 +223,10 @@ void EspNowGateway::handle(const EspNowRxEvent& event) {
   if (!lil::protocol::validatePacket(event.data, event.length,
           lil::protocol::MessageType::kTelemetry,
           legacy ? lil::protocol::kLegacyTelemetryPayloadSize : motionLegacy ? lil::protocol::kMotionTelemetryPayloadSize : precisionLegacy ? lil::protocol::kPrecisionTelemetryPayloadSize : timedLegacy ? lil::protocol::kTimedTelemetryPayloadSize : sizeof(packet.payload))) {
+    invalidPackets_.fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+  if (!lil::protocol::validTelemetryValues(packet.payload)) {
     invalidPackets_.fetch_add(1, std::memory_order_relaxed);
     return;
   }
