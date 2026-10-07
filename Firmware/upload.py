@@ -103,7 +103,7 @@ def main() -> int:
     print(f"\n{action}: {description}", flush=True)
     if target == "station" and not args.build_only:
         print(
-            "Note: a station upload erases its saved settings and local history.",
+            "Normal station updates preserve saved settings, sensor names and local history.",
             flush=True,
         )
 

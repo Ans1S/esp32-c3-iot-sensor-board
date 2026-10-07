@@ -11,6 +11,10 @@ struct Restarted {};
 inline int sensorStarts = 0, batteryReads = 0, otaChecks = 0, configWrites = 0;
 inline int radioStarts = 0, normalExchanges = 0, lowPowerExchanges = 0;
 inline bool radioAvailable = true, stationReplies = false, powerOff = true;
+inline bool configPersistenceSucceeded = true;
+inline bool iaqClearSucceeded = true;
+inline bool sensorStartSucceeded = true;
+inline int iaqClears = 0;
 inline std::vector<lil::protocol::TelemetryPacket> sentPackets;
 inline uint32_t esp_random() { return 123; }
 inline int64_t esp_timer_get_time() { return int64_t(testMillis) * 1000; }
@@ -59,18 +63,23 @@ class SensorConfigStore {
   bool begin() { return true; }
   bool firmwareChanged() { return false; }
   SensorRuntimeConfig load() { return savedConfig; }
-  bool saveIfChanged(const SensorRuntimeConfig&) { ++configWrites; return true; }
-  void factoryReset() { ++configWrites; }
+  bool saveIfChanged(const SensorRuntimeConfig& config) {
+    ++configWrites;
+    if (!configPersistenceSucceeded) return false;
+    savedConfig = config; return true;
+  }
+  bool factoryReset() { ++configWrites; return configPersistenceSucceeded; }
 };
 class EnvironmentalSensor {
  public:
-  bool begin(PowerController&, lil::protocol::EnvironmentalSensorType, float) { ++sensorStarts; powerOff = false; return true; }
+  bool begin(PowerController&, lil::protocol::EnvironmentalSensorType, float) { ++sensorStarts; powerOff = !sensorStartSucceeded; return sensorStartSucceeded; }
   EnvironmentalReading read() {
-    EnvironmentalReading r{}; r.valid = true; r.sensorType = savedConfig.environmentalSensorType;
-    r.temperatureC = 25; r.capabilities = lil::protocol::kTemperature; return r;
+    EnvironmentalReading r{}; r.valid = sensorStartSucceeded; r.sensorType = savedConfig.environmentalSensorType;
+    if (r.valid) { r.temperatureC = 25; r.capabilities = lil::protocol::kTemperature; }
+    return r;
   }
   void end() { powerOff = true; }
-  void clearIaqState() {}
+  bool clearIaqState() { ++iaqClears; return iaqClearSucceeded; }
   void prepareForDeepSleep(uint32_t, lil::protocol::EnvironmentalSensorType) {}
   uint32_t bme680RecommendedSleepSeconds(uint32_t fallback) { return fallback; }
   lil::protocol::EnvironmentalSensorType detectedType() { return savedConfig.environmentalSensorType; }
@@ -80,11 +89,16 @@ struct ExchangeResult {
   lil::protocol::ConfigResponsePayload config{};
   int8_t stationRssi = -60;
 };
+inline std::deque<ExchangeResult> configurationReplies;
 class EspNowTransport {
  public:
   bool begin() { ++radioStarts; return radioAvailable; }
   void end() {}
-  ExchangeResult exchange(const lil::protocol::TelemetryPacket&, const SensorRuntimeConfig&, bool) { ++normalExchanges; return {}; }
+  ExchangeResult exchange(const lil::protocol::TelemetryPacket&, const SensorRuntimeConfig&, bool) {
+    ++normalExchanges;
+    if (configurationReplies.empty()) return {};
+    const auto response = configurationReplies.front(); configurationReplies.pop_front(); return response;
+  }
   ExchangeResult exchangeLpChannel(const lil::protocol::TelemetryPacket& p, const SensorRuntimeConfig&, uint8_t, bool = false) {
     ++lowPowerExchanges; sentPackets.push_back(p);
     ExchangeResult r; r.configReceived = stationReplies;
@@ -111,7 +125,7 @@ class RecordingStore {
   void acknowledge(const lil::recording::Record&) {}
   void anchor(uint64_t, uint32_t, uint32_t) {}
 };
-struct LiveCapture { EnvironmentalReading reading; uint64_t capturedMs; };
+struct LiveCapture { EnvironmentalReading reading; uint64_t capturedMs; bool recording = false; };
 class LiveAcquisition {
  public:
   bool begin(EnvironmentalSensor& s, PowerController&, lil::protocol::EnvironmentalSensorType, float) { s.end(); return true; }
@@ -121,6 +135,10 @@ class LiveAcquisition {
   unsigned dropped() { return 0; }
   void stop() {}
   void start() {}
+  void normal(uint32_t) {}
+  bool normal() { return false; }
+  void setNormalInterval(uint32_t) {}
+  void pauseNormal(bool) {}
 };
 inline void beginOtaBootGuard() {}
 inline void finishOtaBootGuard() {}

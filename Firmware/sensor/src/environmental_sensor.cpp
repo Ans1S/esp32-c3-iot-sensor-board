@@ -28,12 +28,17 @@ bool EnvironmentalSensor::begin(
     PowerController& power,
     lil::protocol::EnvironmentalSensorType requestedType,
     float temperatureOffsetC) {
+  const bool restartingActiveSensor = initialized_;
+  if (power_ != nullptr) end();
   power_ = &power;
   requestedType_ = requestedType;
   detectedType_ = lil::protocol::EnvironmentalSensorType::kAutoDetect;
   initialized_ = false;
   typeMismatch_ = false;
   beginMeasurementBudget();
+  // Release the previous bus/driver before a live type change. Normal BME
+  // wakes already start with their rail off and keep the 12 ms fast path.
+  if (restartingActiveSensor) measurementWaitUs(kPowerCycleOffMs * 1000UL);
   if (requestedType == lil::protocol::EnvironmentalSensorType::kDisabled) {
     detectedType_ = lil::protocol::EnvironmentalSensorType::kDisabled;
     initialized_ = true;
@@ -44,13 +49,18 @@ bool EnvironmentalSensor::begin(
   // V4 has 5.1 kOhm pull-ups on the switched rail. At 400 kHz the 300 ns
   // rise-time limit leaves only about 69 pF of bus capacitance. Slow Bosch
   // measurements do not need that marginal fast-mode timing.
-  const uint32_t busHz = lil::protocol::isLiveSensor(requestedType) ? 400000 : 100000;
+  // The MAX30102's 25 Hz, six-byte FIFO frames fit comfortably at 100 kHz.
+  // Keep its bus in standard mode for external modules and the V4 pull-ups.
+  const uint32_t busHz = requestedType == lil::protocol::EnvironmentalSensorType::kLsm6dsox ||
+      requestedType == lil::protocol::EnvironmentalSensorType::kTmp117 ? 400000 : 100000;
   if (!Wire.begin(static_cast<int>(kHardware.sdaPin),
-                  static_cast<int>(kHardware.sclPin), busHz)) return false;
+                  static_cast<int>(kHardware.sclPin), busHz)) {
+    end(); return false;
+  }
   Wire.setTimeOut(20);
 
   initialized_ = startDetectedSensor(requestedType, temperatureOffsetC);
-  if (!initialized_ && !typeMismatch_ && !measurementBudgetExpired()) {
+  if (!initialized_ && !measurementBudgetExpired()) {
     // The proven PCB-V3 Extra-Sensor firmware recovered slow-starting BME680
     // boards with a complete power cycle. Some breakout-board capacitors do
     // not reach a valid I2C level within the normal 12 ms fast path.
@@ -63,13 +73,18 @@ bool EnvironmentalSensor::begin(
     power_->sensorPower(true);
     measurementWaitUs(kPowerCycleRecoveryMs * 1000UL);
     if (!Wire.begin(static_cast<int>(kHardware.sdaPin),
-                    static_cast<int>(kHardware.sclPin), busHz)) return false;
+                    static_cast<int>(kHardware.sclPin), busHz)) {
+      end(); return false;
+    }
     Wire.setTimeOut(20);
+    detectedType_ = lil::protocol::EnvironmentalSensorType::kAutoDetect;
+    typeMismatch_ = false;
     initialized_ = startDetectedSensor(requestedType, temperatureOffsetC);
   }
   if (!initialized_) {
     SENSOR_LOG_PRINTLN(
-        "[I2C] Environmental sensor still unreadable after power cycle");
+        "[I2C] Selected sensor unavailable after power cycle; check type, address and switched supply");
+    end();
   }
   return initialized_;
 }
@@ -87,6 +102,8 @@ lil::protocol::EnvironmentalSensorType EnvironmentalSensor::probeSensorType(
       }
     }
   }
+  auto firstBoschType = lil::protocol::EnvironmentalSensorType::kAutoDetect;
+  uint8_t firstBoschAddress = 0;
   for (const uint8_t address : kAddresses) {
     if (measurementBudgetExpired()) return lil::protocol::EnvironmentalSensorType::kAutoDetect;
     Wire.beginTransmission(address);
@@ -96,14 +113,26 @@ lil::protocol::EnvironmentalSensorType EnvironmentalSensor::probeSensorType(
       continue;
     }
     const uint8_t chipId = Wire.read();
-    if (chipId == kBme680ChipId) {
+    const auto type = chipId == kBme680ChipId ?
+        lil::protocol::EnvironmentalSensorType::kBme680 :
+        chipId == kBme280ChipId ? lil::protocol::EnvironmentalSensorType::kBme280 :
+        lil::protocol::EnvironmentalSensorType::kAutoDetect;
+    if (type == lil::protocol::EnvironmentalSensorType::kAutoDetect) continue;
+    if (requestedType_ == lil::protocol::EnvironmentalSensorType::kAutoDetect ||
+        requestedType_ == type) {
       detectedAddress = address;
-      return lil::protocol::EnvironmentalSensorType::kBme680;
+      return type;
     }
-    if (chipId == kBme280ChipId) {
-      detectedAddress = address;
-      return lil::protocol::EnvironmentalSensorType::kBme280;
+    // An explicitly selected Bosch type may occupy the other I2C address.
+    // Remember a positive mismatch, but search both before rejecting it.
+    if (firstBoschAddress == 0) {
+      firstBoschAddress = address;
+      firstBoschType = type;
     }
+  }
+  if (firstBoschAddress != 0) {
+    detectedAddress = firstBoschAddress;
+    return firstBoschType;
   }
   for (uint8_t address : {uint8_t(0x6A), uint8_t(0x6B)}) {
     Wire.beginTransmission(address); Wire.write(0x0F);
@@ -165,7 +194,7 @@ EnvironmentalReading EnvironmentalSensor::read() {
   }
   if (!initialized_) {
     EnvironmentalReading failed{};
-    failed.sensorType = detectedType_;
+    failed.sensorType = detectedType_ == lil::protocol::EnvironmentalSensorType::kAutoDetect ? requestedType_ : detectedType_;
     return failed;
   }
   return detectedType_ == lil::protocol::EnvironmentalSensorType::kBme680
@@ -196,8 +225,8 @@ uint32_t EnvironmentalSensor::bme680RecommendedSleepSeconds(
   return bme680_.recommendedSleepSeconds(fallbackSeconds);
 }
 
-void EnvironmentalSensor::clearIaqState() {
-  bme680_.clearPersistentState();
+bool EnvironmentalSensor::clearIaqState() {
+  return bme680_.clearPersistentState();
 }
 
 lil::protocol::EnvironmentalSensorType EnvironmentalSensor::detectedType()

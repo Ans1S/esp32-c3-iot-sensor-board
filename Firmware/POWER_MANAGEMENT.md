@@ -1,4 +1,4 @@
-# Power management in firmware 4.3.1
+# Power management in firmware 4.3.4
 
 ## Default behavior
 
@@ -76,3 +76,14 @@ every subminute report. Restart clears that fast history; intervals of at least
 bounded queue. ThingSpeak scheduling retains per-channel limits, fair service,
 bounded retries and queue expiry. These changes target flash wear and station
 responsiveness; the station is not the battery-powered sensor.
+
+
+## Bounded startup recovery
+
+A changed measurement configuration is applied at the next node contact and
+reprobed after one second. A failed startup permits at most three attempts,
+with five-second deep sleep between attempts and early status reports. Each
+initialization can power-cycle and reprobe once. Exhaustion restores the normal
+schedule; success renews the allowance for a later fault. Successful BME startup
+keeps its existing 12 ms path and does not add power-cycle delays. PCB V4 battery
+protection takes precedence, keeping the rail off for daily deep-sleep reports.

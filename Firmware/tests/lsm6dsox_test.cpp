@@ -45,5 +45,22 @@ int main() {
   assert(driver.poll());
   testMillis += 201;
   assert(!driver.read().valid); // Stale axes are not reported as fresh.
+  assert(driver.begin(0x6A));
+  Wire.sample(2, 8197, 0, 0); Wire.sample(1, 0, 0, 0);
+  assert(driver.poll());
+  testMillis += 500;
+  // Samples queued while acquisition was suspended are not freshly acquired
+  // just because I2C drains them now. Require a complete new window.
+  Wire.sample(2, 0, 8197, 0); Wire.sample(1, 0, 0, 0);
+  r = driver.read();
+  assert(!r.valid && !r.motion.sampleCount && !r.motion.fifoOverrun &&
+      (r.live.flags & lil::protocol::kLiveGap) && Wire.fifo.empty());
+  testMillis += 10;
+  Wire.sample(2, 0, 0, 8197); Wire.sample(1, 0, 0, 0);
+  assert(driver.read().valid);
+  // A corrupt FIFO length must not cause hundreds of unbounded bus reads.
+  for (unsigned i = 0; i < 513; ++i) Wire.sample(2, 0, 0, 8197);
+  r = driver.read();
+  assert(!r.valid && r.motion.fifoOverrun && Wire.fifo.empty());
   puts("LSM6DSOX identity, reset timeout, FIFO, signed scale, peaks, overflow and stale/error checks passed");
 }

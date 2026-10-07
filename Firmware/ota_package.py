@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 ROOT = Path(__file__).resolve().parent
 HEADER = struct.Struct("<IHBBII24s32sH72s14s")
 IDENTITY = struct.Struct("<8sIBB24s")
+SLOT_SIZE = 0x140000
 
 
 def initialize(key_path, public_header):
@@ -30,11 +31,13 @@ def initialize(key_path, public_header):
 
 
 def package(image, key):
-    if not 256 < len(image) <= 0x1E0000 or image[0] != 0xE9:
+    if not 256 < len(image) <= SLOT_SIZE or image[0] != 0xE9:
         raise ValueError("Expected a sensor application firmware.bin within the OTA slot limit")
     positions = [i for i in range(len(image)) if image.startswith(b"WCHFW01\0", i)]
     if len(positions) != 1:
         raise ValueError("Expected exactly one embedded W-Charger firmware identity")
+    if positions[0] + IDENTITY.size > len(image):
+        raise ValueError("Truncated embedded W-Charger firmware identity")
     _, release, pcb, protocol, version = IDENTITY.unpack_from(image, positions[0])
     if pcb not in (3, 4) or protocol != 5 or not release or not version[0] or b"\0" not in version:
         raise ValueError("Invalid embedded target/version")
@@ -50,7 +53,9 @@ def verify(data, public_key):
     if len(data) < HEADER.size:
         raise ValueError("Truncated package")
     magic, fmt, pcb, protocol, size, release, version, digest, n, signature, reserved = HEADER.unpack_from(data)
-    if magic != 0x3141544F or fmt != 1 or pcb not in (3, 4) or protocol != 5 or not 0 < n <= 72:
+    if (magic != 0x3141544F or fmt != 1 or pcb not in (3, 4) or protocol != 5
+            or not 0 < n <= 72 or not 256 < size <= SLOT_SIZE or not release
+            or not version[0] or b"\0" not in version):
         raise ValueError("Invalid manifest")
     image = data[HEADER.size:]
     if len(image) != size or hashlib.sha256(image).digest() != digest:

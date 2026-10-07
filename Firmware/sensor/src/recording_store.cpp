@@ -54,7 +54,7 @@ bool RecordingStore::start() {
   state_ = State::Recording; return true;
 }
 void RecordingStore::stop(bool full) {
-  if (!available_) return;
+  if (!available_ || !recording()) return;
   if (sameBoot_) durationMs_ = (esp_timer_get_time() / 1000) - startedMs_;
   total_ = journal_.pending();
   state_ = full ? State::Full : total_ ? State::Pending : State::Ready;
@@ -86,7 +86,15 @@ bool RecordingStore::acknowledge(const lil::recording::Record& record) {
 }
 void RecordingStore::anchor(uint64_t stationEpochMs, uint32_t elapsedAtRequestMs, uint32_t roundTripMs) {
   if (!sameBoot_ || epochMs_ || stationEpochMs < 1577836800000ULL || roundTripMs > 500) return;
-  const uint64_t elapsed = uint64_t(elapsedAtRequestMs) + roundTripMs / 2;
+  uint64_t elapsedAtRequest = elapsedAtRequestMs;
+  if (!recording()) {
+    // The public duration freezes at stop. UTC anchoring still needs the time
+    // since start when the request was sent, including a delayed station return.
+    const uint64_t now = esp_timer_get_time() / 1000;
+    if (now < startedMs_ + roundTripMs) return;
+    elapsedAtRequest = now - startedMs_ - roundTripMs;
+  }
+  const uint64_t elapsed = elapsedAtRequest + roundTripMs / 2;
   if (stationEpochMs <= elapsed) return;
   const uint64_t epoch = stationEpochMs - elapsed;
   if (prefs_.putULong64("epoch", epoch) == 8) epochMs_ = epoch;
@@ -95,7 +103,8 @@ lil::recording::Status RecordingStore::status(uint32_t dropped) const {
   lil::recording::Status status{};
   status.session = session_; status.state = state_; status.type = type_;
   status.pending = journal_.pending(); status.capacity = journal_.capacity(type_); status.dropped = dropped;
-  status.elapsedMs = sameBoot_ ? uint32_t((esp_timer_get_time() / 1000) - startedMs_) : durationMs_;
+  status.elapsedMs = sameBoot_ && recording() ?
+      uint32_t((esp_timer_get_time() / 1000) - startedMs_) : durationMs_;
   return status;
 }
 }  // namespace sensor

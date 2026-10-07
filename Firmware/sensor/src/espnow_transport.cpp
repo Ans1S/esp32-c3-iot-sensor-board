@@ -338,6 +338,10 @@ bool EspNowTransport::otaExchange(const uint8_t mac[6],
 bool EspNowTransport::recordingExchange(const SensorRuntimeConfig& config,
     const void* request, size_t length, uint64_t session, uint32_t sampleMs,
     uint32_t crc, lil::recording::Ack& response) {
+  if (!responses_ || !request || length < sizeof(lil::protocol::PacketHeader) ||
+      length > lil::protocol::kMaxPacketSize) return false;
+  lil::protocol::PacketHeader requestHeader{};
+  memcpy(&requestHeader, request, sizeof(requestHeader));
   // Environmental wake cycles never allocate an archive-response queue.
   if (!recordingResponses_) recordingResponses_ = xQueueCreate(4, sizeof(RecordingEvent));
   if (!recordingResponses_ || !config.stationKnown || !config.provisioned ||
@@ -352,7 +356,8 @@ bool EspNowTransport::recordingExchange(const SensorRuntimeConfig& config,
   while (millis() - started < 500) {
     if (xQueueReceive(recordingResponses_, &event, pdMS_TO_TICKS(10)) != pdTRUE) continue;
     const auto& ack = event.packet.payload;
-    if (!memcmp(event.mac, config.stationMac, 6) && ack.session == session &&
+    if (!memcmp(event.mac, config.stationMac, 6) &&
+        event.packet.header.sequence == requestHeader.sequence && ack.session == session &&
         ack.sampleMs == sampleMs && ack.recordCrc == crc) { response = ack; return true; }
   }
   return false;

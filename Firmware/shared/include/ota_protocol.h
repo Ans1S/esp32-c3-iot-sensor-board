@@ -4,11 +4,12 @@
 
 namespace lil::ota {
 constexpr uint32_t kPackageMagic = 0x3141544f; // OTA1
-constexpr uint32_t kRelease = 40304;
-#define WCH_FIRMWARE_VERSION "4.3.1"
+constexpr uint32_t kRelease = 40307;
+#define WCH_FIRMWARE_VERSION "4.3.4"
 constexpr char kVersion[] = WCH_FIRMWARE_VERSION;
 constexpr size_t kBlockSize = 192;
-constexpr uint32_t kSlotSize = 0x1e0000;
+// Both sensor revisions reserve the rest of flash for the recording journal.
+constexpr uint32_t kSlotSize = 0x140000;
 constexpr uint32_t kSectorSize = 4096;
 enum class Op : uint8_t { Hello = 1, Offer, Read, Data, Status, Idle };
 enum class State : uint8_t {

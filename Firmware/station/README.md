@@ -1,7 +1,15 @@
 # W-Charger Station Firmware
 
-Firmware 4.3.1 supports LSM6DSOX, TMP117 and MAX30102 live acquisition on PCB V3/V4.
+Firmware 4.3.4 supports LSM6DSOX, TMP117 and MAX30102 live acquisition on PCB V3/V4.
 See [precision sensor operation and timing](../PRECISION_SENSORS.md).
+
+The overview security/cloud configuration notices disappear after five seconds
+and stay dismissed across status polling until the condition changes. Password
+and cloud state remain available in Settings and the overview status summary.
+Upload/connection errors, storage failures and active battery protection remain
+visible. Pending sensor changes show initialization feedback without reusing
+old sensor errors or values. BME280 cards show temperature, humidity, pressure
+and battery; IAQ and gas resistance are shown only for BME680.
 
 The station runs on the existing Seeed XIAO ESP32-S3. It keeps Wi-Fi and
 ESP-NOW active at the same time, so the web interface remains available and
@@ -9,9 +17,9 @@ sensors are not locked out while a cloud upload is in progress.
 
 ## First start
 
-1. Run `pio run -e station_s3 -t upload`. The station upload intentionally
-   erases the local NVS configuration, so every upload starts as a fresh
-   installation.
+1. Run `pio run -e station_s3 -t upload`. Normal uploads preserve saved settings,
+   sensor names and local archives. For an intentional clean installation only,
+   `pio run -e station_s3_factory_reset -t upload` erases the complete flash.
 2. Connect to the `W-Charger-XXXXXX` Wi-Fi network. The initial Wi-Fi password
    is `W-Charger-Setup`.
 3. The captive portal normally opens automatically. If it does not, open
@@ -189,9 +197,33 @@ are in [tests/README.md](../tests/README.md); physical acceptance checks are in
 [HARDWARE_TESTPLAN.md](../HARDWARE_TESTPLAN.md). Current package information is
 in [releases](../releases/README.md).
 
-## Live precision sensors (4.3.1)
+## Live precision sensors
 
-TMP117 and MAX30102 join LSM6DSOX as manually started live sensors (SW2 / GPIO9).
-Reports arrive every 1 s (TMP117), 200 ms (MAX30102 waveform) or 100 ms
-(LSM6DSOX means); pulse estimates update every second, with a
-one-minute live graph and persistent, replayable manual recordings. See [operation, accuracy limits and OTA migration](../PRECISION_SENSORS.md).
+TMP117 and LSM6DSOX take fresh normal measurements at the configured interval
+with the external rail off between windows. MAX30102 starts through SW2 only.
+SW2 / GPIO9 starts/stops a separate fast recording: 1 s TMP117 values, 200 ms
+optical waveform packets, or 50 ms IMU means for five minutes and 100 ms afterward.
+Pulse estimates update once per second. Saved recordings load as complete,
+stable snapshots; full-session CSV retains the original samples. See [operation, accuracy limits and OTA migration](../PRECISION_SENSORS.md).
+
+## Remembered sensor identities
+
+Sensor names and optional motion references are also saved by MAC address,
+independently of the 19 active pairing slots. Up to 64 identities are remembered.
+Removing a node or resetting it into discovery mode retains its last name for
+re-pairing on this station. This also works with existing node firmware because
+names are stored on the station. Existing paired names are migrated at startup.
+A full station factory reset or full-flash erase clears remembered identities;
+names erased by an older station upload cannot be recovered from the node.
+Normal USB and OTA firmware updates preserve this data and the recording archive.
+
+
+## Current release and publication checks
+
+Firmware **4.3.4 / 40307** includes bounded sensor reinitialization, durable
+settings/history corrections and the updated recording/dashboard behavior.
+See [the complete change inventory](../CHANGELOG.md),
+[release artifacts](../releases/README.md) and
+[publication review](../PUBLICATION_REVIEW.md). Build diagnostics use relative
+paths; installation keys and device data must stay local. Software tests do not
+replace physical accuracy, rail-voltage and sleep-current acceptance.

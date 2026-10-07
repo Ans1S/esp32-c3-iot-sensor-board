@@ -9,8 +9,8 @@ and the pulse trend receives points only when a new estimate was calculated.
 
 | Sensor | When new data exist | Delivery | Useful visualization |
 | --- | --- | --- | --- |
-| LSM6DSOX | 104 Hz per axis chain, nominal 9.615 ms/sample | 50 ms axis means for five minutes, then 100 ms (approximately 5-6 or 10-11 samples/chain); raw interval peaks retained | XYZ acceleration on a shared g axis; XYZ angular rate on a separate degrees/s axis; zero references and peak tiles |
-| TMP117 | 8 conversions: 8 x 15.5 = 124 ms typical active time; 1 s conversion cycle | On data-ready, polled every 10 ms; first result around 124 ms after conversion starts, then nominally once/s | One-minute temperature trend, >=0.2 C vertical span to avoid magnifying quantization, range/change and recent stability |
+| LSM6DSOX | 104 Hz per axis chain, nominal 9.615 ms/sample while powered | Normal: fresh 100 ms summary at configured interval. Recording: 50 ms axis means for five minutes, then 100 ms (approximately 5-6 or 10-11 samples/chain); raw interval peaks retained | XYZ acceleration on a shared g axis; XYZ angular rate on a separate degrees/s axis; zero references and peak tiles |
+| TMP117 | 8 conversions: 8 x 15.5 = 124 ms typical active time; 1 s conversion cycle when recording | Normal: first fresh eight-conversion result at configured interval. Recording: on data-ready, polled every 10 ms, then nominally once/s | One-minute temperature trend, >=0.1 C vertical span to avoid magnifying quantization, range/change and recent stability |
 | MAX30102 | 100 Hz red/IR conversions, 411 us pulses / 18 bits; four-sample average gives 25 Hz FIFO data, every 40 ms | Up to eight waveform samples/packet, normally five every 200 ms; estimate recalculated once/s from 200 FIFO samples (8 s) | BPM trend over one minute; red/IR optical pulse detail over 10 s, switchable to the full retained minute; contact, warmup and quality |
 | BME280 | Configured x1 T/P/H forced conversion: nominal calculation 1.25 + 2.3 + (2.3 + 0.575) + (2.3 + 0.575) = 9.3 ms | Preserve configured room-monitoring interval and deep sleep | Separate selectable T, RH and pressure trends with their own units; persistent 24 h history |
 | BME680 | BSEC ULP requests measurements every 300 s; heater/conversion depend on the BSEC request; raw fallback uses 150 ms heater plus Bosch-computed conversion time | Preserve BSEC maintenance cadence and configured radio/cloud interval | T/RH/pressure individually, IAQ with learning/accuracy state, gas resistance as a diagnostic; persistent 24 h history |
@@ -122,6 +122,24 @@ and inspect I2C/ESP-NOW timing under the intended simultaneous-node load.
 
 ## Manual recording and adaptive motion detail
 
+TMP117/LSM6DSOX normal measurements use the stored measurement interval,
+independently of SW2 recordings. The sensor rail is switched off between normal
+windows. TMP117 retains eight-conversion averaging and data-ready gating; IMU
+startup retains the 100 ms transient discard and FIFO priming, followed by a
+100 ms summary window. The next window is scheduled from acquisition startup;
+processing and radio delays can add timing uncertainty. No catch-up burst
+invents samples for missed windows. The GPIO9 recording button remains armed
+through short light-sleep periods; BME280/BME680 keep their deep-sleep policy.
+
+The station may contact a normal precision node every five seconds for status
+and configuration. A heartbeat reuses the measured value with an increased
+acquisition age and clears freshness flags. It creates no measurement or
+recording. Raw-rate motion feedback is omitted from sparse normal windows.
+Recording stops restore the configured normal interval, while durable replay
+continues separately. OTA pauses normal acquisition and remains deferred while
+a manual recording is running. Low-battery protection stops all acquisition
+and retains the 24-hour deep-sleep policy.
+
 SW2 controls the three live types. The first five minutes of IMU data use
 50 ms means; subsequent data use 100 ms means. Already stored points are not
 rewritten or rounded. All IMU samples still enter the 104 Hz peak/mean
@@ -135,3 +153,26 @@ relative optical/BPM ages. A station UTC anchor is saved when available.
 After a reset without a saved anchor, the original session retains relative
 times and is explicitly marked as having no absolute clock. See
 [RECORDINGS.md](RECORDINGS.md) for storage and timestamp bounds.
+
+## Dashboard graph inspection
+
+Incoming measurements update the existing controls and charts in place, so a
+selected sensor, time range, display filter and cursor remain usable during
+polling. A failed history request retains the last loaded measurements until
+the next successful refresh. The one-minute live graph still expires old
+samples; retaining a failed request never creates new data.
+
+XYZ traces use different colors and line patterns. The optional three-sample
+display average operates within each continuous segment; the faint trace,
+cursor readout and CSV retain raw samples. Invalid samples and gaps are never
+interpolated by this filter. TMP117 stability feedback still requires real,
+continuous data and reports when more samples or a shorter interval are needed.
+
+Ordinary history charts include axes and a dot even for one valid sample.
+Intervals from 1 s to 24 h limit the displayed data; a short interval may
+correctly contain no reading. Storage buckets retain actual reception
+timestamps for new points. Previously saved timestamps retain their existing
+resolution. Previous/next window controls browse the history currently retained
+on the station, and Now returns to a moving view of the latest data. At normal
+intervals below one minute, history retains the latest 900 points in RAM; at
+longer intervals it retains the existing 24-hour persistent history.
