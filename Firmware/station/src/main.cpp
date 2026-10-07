@@ -55,7 +55,7 @@ void setup() {
   // reconnects; no browser has to remain open for the station to timestamp
   // and retain measurements.
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-  if (!thingSpeakService.begin()) {
+  if (!thingSpeakService.begin(sensorRegistry)) {
     fatal("ThingSpeak task could not be started");
   }
   if (!station::otaService.begin()) {

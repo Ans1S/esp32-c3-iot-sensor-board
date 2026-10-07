@@ -15,7 +15,7 @@ class Bme680Driver {
   EnvironmentalReading read();
   void prepareForDeepSleep(uint32_t seconds);
   uint32_t recommendedSleepSeconds(uint32_t fallbackSeconds) const;
-  void clearPersistentState();
+  bool clearPersistentState();
 
  private:
   struct RawI2cContext {

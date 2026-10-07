@@ -50,7 +50,7 @@ This project is not only a charger or a PCB. It is the complete path from a
 recovered energy source to an approachable sensor network:
 
 - a purpose-built ESP32-C3 sensor board;
-- support for environmental and motion sensors, with more sensor types planned;
+- support for BME280, BME680, LSM6DSOX, TMP117 and MAX30102 sensors;
 - a central ESP32-S3 station that discovers nodes automatically;
 - a responsive local web interface for readings, history and configuration;
 - signed over-the-air firmware updates for the sensor fleet.
@@ -148,9 +148,11 @@ values to ThingSpeak.
   <br><sub>Live status, battery level, air quality, radio strength and local history. All names, addresses and identifiers shown are synthetic demo data.</sub>
 </p>
 
-Every sensor card adapts to the connected hardware. A BME680 node can show
-indoor air quality and gas resistance; a motion node exposes acceleration and
-angular-rate views. Measurement intervals and cloud mappings stay configurable
+Every sensor card adapts to the connected hardware. BME280 cards show
+temperature, humidity, pressure and battery; BME680 adds indoor air quality and
+gas resistance. Motion nodes expose XYZ acceleration and angular rate, TMP117
+shows precise temperature, and MAX30102 shows an optical waveform and estimated
+pulse during a manual recording. Measurement intervals and cloud mappings stay configurable
 per sensor, while useful defaults keep setup short.
 
 ### Settings stay visible and understandable
@@ -179,6 +181,18 @@ transfer continues automatically whenever that sleeping node checks in.
 Interrupted transfers resume, low batteries can postpone an update, and the
 previous image can be restored when a trial boot does not succeed. This turns a
 collection of scattered devices into a sensor fleet that can keep improving.
+
+### Firmware 4.3.4
+
+The current release improves sensor recovery, BME680 state persistence,
+MAX30102 signal handling, durable configuration/storage and station usability.
+Saved recordings load as complete snapshots and stay readable during polling;
+yellow setup notices disappear after five seconds. BME power-saving and the
+PCB V4 daily battery-protection policy remain active.
+
+- [Complete changes since firmware 4.3.1 and PR #30](Firmware/CHANGELOG.md)
+- [PCB V3/V4 OTA packages and station application](Firmware/releases/README.md)
+- [Publication/privacy review](Firmware/PUBLICATION_REVIEW.md)
 
 ### From clone to first measurement
 
@@ -209,9 +223,9 @@ Then:
 5. From then on, use the station dashboard for readings, configuration and signed sensor updates.
 
 > [!IMPORTANT]
-> A station USB upload intentionally erases its complete flash. Saved Wi-Fi
-> settings, website protection, cloud keys, registered sensors and local history
-> are removed. Disconnect a recovered battery before the first USB upload and
+> Normal station USB updates preserve saved settings, pairing and archives.
+> Only the explicit `station_s3_factory_reset` upload erases the complete flash.
+> Older recording layouts require the documented one-time USB migration. Disconnect a recovered battery before the first USB upload and
 > confirm whether the connected sensor PCB is V3 or V4.
 
 <details>
@@ -251,6 +265,8 @@ Then:
 - [System architecture](Firmware/ARCHITECTURE.md)
 - [Hardware test plan](Firmware/HARDWARE_TESTPLAN.md)
 - [LSM6DSOX motion guide](Firmware/LSM6DSOX.md)
+- [Precision sensor operation and recordings](Firmware/PRECISION_SENSORS.md)
+- [Regression tests](Firmware/tests/README.md)
 
 The screenshots in this README are generated from the real embedded pages with
 deterministic, anonymized fixtures. Rebuild them with
@@ -266,6 +282,13 @@ password protected, but the local UI uses HTTP; ThingSpeak requests use HTTPS.
 ESP-NOW packets currently include versioning, length checks and CRC32, but not
 per-device cryptographic authentication. Treat the system as a prototype, not
 as a security boundary.
+
+Before publishing, run `python Firmware/tools/check_publication.py` and enable
+`git config core.hooksPath .githooks`. The hooks inspect staged/pushed blobs,
+including firmware and ZIP contents, without printing detected secret values.
+Local signing keys, device data and agent instructions stay ignored. The
+[publication review](Firmware/PUBLICATION_REVIEW.md) distinguishes the cleaned
+current tree from historical exposures already present in older commits.
 
 Current firmware targets are `station_s3`, `sensor_pcb_v3` and
 `sensor_pcb_v4`. Project-owned firmware and hardware sources are released under

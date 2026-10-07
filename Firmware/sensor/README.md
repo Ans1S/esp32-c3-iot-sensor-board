@@ -1,6 +1,6 @@
 # W-Charger Sensor Firmware
 
-Firmware 4.3.1 supports LSM6DSOX, TMP117 and MAX30102 live acquisition on PCB V3/V4.
+Firmware 4.3.4 supports LSM6DSOX, TMP117 and MAX30102 live acquisition on PCB V3/V4.
 See [precision sensor operation and timing](../PRECISION_SENSORS.md).
 
 One shared firmware codebase supports PCB V3 and V4. The only differences are
@@ -245,9 +245,23 @@ are in [tests/README.md](../tests/README.md); physical acceptance checks are in
 [HARDWARE_TESTPLAN.md](../HARDWARE_TESTPLAN.md). Current package information is
 in [releases](../releases/README.md).
 
-## Live precision sensors (4.3.1)
+## Live precision sensors
 
-TMP117 and MAX30102 join LSM6DSOX as manually started live sensors (SW2 / GPIO9).
-Reports arrive every 1 s (TMP117), 200 ms (MAX30102 waveform) or 100 ms
-(LSM6DSOX means); pulse estimates update every second, with a
-one-minute live graph and persistent, replayable manual recordings. See [operation, accuracy limits and OTA migration](../PRECISION_SENSORS.md).
+TMP117 and LSM6DSOX take normal measurements at the configured interval,
+such as 1 s or 10 s, with the rail off between fresh acquisition windows.
+SW2 / GPIO9 starts a separate recording: 1 s TMP117 results, 200 ms MAX30102
+waveform packets, or 50 ms LSM6DSOX means for five minutes followed by 100 ms
+means. Pulse estimates update every second. Stopping a recording restores
+the normal interval and starts durable replay. See
+[operation, accuracy limits and OTA migration](../PRECISION_SENSORS.md).
+
+
+## Current release and publication checks
+
+Firmware **4.3.4 / 40307** includes bounded sensor reinitialization, durable
+settings/history corrections and the updated recording/dashboard behavior.
+See [the complete change inventory](../CHANGELOG.md),
+[release artifacts](../releases/README.md) and
+[publication review](../PUBLICATION_REVIEW.md). Build diagnostics use relative
+paths; installation keys and device data must stay local. Software tests do not
+replace physical accuracy, rail-voltage and sleep-current acceptance.

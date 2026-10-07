@@ -5,6 +5,21 @@
 
 namespace sensor {
 using Type = lil::protocol::EnvironmentalSensorType;
+namespace {
+uint8_t opticalCurrent(uint8_t current, uint32_t level) {
+  // Separate optical paths can have very different DC levels. Use a wide
+  // settling band and bounded proportional steps, not opposing shared gains.
+  // Below 2000 counts there is no useful evidence of contact: do not boost
+  // dark-current noise all the way to the maximum LED setting.
+  uint32_t desired = current;
+  if (level > 220000) desired = uint32_t(current) * 150000 / level;
+  else if (level >= 2000 && level < 50000)
+    desired = (uint32_t(current) * 100000 + level - 1) / level;
+  desired = constrain(desired, uint32_t(4), uint32_t(0x60));
+  return static_cast<uint8_t>(constrain(desired,
+      current > 12 ? uint32_t(current - 8) : uint32_t(4), uint32_t(current) + 8));
+}
+}
 bool PrecisionSensors::readBytes(uint8_t reg, uint8_t* bytes, uint8_t count) {
   Wire.beginTransmission(address_); Wire.write(reg);
   if (Wire.endTransmission(false) || Wire.requestFrom(address_, count) != count) return false;
@@ -71,7 +86,7 @@ bool PrecisionSensors::begin(Type type, uint8_t address) {
   // Red + IR, 100 samples/s, 411 us / 18 bits, 4096 nA range.
   // Average four conversions per FIFO sample: 25 Hz signal, 1.28 s FIFO.
   const uint8_t config[][2] = {{2,0xA0},{3,0},{4,0},{5,0},{6,0},
-      {8,0x40},{0x0A,0x27},{0x0C,current_},{0x0D,current_},{9,3}};
+      {8,0x40},{0x0A,0x27},{0x0C,redCurrent_},{0x0D,infraredCurrent_},{9,3}};
   for (const auto& entry : config) {
     if (!write8(entry[0], entry[1]) || !readBytes(entry[0], bytes, 1) || bytes[0] != entry[1]) return false;
   }
@@ -109,14 +124,14 @@ bool PrecisionSensors::poll() {
     // Equal read/write pointers can also mean all 32 slots are occupied.
     // A_FULL resolves that ambiguity. ALC_OVF means ambient light corrupted
     // the ADC signal even when the numerical sample range looks plausible.
-    overflow_ = waveGap_ = true; waveCount_ = 0; resetSignal();
+    overflow_ = waveGap_ = true; waveCount_ = 0; hasOptical_ = false; resetSignal();
     if (!clearOpticalFifo()) return invalidateOpticalCapture();
     return !failed_;
   }
   const uint8_t count = (ptr[0] - ptr[2]) & 31;
   const uint32_t newestMs = millis();
   if (hasOptical_ && count == 0 && newestMs - lastSampleMs_ >= 300) {
-    waveGap_ = true; resetSignal();
+    waveGap_ = true; waveCount_ = 0; hasOptical_ = false; resetSignal();
   }
   for (uint8_t i = 0; i < count; ++i) {
     uint8_t b[6];
@@ -131,24 +146,26 @@ bool PrecisionSensors::poll() {
       --waveCount_; waveGap_ = true;
     }
     wave_[waveCount_] = {red_, infrared_, 0}; waveTimes_[waveCount_++] = lastSampleMs_;
-    if (infrared_ < 10000 || red_ < 10000 || infrared_ > 250000 || red_ > 250000) { resetSignal(); continue; }
+    // Only IR enters the heart-rate estimator. A dim or clipped red channel
+    // is not evidence that the separately sampled IR pulse is unusable.
+    if (infrared_ < 10000 || infrared_ > 250000) { resetSignal(); continue; }
     signal_[head_] = infrared_; head_ = (head_ + 1) % 200;
     if (count_ < 200) ++count_;
   }
   // Bounded optical gain settling; every change invalidates the analysis window.
-  if (count && millis() - lastAdjustMs_ >= 1000 && infrared_ >= 10000) {
+  if (count && millis() - lastAdjustMs_ >= 1000) {
     lastAdjustMs_ = millis();
-    uint8_t next = current_;
-    if ((infrared_ > 220000 || red_ > 220000) && current_ > 4) next -= 2;
-    else if (infrared_ < 50000 && current_ < 0x60) next += 2;
-    if (next != current_) {
+    const uint8_t nextRed = opticalCurrent(redCurrent_, red_);
+    const uint8_t nextInfrared = opticalCurrent(infraredCurrent_, infrared_);
+    if (nextRed != redCurrent_ || nextInfrared != infraredCurrent_) {
       // Samples acquired before the gain change must not enter the new window.
       // Discard the FIFO and mark the discontinuity in the waveform explicitly.
-      const bool changed = write8(9,0x83) && write8(0x0C,next) && write8(0x0D,next) &&
+      const bool changed = write8(9,0x83) && write8(0x0C,nextRed) && write8(0x0D,nextInfrared) &&
           clearOpticalFifo();
       if (!changed) return invalidateOpticalCapture();
-      else current_ = next;
-      waveGap_ = true; resetSignal();
+      redCurrent_ = nextRed; infraredCurrent_ = nextInfrared;
+      // Do not present pre-adjustment ADC values as a fresh settled capture.
+      waveGap_ = true; waveCount_ = 0; hasOptical_ = false; resetSignal();
     }
   }
   return !failed_;
@@ -179,25 +196,26 @@ EnvironmentalReading PrecisionSensors::read() {
     if (waveGap_) result.live.flags |= lil::protocol::kLiveGap;
     waveCount_ = 0; waveGap_ = false;
     result.pulse.red = red_; result.pulse.infrared = infrared_;
-    result.pulse.status = overflow_ ? 3 : (infrared_ < 10000 || red_ < 10000 ? 0 : 1);
+    result.pulse.status = overflow_ ? 3 : (infrared_ < 10000 ? 0 : 1);
     if (result.valid) result.capabilities = lil::protocol::kOptical;
-    // Eight seconds of uninterrupted samples. Detrend with a centered 440 ms
+    // Eight seconds of uninterrupted samples. Detrend with a centered 1 s
     // mean, then accept only a strong periodic peak (30..200 bpm).
     if (result.valid && count_ == lil::timing::kPulseSamples && !overflow_ &&
         (!hasCalculated_ || millis() - lastEstimateMs_ >= lil::timing::kPulseUpdateMs)) {
       lastEstimateMs_ = millis(); hasCalculated_ = true;
       hasEstimate_ = false;
-      float ac[190]; double energy = 0;
-      for (int i = 5; i < 195; ++i) {
+      constexpr int halfMean = 12, analyzed = 200 - 2 * halfMean;
+      float ac[analyzed]; double energy = 0;
+      for (int i = halfMean; i < 200 - halfMean; ++i) {
         double mean = 0;
-        for (int j = -5; j <= 5; ++j) mean += signal_[(head_ + i + j) % 200];
-        ac[i-5] = signal_[(head_ + i) % 200] - mean / 11;
-        energy += ac[i-5] * ac[i-5];
+        for (int j = -halfMean; j <= halfMean; ++j) mean += signal_[(head_ + i + j) % 200];
+        ac[i-halfMean] = signal_[(head_ + i) % 200] - mean / (2 * halfMean + 1);
+        energy += ac[i-halfMean] * ac[i-halfMean];
       }
       float correlations[52]{};
       for (int lag = 6; lag <= 51; ++lag) {
         double xy = 0, xx = 0, yy = 0;
-        for (int i = 0; i < 190-lag; ++i) { xy += ac[i]*ac[i+lag]; xx += ac[i]*ac[i]; yy += ac[i+lag]*ac[i+lag]; }
+        for (int i = 0; i < analyzed-lag; ++i) { xy += ac[i]*ac[i+lag]; xx += ac[i]*ac[i]; yy += ac[i+lag]*ac[i+lag]; }
         correlations[lag] = xx > 0 && yy > 0 ? xy / sqrt(xx*yy) : 0;
       }
       float best = 0; int lagBest = 0;
@@ -207,7 +225,7 @@ EnvironmentalReading PrecisionSensors::read() {
           best = correlations[lag]; lagBest = lag;
         }
       }
-      const float rms = sqrt(energy / 190);
+      const float rms = sqrt(energy / analyzed);
       if (lagBest && rms > 20 && rms < infrared_ * 0.1F) {
         // Sub-sample peak interpolation avoids 25 Hz integer-period quantization.
         const float left = correlations[lagBest-1], right = correlations[lagBest+1];

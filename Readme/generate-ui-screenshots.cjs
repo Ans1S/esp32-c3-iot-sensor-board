@@ -36,16 +36,16 @@ const demoSensors = [
     rssi: -56, profileSlot: 0, uploadEnabled: true,
     temperatureField: 1, humidityField: 2, pressureField: 3,
     iaqField: 4, gasResistanceField: 5, batteryField: 6,
-    version: '4.1.3', build: 'demo-v4'
+    version: '4.3.3', build: 'demo-v4'
   },
   {
     mac: '02:00:00:00:10:02', name: 'Workshop', provisioned: true,
     seen: true, online: true, sensorType: 1, configuredSensorType: 1,
-    capabilities: 71, pcbVersion: 3, sleepSeconds: 1800, operatingMode: 2,
+    capabilities: 23, pcbVersion: 3, sleepSeconds: 1800, operatingMode: 2,
     batteryMv: 3650, temperature: 20.9, humidity: 53.1, pressure: 1007.8,
     historyRevision: 7, revision: 2, appliedRevision: 2, ageMs: 94000,
     rssi: -68, profileSlot: 255, uploadEnabled: false,
-    version: '4.1.3', build: 'demo-v3'
+    version: '4.3.3', build: 'demo-v3'
   }
 ];
 
@@ -60,7 +60,7 @@ const demoConfig = {
   }]
 };
 
-const fixedNow = Date.UTC(2026, 8, 7, 12, 0, 0);
+const fixedNow = Date.UTC(2026, 9, 7, 12, 0, 0);
 function historyFor(mac) {
   const sensor = demoSensors.find(item => item.mac === mac) || demoSensors[0];
   const points = Array.from({ length: 48 }, (_, index) => {
@@ -98,14 +98,14 @@ async function routeDemo(route) {
   else if (url.pathname === '/api/ota') body = {
     available: true,
     mac: demoSensors[0].mac,
-    targetVersion: '4.2.0',
+    targetVersion: '4.3.4',
     state: 'Transferring',
     bytes: 655360,
     total: 1092000,
     reason: 'The sensor is receiving the signed update. Transfer resumes automatically after every sleep cycle.',
     nodes: demoSensors.map(sensor => ({
       mac: sensor.mac, pcb: sensor.pcbVersion, version: sensor.version,
-      release: 40103, build: sensor.build
+      release: 40306, build: sensor.build
     }))
   };
   else if (url.pathname.includes('thingspeak')) body = { success: true, channels: [] };
@@ -132,12 +132,12 @@ function servePreview(port = 4173) {
     else if (url.pathname === '/api/history') {
       body = JSON.stringify(historyFor(url.searchParams.get('mac')));
     } else if (url.pathname === '/api/ota') body = JSON.stringify({
-      available: true, mac: demoSensors[0].mac, targetVersion: '4.2.0',
+      available: true, mac: demoSensors[0].mac, targetVersion: '4.3.4',
       state: 'Transferring', bytes: 655360, total: 1092000,
       reason: 'The sensor is receiving the signed update. Transfer resumes automatically after every sleep cycle.',
       nodes: demoSensors.map(sensor => ({
         mac: sensor.mac, pcb: sensor.pcbVersion, version: sensor.version,
-        release: 40103, build: sensor.build
+        release: 40306, build: sensor.build
       }))
     });
     else body = JSON.stringify({ success: true, sensors: [], channels: [] });
@@ -173,7 +173,7 @@ async function generateScreenshots() {
 
     await page.goto('http://station.demo/dashboard');
     await page.locator('.sensor h3').first().waitFor();
-    await page.locator('[data-firmware]').first().filter({ hasText: 'Software 4.1.3' }).waitFor();
+    await page.locator('[data-firmware]').first().filter({ hasText: 'Software 4.3.3' }).waitFor();
     await page.evaluate(() => window.scrollTo(0, 0));
     await saveWebp(page, 'station-overview', { clip: { x: 0, y: 0, width: 1440, height: 1000 } });
 

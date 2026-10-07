@@ -1,4 +1,5 @@
 #include "recording_archive.h"
+#include "telemetry_validation.h"
 #include <LittleFS.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -55,7 +56,13 @@ bool readAt(FILE* file, const Header& h, uint32_t index, lil::recording::Record&
   record = {};
   return !fseek(file, sizeof(Header) + size_t(index)*h.width, SEEK_SET) &&
       fread(&record, 1, h.width, file) == h.width && lil::recording::valid(record) &&
-      record.session == h.session && record.type == h.type;
+      record.session == h.session && record.type == h.type &&
+      lil::protocol::validTelemetryValues(lil::recording::decode(record));
+}
+uint32_t readableTail(FILE* file, const Header& header, uint32_t count, lil::recording::Record& last) {
+  // Do not advertise torn, unacknowledged tail records as synchronized data.
+  while (count && !readAt(file, header, count-1, last)) --count;
+  return count;
 }
 }
 bool RecordingArchive::begin() { mutex_ = xSemaphoreCreateMutex(); return mutex_ != nullptr; }
@@ -65,7 +72,9 @@ size_t RecordingArchive::freeBytes() const {
 }
 bool RecordingArchive::append(const uint8_t mac[6], const lil::recording::Upload& upload) {
   const auto& record = upload.record;
-  if (!mutex_ || !lil::recording::valid(record) || !upload.totalRecords || upload.totalRecords > 200000 ||
+  if (!mutex_ || !lil::recording::valid(record) ||
+      !lil::protocol::validTelemetryValues(lil::recording::decode(record)) ||
+      !upload.totalRecords || upload.totalRecords > 200000 ||
       record.sampleMs > upload.durationMs) return false;
   Guard guard(mutex_);
   char path[320]; pathFor(mac, record.session, path, sizeof(path));
@@ -125,7 +134,13 @@ std::vector<RecordingInfo> RecordingArchive::list(const uint8_t mac[6]) {
     char path[320]; snprintf(path, sizeof(path), RECORDING_MOUNT_PATH "/%s", entry->d_name);
     FILE* file = fopen(path, "rb"); if (!file) continue;
     Header header{}; uint32_t count;
-    if (load(file, header, count)) { RecordingInfo info; infoFrom(header, count, info); result.push_back(info); }
+    if (load(file, header, count)) {
+      lil::recording::Record last{};
+      count = readableTail(file, header, count, last);
+      RecordingInfo info; infoFrom(header, count, info);
+      if (count) info.availableMs = last.sampleMs;
+      result.push_back(info);
+    }
     fclose(file);
     if (result.size() >= 128) break;
   }
@@ -138,21 +153,24 @@ size_t RecordingArchive::read(const uint8_t mac[6], uint64_t session, uint32_t& 
   FILE* file = fopen(path, "rb"); if (!file) return 0;
   Header header{}; uint32_t count;
   if (!load(file, header, count)) { fclose(file); return 0; }
+  lil::recording::Record last{};
+  count = readableTail(file, header, count, last);
   infoFrom(header, count, info);
+  if (count) info.availableMs = last.sampleMs;
   if (fromMs != UINT32_MAX) {
     uint32_t low = 0, high = count;
     while (low < high) {
       const uint32_t middle = low + (high-low)/2;
       lil::recording::Record record{};
-      if (!readAt(file, header, middle, record)) { fclose(file); return 0; }
+      if (!readAt(file, header, middle, record)) { info.readError = true; fclose(file); return 0; }
       if (record.sampleMs < fromMs) low = middle+1; else high = middle;
     }
     offset = low;
   }
   size_t copied = 0;
   while (offset < count && copied < capacity) {
-    if (!readAt(file, header, offset++, output[copied])) break;
-    ++copied;
+    if (!readAt(file, header, offset, output[copied])) { info.readError = true; break; }
+    ++copied; ++offset;
   }
   fclose(file); return copied;
 }

@@ -12,12 +12,13 @@ constexpr char kConfigKey[] = "config";
 constexpr char kFirmwareKey[] = "fw_sha";
 constexpr uint32_t kMinSleepSeconds = 1;
 constexpr uint32_t kMaxSleepSeconds = 86400;
-constexpr uint32_t kRtcConfigSignature = 0x43464737UL;  // "CFG7"
+constexpr uint32_t kRtcConfigSignature = 0x43464738UL;  // "CFG8"
 
 struct RtcConfigCache {
   uint32_t signature = 0;
   uint8_t firmwareSha[32]{};
   SensorRuntimeConfig config{};
+  bool persisted = false;
 };
 
 RTC_DATA_ATTR RtcConfigCache rtcConfigCache{};
@@ -136,11 +137,12 @@ bool validRuntimeConfig(const SensorRuntimeConfig& config) {
 }
 
 void updateRtcConfigCache(const uint8_t firmwareSha[32],
-                          const SensorRuntimeConfig& config) {
+                          const SensorRuntimeConfig& config, bool persisted = true) {
   rtcConfigCache.signature = 0;
   memcpy(rtcConfigCache.firmwareSha, firmwareSha,
          sizeof(rtcConfigCache.firmwareSha));
   rtcConfigCache.config = config;
+  rtcConfigCache.persisted = persisted;
   rtcConfigCache.signature = kRtcConfigSignature;
 }
 }
@@ -169,7 +171,7 @@ bool SensorConfigStore::begin() {
              sizeof(currentFirmwareSha_)) == 0 &&
       validRuntimeConfig(rtcConfigCache.config)) {
     lastStored_ = rtcConfigCache.config;
-    hasStoredCopy_ = true;
+    hasStoredCopy_ = rtcConfigCache.persisted;
     rtcConfigAvailable_ = true;
     firmwareChanged_ = false;
     return true;
@@ -213,12 +215,23 @@ SensorRuntimeConfig SensorConfigStore::load() {
     return config;
   }
   const size_t stored = preferences_.getBytesLength(kConfigKey);
-  if (stored == sizeof(config)) {
-    preferences_.getBytes(kConfigKey, &config, sizeof(config));
-    if (config.version == 5 &&
-        stored == sizeof(LegacySensorRuntimeConfigV5)) {
+  bool recognized = false;
+  uint8_t blob[sizeof(config)]{};
+  uint32_t magic = 0;
+  uint16_t version = 0;
+  if (stored >= 6 && stored <= sizeof(blob)) {
+    // Read once, and never turn a failed/partial transfer into cached defaults.
+    if (preferences_.getBytes(kConfigKey, blob, stored) != stored) return config;
+    memcpy(&magic, blob, sizeof(magic));
+    memcpy(&version, blob + sizeof(magic), sizeof(version));
+  }
+  if (magic == kSensorConfigMagic) {
+    if (version == kSensorConfigVersion && stored == sizeof(config)) {
+      memcpy(&config, blob, sizeof(config));
+      recognized = true;
+    } else if (version == 5 && stored == sizeof(LegacySensorRuntimeConfigV5)) {
       LegacySensorRuntimeConfigV5 legacy{};
-      preferences_.getBytes(kConfigKey, &legacy, sizeof(legacy));
+      memcpy(&legacy, blob, sizeof(legacy));
       migrateRuntimeConfig(legacy, config);
       config.provisioned = legacy.provisioned;
       config.environmentalSensorType = legacy.environmentalSensorType;
@@ -228,74 +241,55 @@ SensorRuntimeConfig SensorConfigStore::load() {
       // operation no longer has a separate commissioning cycle.
       config.bme680QuickStartComplete = true;
       migrated = true;
-    } else if (config.version == 4 &&
-               stored == sizeof(LegacySensorRuntimeConfigV4)) {
+    } else if (version == 4 && stored == sizeof(LegacySensorRuntimeConfigV4)) {
       LegacySensorRuntimeConfigV4 legacy{};
-      preferences_.getBytes(kConfigKey, &legacy, sizeof(legacy));
+      memcpy(&legacy, blob, sizeof(legacy));
       migrateRuntimeConfig(legacy, config);
       config.provisioned = legacy.provisioned;
       config.environmentalSensorType = legacy.environmentalSensorType;
       config.temperatureOffsetC = legacy.temperatureOffsetC;
       config.batteryCalibrationFactor = legacy.batteryCalibrationFactor;
       migrated = true;
-    } else if (config.version == 3 &&
-               stored == sizeof(LegacySensorRuntimeConfigV3)) {
+    } else if (version == 3 && stored == sizeof(LegacySensorRuntimeConfigV3)) {
       LegacySensorRuntimeConfigV3 legacy{};
-      preferences_.getBytes(kConfigKey, &legacy, sizeof(legacy));
+      memcpy(&legacy, blob, sizeof(legacy));
       migrateRuntimeConfig(legacy, config);
       config.provisioned = legacy.stationKnown;
       config.environmentalSensorType = legacy.environmentalSensorType;
       config.temperatureOffsetC = legacy.temperatureOffsetC;
       config.batteryCalibrationFactor = legacy.batteryCalibrationFactor;
       migrated = true;
+    } else if (version == 2 && stored == sizeof(LegacySensorRuntimeConfigV2)) {
+      LegacySensorRuntimeConfigV2 legacy{};
+      memcpy(&legacy, blob, sizeof(legacy));
+      migrateRuntimeConfig(legacy, config);
+      config.provisioned = legacy.stationKnown;
+      config.environmentalSensorType = legacy.environmentalSensorType;
+      config.temperatureOffsetC = legacy.temperatureOffsetC;
+      migrated = true;
+    } else if (version == 1 && stored == sizeof(LegacySensorRuntimeConfigV1)) {
+      LegacySensorRuntimeConfigV1 legacy{};
+      memcpy(&legacy, blob, sizeof(legacy));
+      migrateRuntimeConfig(legacy, config);
+      config.provisioned = legacy.stationKnown;
+      migrated = true;
     }
-  } else if (stored == sizeof(LegacySensorRuntimeConfigV4)) {
-    LegacySensorRuntimeConfigV4 legacy{};
-    preferences_.getBytes(kConfigKey, &legacy, sizeof(legacy));
-    migrateRuntimeConfig(legacy, config);
-    config.provisioned = legacy.provisioned;
-    config.environmentalSensorType = legacy.environmentalSensorType;
-    config.temperatureOffsetC = legacy.temperatureOffsetC;
-    config.batteryCalibrationFactor = legacy.batteryCalibrationFactor;
-    migrated = true;
-  } else if (stored == sizeof(LegacySensorRuntimeConfigV3)) {
-    LegacySensorRuntimeConfigV3 legacy{};
-    preferences_.getBytes(kConfigKey, &legacy, sizeof(legacy));
-    migrateRuntimeConfig(legacy, config);
-    config.provisioned = legacy.stationKnown;
-    config.environmentalSensorType = legacy.environmentalSensorType;
-    config.temperatureOffsetC = legacy.temperatureOffsetC;
-    config.batteryCalibrationFactor = legacy.batteryCalibrationFactor;
-    migrated = true;
-  } else if (stored == sizeof(LegacySensorRuntimeConfigV2)) {
-    LegacySensorRuntimeConfigV2 legacy{};
-    preferences_.getBytes(kConfigKey, &legacy, sizeof(legacy));
-    migrateRuntimeConfig(legacy, config);
-    config.provisioned = legacy.stationKnown;
-    config.environmentalSensorType = legacy.environmentalSensorType;
-    config.temperatureOffsetC = legacy.temperatureOffsetC;
-    migrated = true;
-  } else if (stored == sizeof(LegacySensorRuntimeConfigV1)) {
-    LegacySensorRuntimeConfigV1 legacy{};
-    preferences_.getBytes(kConfigKey, &legacy, sizeof(legacy));
-    migrateRuntimeConfig(legacy, config);
-    config.provisioned = legacy.stationKnown;
-    migrated = true;
+    recognized |= migrated;
   }
   if (!validRuntimeConfig(config)) {
     config = SensorRuntimeConfig{};
+    recognized = migrated = false;
   }
   lastStored_ = config;
-  hasStoredCopy_ = true;
-  if (migrated) {
-    preferences_.putBytes(kConfigKey, &config, sizeof(config));
-  }
-  updateRtcConfigCache(currentFirmwareSha_, config);
+  hasStoredCopy_ = recognized && (!migrated ||
+      preferences_.putBytes(kConfigKey, &config, sizeof(config)) == sizeof(config));
+  updateRtcConfigCache(currentFirmwareSha_, config, hasStoredCopy_);
   rtcConfigAvailable_ = true;
   return config;
 }
 
 bool SensorConfigStore::saveIfChanged(const SensorRuntimeConfig& config) {
+  if (!validRuntimeConfig(config)) return false;
   if (hasStoredCopy_ && memcmp(&lastStored_, &config, sizeof(config)) == 0) {
     return true;
   }
@@ -311,13 +305,12 @@ bool SensorConfigStore::saveIfChanged(const SensorRuntimeConfig& config) {
   return true;
 }
 
-void SensorConfigStore::factoryReset() {
-  if (ensurePreferencesOpen()) {
-    preferences_.clear();
-  }
+bool SensorConfigStore::factoryReset() {
+  if (!ensurePreferencesOpen() || !preferences_.clear()) return false;
   rtcConfigCache.signature = 0;
   hasStoredCopy_ = false;
   rtcConfigAvailable_ = false;
+  return true;
 }
 
 }  // namespace sensor

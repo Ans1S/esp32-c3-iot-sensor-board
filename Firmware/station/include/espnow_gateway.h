@@ -16,6 +16,7 @@ namespace station {
 
 struct EspNowRxEvent {
   bool archiveReply = false;
+  uint32_t generation = 0;
   uint32_t receivedAt = 0;
   uint8_t sourceMac[6]{};
   int8_t rssi = 0;
@@ -35,6 +36,7 @@ struct EspNowPersistenceEvent {
 };
 struct EspNowArchiveEvent {
   uint8_t sourceMac[6]{};
+  uint32_t generation = 0;
   uint32_t sequence = 0;
   lil::recording::Upload recording{};
 };

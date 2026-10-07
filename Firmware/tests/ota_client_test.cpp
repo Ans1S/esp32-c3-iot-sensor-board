@@ -38,6 +38,8 @@ int main() {
   reset(); breakAt=20000; run(); flash[10]^=1; breakAt=UINT32_MAX; complete(); assert(began==2 && resumed==UINT32_MAX);
   reset(); signatureValid=false; run(); assert(!began&&!selected && states.back()==lil::ota::State::Rejected && failures.back()==lil::ota::Failure::ManifestInvalid);
   reset(); offer.pcb=3; run(); assert(!began&&!selected);
+  reset(); offer.imageSize = lil::ota::kSlotSize + 1; run();
+  assert(!began && !selected && failures.back() == lil::ota::Failure::ManifestInvalid);
   for (uint8_t pcb : {3, 4}) {
     const uint16_t minimum = pcb == 4 ? 2800 : 3350;
     reset(); kHardware.pcbVersion=pcb; offer.pcb=pcb;

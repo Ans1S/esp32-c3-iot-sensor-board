@@ -12,9 +12,11 @@
 #include "upload_scheduler.h"
 
 namespace station {
+class SensorRegistry;
 
 struct CloudUploadJob {
   uint32_t receivedAt = 0;
+  uint32_t generation = 0;
   bool sharedChannel = false;
   uint8_t mac[6]{};
   uint32_t channelId = 0;
@@ -43,11 +45,11 @@ struct ThingSpeakApiResult {
 
 class ThingSpeakService {
  public:
-  bool begin();
+  bool begin(SensorRegistry& registry);
   bool queue(const SensorConfig& config,
              const lil::protocol::TelemetryPayload& telemetry,
              int8_t stationRssi, uint32_t sequence, uint32_t receivedAt,
-             bool sharedChannel = false);
+             bool sharedChannel = false, uint32_t generation = 0);
   ChannelCreationResult createChannel(const String& userApiKey,
                                       const String& sensorName);
   ThingSpeakApiResult listChannels(const String& userApiKey);
@@ -78,6 +80,7 @@ class ThingSpeakService {
                                      const String& encodedSettings = "");
 
   lil::UploadScheduler<CloudUploadJob, 64> scheduler_;
+  SensorRegistry* registry_ = nullptr;
   SemaphoreHandle_t queueMutex_ = nullptr;
   SemaphoreHandle_t tlsMutex_ = nullptr;
   TaskHandle_t task_ = nullptr;

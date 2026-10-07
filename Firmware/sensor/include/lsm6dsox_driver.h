@@ -18,7 +18,9 @@ class Lsm6dsoxDriver {
   bool initialized_ = false;
   bool failed_ = false;
   bool overflow_ = false;
+  bool gap_ = false;
   uint32_t lastAccelMs_ = 0, lastGyroMs_ = 0;
+  uint32_t lastPollMs_ = 0;
   uint32_t accelCount_ = 0, gyroCount_ = 0;
   float sums_[2][3]{};
   lil::protocol::MotionReading motion_{};

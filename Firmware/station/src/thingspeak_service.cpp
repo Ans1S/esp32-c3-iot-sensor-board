@@ -1,4 +1,5 @@
 #include "thingspeak_service.h"
+#include "sensor_registry.h"
 
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
@@ -35,7 +36,8 @@ MrY=
 )CERT";
 }  // namespace
 
-bool ThingSpeakService::begin() {
+bool ThingSpeakService::begin(SensorRegistry& registry) {
+  registry_ = &registry;
   queueMutex_ = xSemaphoreCreateMutex();
   tlsMutex_ = xSemaphoreCreateMutex();
   if (queueMutex_ == nullptr || tlsMutex_ == nullptr) {
@@ -47,7 +49,8 @@ bool ThingSpeakService::begin() {
 bool ThingSpeakService::queue(
     const SensorConfig& config,
     const lil::protocol::TelemetryPayload& telemetry, int8_t stationRssi,
-    uint32_t sequence, uint32_t receivedAt, bool sharedChannel) {
+    uint32_t sequence, uint32_t receivedAt, bool sharedChannel,
+    uint32_t generation) {
   if (!config.provisioned || !config.cloudUploadEnabled ||
       config.thingSpeakChannelId == 0 ||
       config.thingSpeakWriteKey[0] == '\0') {
@@ -56,6 +59,7 @@ bool ThingSpeakService::queue(
 
   CloudUploadJob job{};
   job.receivedAt = receivedAt;
+  job.generation = generation;
   job.sharedChannel = sharedChannel;
   memcpy(job.mac, config.mac, sizeof(job.mac));
   job.channelId = config.thingSpeakChannelId;
@@ -93,7 +97,7 @@ void ThingSpeakService::taskLoop() {
     const int status = lastHttpStatus_.load(std::memory_order_relaxed);
     // Retry transient network/server/rate-limit failures; reject permanent
     // credential/field errors. Retain the original acquisition timestamp.
-    const bool retryable = (status < 0 && status != -2) || status == 429 ||
+    const bool retryable = (status < 0 && status != -2 && status != -3) || status == 429 ||
                            status >= 500 || status == HTTP_CODE_OK;
     xSemaphoreTake(queueMutex_, portMAX_DELAY);
     scheduler_.complete(entry, millis(), success, retryable);
@@ -103,8 +107,16 @@ void ThingSpeakService::taskLoop() {
 }
 
 bool ThingSpeakService::upload(const CloudUploadJob& job) {
-  lastAttemptMs_.store(millis(), std::memory_order_relaxed);
   xSemaphoreTake(tlsMutex_, portMAX_DELAY);
+  // An outage can retain jobs long after a sensor was deleted or its cloud
+  // settings changed. Check again after waiting for account-management TLS.
+  if (!registry_ || !registry_->cloudUploadMatches(job.mac, job.generation,
+          job.channelId, job.writeKey, job.fields)) {
+    lastHttpStatus_.store(-3, std::memory_order_relaxed);
+    xSemaphoreGive(tlsMutex_);
+    return false;
+  }
+  lastAttemptMs_.store(millis(), std::memory_order_relaxed);
   WiFiClientSecure client;
   client.setCACert(kThingSpeakRootCa);
   HTTPClient https;
