@@ -2,12 +2,34 @@
 
 #include <LittleFS.h>
 #include <WiFi.h>
+#include <esp_partition.h>
 
 namespace station {
 
 namespace {
 constexpr char kNamespace[] = "lil_station";
 constexpr char kStationKey[] = "station";
+
+bool filesystemPartitionErased() {
+  const esp_partition_t* partition = esp_partition_find_first(
+      ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, "spiffs");
+  if (!partition || !partition->size) return false;
+  uint8_t bytes[1024];
+  for (size_t offset = 0; offset < partition->size; offset += sizeof(bytes)) {
+    const size_t count = min(sizeof(bytes), size_t(partition->size) - offset);
+    if (esp_partition_read(partition, offset, bytes, count) != ESP_OK) return false;
+    for (size_t i = 0; i < count; ++i) if (bytes[i] != 0xFF) return false;
+    if (offset && offset % (64U * 1024U) == 0) delay(1);
+  }
+  return true;
+}
+
+template <size_t N, size_t M>
+void copyStoredText(char (&destination)[N], const char (&source)[M]) {
+  const size_t count = min(N - 1, M);
+  memcpy(destination, source, count);
+  destination[count] = '\0';
+}
 
 struct LegacyStationConfigV3 {
   uint32_t magic = kConfigMagic;
@@ -143,12 +165,11 @@ void migrateSensorBase(const Legacy& legacy, SensorConfig& config) {
   config = SensorConfig{};
   config.occupied = legacy.occupied;
   memcpy(config.mac, legacy.mac, sizeof(config.mac));
-  strlcpy(config.name, legacy.name, sizeof(config.name));
+  copyStoredText(config.name, legacy.name);
   config.revision = legacy.revision;
   config.sleepSeconds = legacy.sleepSeconds;
   config.thingSpeakChannelId = legacy.thingSpeakChannelId;
-  strlcpy(config.thingSpeakWriteKey, legacy.thingSpeakWriteKey,
-          sizeof(config.thingSpeakWriteKey));
+  copyStoredText(config.thingSpeakWriteKey, legacy.thingSpeakWriteKey);
   config.pendingFlags = legacy.pendingFlags;
 }
 
@@ -158,14 +179,11 @@ void migrateStationBase(const Legacy& legacy, StationConfig& config) {
   config.magic = legacy.magic;
   config.version = kConfigVersion;
   strlcpy(config.hostname, "w-charger", sizeof(config.hostname));
-  strlcpy(config.wifiSsid, legacy.wifiSsid, sizeof(config.wifiSsid));
-  strlcpy(config.wifiPassword, legacy.wifiPassword,
-          sizeof(config.wifiPassword));
-  strlcpy(config.accessPointPassword, legacy.accessPointPassword,
-          sizeof(config.accessPointPassword));
+  copyStoredText(config.wifiSsid, legacy.wifiSsid);
+  copyStoredText(config.wifiPassword, legacy.wifiPassword);
+  copyStoredText(config.accessPointPassword, legacy.accessPointPassword);
   config.adminPassword[0] = '\0';
-  strlcpy(config.thingSpeakUserApiKey, legacy.thingSpeakUserApiKey,
-          sizeof(config.thingSpeakUserApiKey));
+  copyStoredText(config.thingSpeakUserApiKey, legacy.thingSpeakUserApiKey);
   config.defaultSleepSeconds = legacy.defaultSleepSeconds;
   config.fallbackWifiChannel = legacy.fallbackWifiChannel;
   config.setupPortalRequired = true;
@@ -214,7 +232,60 @@ bool validAdminPasswordHash(const char* hash) {
 }  // namespace
 
 bool ConfigStore::begin() {
-  return preferences_.begin(kNamespace, false) && LittleFS.begin(true);
+  if (!preferences_.begin(kNamespace, false)) return false;
+  storageAvailable_ = LittleFS.begin(false);
+  // A mount error must never erase existing recordings. Initialize storage
+  // automatically only when every byte belongs to an erased new partition.
+  if (!storageAvailable_ && filesystemPartitionErased()) {
+    storageAvailable_ = LittleFS.format() && LittleFS.begin(false);
+  }
+  if (!storageAvailable_) {
+    Serial.printf("[Storage] Filesystem unavailable; existing data preserved. History and recording synchronization are disabled until recovery.\n");
+  }
+  // NVS settings, radio acknowledgements and the recovery UI remain usable.
+  return true;
+}
+
+void sanitizeSensorConfig(SensorConfig& config) {
+  config.name[sizeof(config.name) - 1] = '\0';
+  config.thingSpeakWriteKey[sizeof(config.thingSpeakWriteKey) - 1] = '\0';
+  if (!config.revision) config.revision = 1;
+  if (config.sleepSeconds < kMinSleepSeconds || config.sleepSeconds > kMaxSleepSeconds)
+    config.sleepSeconds = 600;
+  if (config.thingSpeakProfileSlot >= kMaxThingSpeakChannels) config.thingSpeakProfileSlot = 0xFF;
+  if (!validSensorType(config.environmentalSensorType))
+    config.environmentalSensorType = lil::protocol::EnvironmentalSensorType::kAutoDetect;
+  if (!isfinite(config.temperatureOffsetC) || config.temperatureOffsetC < -10.0F || config.temperatureOffsetC > 10.0F)
+    config.temperatureOffsetC = 0.466F;
+  if (!isfinite(config.batteryCalibrationFactor) || config.batteryCalibrationFactor < 0.7F || config.batteryCalibrationFactor > 1.3F)
+    config.batteryCalibrationFactor = 1.0F;
+  uint16_t assigned = 0;
+  uint8_t* fields[] = {&config.thingSpeakFields.temperature, &config.thingSpeakFields.humidity,
+      &config.thingSpeakFields.pressure, &config.thingSpeakFields.iaq,
+      &config.thingSpeakFields.battery, &config.thingSpeakFields.gasResistance};
+  for (auto* field : fields) {
+    if (*field > 8 || (*field && (assigned & (1U << *field)))) *field = 0;
+    if (*field) assigned |= 1U << *field;
+  }
+  config.pendingFlags &= kSensorCommandFlags | kAwaitingProvisioningAck;
+  if (lil::protocol::isLiveSensor(config.environmentalSensorType) ||
+      !config.thingSpeakChannelId || !config.thingSpeakWriteKey[0]) config.cloudUploadEnabled = false;
+}
+
+void terminateStationStrings(StationConfig& config) {
+  config.hostname[sizeof(config.hostname) - 1] = '\0';
+  config.wifiSsid[sizeof(config.wifiSsid) - 1] = '\0';
+  config.wifiPassword[sizeof(config.wifiPassword) - 1] = '\0';
+  config.accessPointPassword[sizeof(config.accessPointPassword) - 1] = '\0';
+  config.adminPassword[sizeof(config.adminPassword) - 1] = '\0';
+  config.thingSpeakUserApiKey[sizeof(config.thingSpeakUserApiKey) - 1] = '\0';
+  config.thingSpeakReadApiKey[sizeof(config.thingSpeakReadApiKey) - 1] = '\0';
+  config.thingSpeakWriteApiKey[sizeof(config.thingSpeakWriteApiKey) - 1] = '\0';
+  for (auto& channel : config.thingSpeakChannels) {
+    channel.name[sizeof(channel.name) - 1] = '\0';
+    channel.readApiKey[sizeof(channel.readApiKey) - 1] = '\0';
+    channel.writeApiKey[sizeof(channel.writeApiKey) - 1] = '\0';
+  }
 }
 
 void ConfigStore::applyDefaults(StationConfig& config) {
@@ -228,30 +299,33 @@ StationConfig ConfigStore::loadStationConfig() {
   StationConfig config{};
   const size_t stored = preferences_.getBytesLength(kStationKey);
   if (stored == sizeof(config)) {
-    preferences_.getBytes(kStationKey, &config, sizeof(config));
+    if (preferences_.getBytes(kStationKey, &config, sizeof(config)) != sizeof(config)) {
+      applyDefaults(config);
+      return config;
+    }
   } else if (stored == sizeof(LegacyStationConfigV4)) {
     LegacyStationConfigV4 legacy{};
-    preferences_.getBytes(kStationKey, &legacy, sizeof(legacy));
+    if (preferences_.getBytes(kStationKey, &legacy, sizeof(legacy)) != sizeof(legacy)) {
+      applyDefaults(config); return config;
+    }
     migrateStationBase(legacy, config);
     config.thingSpeakDefaultChannelId = legacy.thingSpeakDefaultChannelId;
-    strlcpy(config.thingSpeakReadApiKey, legacy.thingSpeakReadApiKey,
-            sizeof(config.thingSpeakReadApiKey));
-    strlcpy(config.thingSpeakWriteApiKey, legacy.thingSpeakWriteApiKey,
-            sizeof(config.thingSpeakWriteApiKey));
+    copyStoredText(config.thingSpeakReadApiKey, legacy.thingSpeakReadApiKey);
+    copyStoredText(config.thingSpeakWriteApiKey, legacy.thingSpeakWriteApiKey);
     if (legacy.thingSpeakDefaultChannelId != 0) {
       auto& profile = config.thingSpeakChannels[0];
       profile.occupied = true;
       strlcpy(profile.name, "Home-Sensor", sizeof(profile.name));
       profile.channelId = legacy.thingSpeakDefaultChannelId;
-      strlcpy(profile.readApiKey, legacy.thingSpeakReadApiKey,
-              sizeof(profile.readApiKey));
-      strlcpy(profile.writeApiKey, legacy.thingSpeakWriteApiKey,
-              sizeof(profile.writeApiKey));
+      copyStoredText(profile.readApiKey, legacy.thingSpeakReadApiKey);
+      copyStoredText(profile.writeApiKey, legacy.thingSpeakWriteApiKey);
     }
     saveStationConfig(config);
   } else if (stored == sizeof(LegacyStationConfigV3)) {
     LegacyStationConfigV3 legacy{};
-    preferences_.getBytes(kStationKey, &legacy, sizeof(legacy));
+    if (preferences_.getBytes(kStationKey, &legacy, sizeof(legacy)) != sizeof(legacy)) {
+      applyDefaults(config); return config;
+    }
     migrateStationBase(legacy, config);
     saveStationConfig(config);
   } else {
@@ -260,6 +334,7 @@ StationConfig ConfigStore::loadStationConfig() {
     return config;
   }
 
+  terminateStationStrings(config);
   if (config.magic != kConfigMagic || config.version != kConfigVersion ||
       config.defaultSleepSeconds < kMinSleepSeconds ||
       config.defaultSleepSeconds > kMaxSleepSeconds ||
@@ -293,7 +368,9 @@ bool ConfigStore::loadSensorConfigs(SensorConfig* configs, size_t count) {
                               ? preferences_.getBytesLength(key.c_str())
                               : 0;
     if (stored == sizeof(SensorConfig)) {
-      preferences_.getBytes(key.c_str(), &configs[i], sizeof(SensorConfig));
+      if (preferences_.getBytes(key.c_str(), &configs[i], sizeof(SensorConfig)) != sizeof(SensorConfig)) {
+        configs[i] = SensorConfig{}; continue;
+      }
       if (configs[i].storageVersion != kSensorStorageVersion) {
         configs[i] = SensorConfig{};
       } else if (configs[i].thingSpeakProfileSlot >= kMaxThingSpeakChannels) {
@@ -314,7 +391,9 @@ bool ConfigStore::loadSensorConfigs(SensorConfig* configs, size_t count) {
       }
     } else if (stored == sizeof(LegacySensorConfigV5)) {
       LegacySensorConfigV5 legacy{};
-      preferences_.getBytes(key.c_str(), &legacy, sizeof(legacy));
+      if (preferences_.getBytes(key.c_str(), &legacy, sizeof(legacy)) != sizeof(legacy)) {
+        configs[i] = SensorConfig{}; continue;
+      }
       migrateSensorBase(legacy, configs[i]);
       configs[i].cloudUploadEnabled = legacy.cloudUploadEnabled;
       configs[i].thingSpeakFields = legacy.thingSpeakFields;
@@ -329,7 +408,9 @@ bool ConfigStore::loadSensorConfigs(SensorConfig* configs, size_t count) {
       saveSensorConfig(i, configs[i]);
     } else if (stored == sizeof(LegacySensorConfigV4)) {
       LegacySensorConfigV4 legacy{};
-      preferences_.getBytes(key.c_str(), &legacy, sizeof(legacy));
+      if (preferences_.getBytes(key.c_str(), &legacy, sizeof(legacy)) != sizeof(legacy)) {
+        configs[i] = SensorConfig{}; continue;
+      }
       migrateSensorBase(legacy, configs[i]);
       configs[i].cloudUploadEnabled = legacy.cloudUploadEnabled;
       configs[i].thingSpeakFields = legacy.thingSpeakFields;
@@ -343,7 +424,9 @@ bool ConfigStore::loadSensorConfigs(SensorConfig* configs, size_t count) {
       saveSensorConfig(i, configs[i]);
     } else if (stored == sizeof(LegacySensorConfigV3)) {
       LegacySensorConfigV3 legacy{};
-      preferences_.getBytes(key.c_str(), &legacy, sizeof(legacy));
+      if (preferences_.getBytes(key.c_str(), &legacy, sizeof(legacy)) != sizeof(legacy)) {
+        configs[i] = SensorConfig{}; continue;
+      }
       migrateSensorBase(legacy, configs[i]);
       configs[i].cloudUploadEnabled = legacy.cloudUploadEnabled;
       copyLegacyFields(legacy.thingSpeakFields,
@@ -356,7 +439,9 @@ bool ConfigStore::loadSensorConfigs(SensorConfig* configs, size_t count) {
       saveSensorConfig(i, configs[i]);
     } else if (stored == sizeof(LegacySensorConfigV2)) {
       LegacySensorConfigV2 legacy{};
-      preferences_.getBytes(key.c_str(), &legacy, sizeof(legacy));
+      if (preferences_.getBytes(key.c_str(), &legacy, sizeof(legacy)) != sizeof(legacy)) {
+        configs[i] = SensorConfig{}; continue;
+      }
       migrateSensorBase(legacy, configs[i]);
       configs[i].cloudUploadEnabled = false;
       copyLegacyFields(legacy.thingSpeakFields,
@@ -366,7 +451,9 @@ bool ConfigStore::loadSensorConfigs(SensorConfig* configs, size_t count) {
       saveSensorConfig(i, configs[i]);
     } else if (stored == sizeof(LegacySensorConfig)) {
       LegacySensorConfig legacy{};
-      preferences_.getBytes(key.c_str(), &legacy, sizeof(legacy));
+      if (preferences_.getBytes(key.c_str(), &legacy, sizeof(legacy)) != sizeof(legacy)) {
+        configs[i] = SensorConfig{}; continue;
+      }
       migrateSensorBase(legacy, configs[i]);
       configs[i].cloudUploadEnabled = false;
       configs[i].provisioned = false;
@@ -375,6 +462,11 @@ bool ConfigStore::loadSensorConfigs(SensorConfig* configs, size_t count) {
     } else {
       configs[i] = SensorConfig{};
     }
+    // Apply the same bounds after every migration path, before these values
+    // control radio timing, string operations or cloud field selection.
+    const SensorConfig previous = configs[i];
+    sanitizeSensorConfig(configs[i]);
+    if (memcmp(&previous, &configs[i], sizeof(previous))) saveSensorConfig(i, configs[i]);
   }
   return true;
 }
@@ -393,6 +485,25 @@ bool ConfigStore::deleteSensorConfig(size_t index) {
   }
   const String key = sensorKey(index);
   return !preferences_.isKey(key.c_str()) || preferences_.remove(key.c_str());
+}
+
+bool ConfigStore::loadSensorIdentities(SensorIdentity* identities, size_t count) {
+  if (!identities || count != kMaxSensorIdentities) return false;
+  const size_t bytes = count * sizeof(SensorIdentity);
+  if (!preferences_.isKey("identities1")) return true;
+  if (preferences_.getBytesLength("identities1") != bytes ||
+      preferences_.getBytes("identities1", identities, bytes) != bytes) return false;
+  for (size_t i = 0; i < count; ++i) {
+    identities[i].name[24] = '\0';
+    if (identities[i].motion.enabled && !validMotionReference(identities[i].motion)) identities[i].motion = {};
+  }
+  return true;
+}
+
+bool ConfigStore::saveSensorIdentities(const SensorIdentity* identities, size_t count) {
+  if (!identities || count != kMaxSensorIdentities) return false;
+  const size_t bytes = count * sizeof(SensorIdentity);
+  return preferences_.putBytes("identities1", identities, bytes) == bytes;
 }
 
 size_t ConfigStore::historyBytesLength(size_t index) {
@@ -501,7 +612,7 @@ bool ConfigStore::updateHistory(size_t index, size_t expectedLength,
 }
 
 bool ConfigStore::deleteHistory(size_t index) {
-  if (index >= kMaxSensors) {
+  if (index >= kMaxSensors || !storageAvailable_) {
     return false;
   }
   const String key = historyKey(index);
@@ -539,7 +650,7 @@ bool ConfigStore::saveLatestTelemetry(size_t index, const void* data,
 }
 
 bool ConfigStore::deleteLatestTelemetry(size_t index) {
-  if (index >= kMaxSensors) {
+  if (index >= kMaxSensors || !storageAvailable_) {
     return false;
   }
   const String key = latestTelemetryKey(index);
@@ -549,6 +660,7 @@ bool ConfigStore::deleteLatestTelemetry(size_t index) {
 bool ConfigStore::factoryReset() {
   const bool preferencesCleared = preferences_.clear();
   const bool historyCleared = LittleFS.format();
+  storageAvailable_ = historyCleared && LittleFS.begin(false);
   return preferencesCleared && historyCleared;
 }
 

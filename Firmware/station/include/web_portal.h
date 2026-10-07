@@ -53,6 +53,7 @@ class WebPortal {
   void sendRecordings();
   void sendRecording();
   void deleteRecording();
+  void setMotionReference();
   void sendJsonConfig();
   void sendWifiScan();
   void saveSetup();

@@ -47,8 +47,9 @@ bool OtaService::startUpload(const uint8_t mac[6], String& error) {
   for (const auto& n : nodes_) if (!memcmp(mac, n.mac, 6) && n.identity.release) known = true;
   if (!known) { error = "Node has not reported OTA support; install the sensor base image by USB first"; return false; }
   // Invalidate the old job durably before overwriting its package.
+  const Job previous = job_;
   job_ = Job{};
-  if (!save()) { error = "Cannot persist update state"; return false; }
+  if (!save()) { job_ = previous; error = "Cannot persist update state"; return false; }
   memcpy(job_.mac, mac, 6);
   uploading_ = true;
   uploadFailed_ = false;
@@ -138,8 +139,11 @@ void OtaService::abortUpload() { Lock lock(mutex_); uploading_ = false; uploadFa
 bool OtaService::cancel() {
   Lock lock(mutex_);
   if (uploading_) return false;
+  const Job previous = job_;
   job_.state = lil::ota::State::Cancelled;
-  return save();
+  const bool saved = save();
+  if (!saved) job_ = previous;
+  return saved;
 }
 void OtaService::forget(const uint8_t* mac) {
   Lock lock(mutex_);

@@ -1,4 +1,5 @@
 #include "sensor_registry.h"
+#include "telemetry_validation.h"
 
 #include <algorithm>
 #include <esp_heap_caps.h>
@@ -90,6 +91,10 @@ int16_t encodeSignedHundredths(float value) {
   if (!isfinite(value)) {
     return 0;
   }
+  // Bound before scaling: a finite input can overflow the multiplication or
+  // lroundf's integer range long before the final compact-value clamp.
+  if (value >= INT16_MAX / 100.0F) return INT16_MAX;
+  if (value <= INT16_MIN / 100.0F) return INT16_MIN;
   const long scaled = lroundf(value * 100.0F);
   return static_cast<int16_t>(
       max<long>(INT16_MIN, min<long>(INT16_MAX, scaled)));
@@ -99,6 +104,7 @@ uint16_t encodeUnsigned(float value, float scale) {
   if (!isfinite(value) || value <= 0.0F) {
     return 0;
   }
+  if (value >= UINT16_MAX / scale) return UINT16_MAX;
   const long scaled = lroundf(value * scale);
   return static_cast<uint16_t>(
       min<unsigned long>(UINT16_MAX, static_cast<unsigned long>(scaled)));
@@ -217,6 +223,18 @@ bool SensorRegistry::begin(ConfigStore& store, uint32_t defaultSleepSeconds) {
   if (mutex_ == nullptr || storageMutex_ == nullptr || !store_->loadSensorConfigs(configs_, kMaxSensors)) {
     return false;
   }
+  if (!store_->loadSensorIdentities(identities_, kMaxSensorIdentities)) {
+    for (auto& identity : identities_) identity = SensorIdentity{};
+    Serial.printf("[Identity] Could not load remembered sensor identities\n");
+  }
+  bool identitiesChanged = false;
+  for (const auto& config : configs_) if (config.occupied) {
+    const int previous = identityIndexLocked(config.mac);
+    if (previous < 0 || strcmp(identities_[previous].name, config.name)) {
+      identitiesChanged |= rememberIdentityLocked(config.mac, config.name) >= 0;
+    }
+  }
+  if (identitiesChanged && !store_->saveSensorIdentities(identities_, kMaxSensorIdentities)) return false;
   for (size_t i = 0; i < kMaxSensors; ++i) {
     if (configs_[i].occupied && !loadHistoryLocked(i) &&
         !configureHistoryLocked(i, configs_[i].sleepSeconds, false)) {
@@ -286,13 +304,6 @@ bool SensorRegistry::loadHistoryLocked(size_t index) {
       if (destination.timestamp == 0 ||
           sample.timestamp >= destination.timestamp) {
         destination = sample;
-      }
-    }
-    for (size_t i = 0; i < history_[index].capacity; ++i) {
-      if (history_[index].samples[i].timestamp != 0) {
-        history_[index].samples[i].timestamp =
-            history_[index].samples[i].timestamp / desiredBucketSeconds *
-            desiredBucketSeconds;
       }
     }
     if (!persistHistoryLocked(index)) {
@@ -388,12 +399,6 @@ bool SensorRegistry::configureHistoryLocked(size_t index,
         samples[slot] = source;
       }
     }
-    for (size_t i = 0; i < capacity; ++i) {
-      if (samples[i].timestamp != 0) {
-        samples[i].timestamp =
-            samples[i].timestamp / normalized * normalized;
-      }
-    }
   }
 
   history_[index].revision = previous.revision;
@@ -457,6 +462,46 @@ int SensorRegistry::findIndexLocked(const uint8_t mac[6]) const {
   return -1;
 }
 
+int SensorRegistry::identityIndexLocked(const uint8_t mac[6]) const {
+  for (size_t i = 0; i < kMaxSensorIdentities; ++i)
+    if (identities_[i].name[0] && !memcmp(identities_[i].mac, mac, 6)) return static_cast<int>(i);
+  return -1;
+}
+
+int SensorRegistry::rememberIdentityLocked(const uint8_t mac[6], const char* name,
+                                          SensorIdentity* previous) {
+  int index = identityIndexLocked(mac);
+  bool replaceIdentity = false;
+  if (index < 0) for (size_t i = 0; i < kMaxSensorIdentities; ++i) {
+    if (!identities_[i].name[0]) { index = static_cast<int>(i); break; }
+  }
+  if (index < 0) for (size_t i = 0; i < kMaxSensorIdentities; ++i) {
+    // Remembered names are a bounded convenience cache. Historical entries
+    // must never prevent provisioning another sensor; active references stay.
+    if (findIndexLocked(identities_[i].mac) < 0) {
+      index = static_cast<int>(i);
+      replaceIdentity = true;
+      break;
+    }
+  }
+  if (index < 0) return -1;
+  if (previous) *previous = identities_[index];
+  if (replaceIdentity) identities_[index] = SensorIdentity{};
+  memcpy(identities_[index].mac, mac, 6);
+  copyText(identities_[index].name, String(name));
+  return index;
+}
+
+void SensorRegistry::commitConfigLocked(size_t index,
+    const SensorConfig& previous, const SensorConfig& saved) {
+  SensorConfig committed = saved;
+  // Keep serving the previous settings until NVS succeeds. Preserve radio
+  // acknowledgements of old commands received during that non-blocking save.
+  committed.pendingFlags &= ~(previous.pendingFlags & ~configs_[index].pendingFlags);
+  configs_[index] = committed;
+  runtime_[index].configPersistencePending = true;
+}
+
 int SensorRegistry::allocateIndexLocked(const uint8_t mac[6]) {
   for (size_t i = 0; i < kMaxSensors; ++i) {
     if (!configs_[i].occupied) {
@@ -468,6 +513,8 @@ int SensorRegistry::allocateIndexLocked(const uint8_t mac[6]) {
       configs_[i].revision = 1;
       snprintf(configs_[i].name, sizeof(configs_[i].name),
                "Sensor %02X:%02X:%02X", mac[3], mac[4], mac[5]);
+      const int identity = identityIndexLocked(mac);
+      if (identity >= 0) copyText(configs_[i].name, String(identities_[identity].name));
       ++generations_[i];
       runtime_[i].configPersistencePending = true;
       runtime_[i].storageInitializationPending = true;
@@ -482,6 +529,7 @@ bool SensorRegistry::registerTelemetry(
     const lil::protocol::TelemetryPayload& telemetry, int8_t rssi,
     SensorConfig& responseConfig, int8_t& txPowerQuarterDbm, bool& duplicate,
     uint32_t& generation) {
+  if (!lil::protocol::validTelemetryValues(telemetry)) return false;
   LockGuard lock(mutex_);
   int index = findIndexLocked(mac);
   if (index < 0) {
@@ -569,15 +617,25 @@ bool SensorRegistry::registerTelemetry(
   current.receivedPackets++;
   if (lil::protocol::isLiveSensor(telemetry.sensorType) && !discoveryMode &&
       !(telemetry.flags & lil::protocol::kBatteryProtectionActive)) {
+    const bool timed = (telemetry.live.flags & lil::protocol::kLiveTimingKnown) != 0;
+    const bool fresh = (telemetry.live.flags & lil::protocol::kLiveSampleFresh) != 0;
+    const bool gap = telemetry.motion.fifoOverrun ||
+        (telemetry.live.flags & lil::protocol::kLiveGap);
+    const bool measurement = !(telemetry.flags & lil::protocol::kSensorReadFailed) &&
+        (telemetry.capabilities &
+        (lil::protocol::kTemperature | lil::protocol::kMotion | lil::protocol::kOptical)) != 0;
+    // Idle contact packets retain the last card values, but do not fabricate
+    // additional readings between configured normal measurement windows.
+    const bool storeSample = gap || (measurement && (!timed || fresh));
     auto& live = live_[index];
     const size_t capacity = 60000 / lil::protocol::liveHistoryIntervalMs(telemetry.sensorType) + 1;
     if (live.samples && live.capacity != capacity) { heap_caps_free(live.samples); live = LiveHistory{}; }
     live.capacity = capacity;
-    if (!live.samples) live.samples = static_cast<LiveSample*>(heap_caps_calloc(
+    if (storeSample && !live.samples) live.samples = static_cast<LiveSample*>(heap_caps_calloc(
         capacity, sizeof(LiveSample), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-    if (!live.samples && heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) > capacity * sizeof(LiveSample) + 96U * 1024U)
+    if (storeSample && !live.samples && heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) > capacity * sizeof(LiveSample) + 96U * 1024U)
       live.samples = static_cast<LiveSample*>(heap_caps_calloc(capacity, sizeof(LiveSample), MALLOC_CAP_8BIT));
-    if (live.samples) {
+    if (storeSample && live.samples) {
       live.samples[live.head] = {current.lastSeenMs, telemetry};
       live.head = (live.head + 1) % live.capacity;
       if (live.count < live.capacity) ++live.count;
@@ -669,6 +727,8 @@ size_t SensorRegistry::views(SensorView* output, size_t capacity) const {
     if (configs_[i].occupied) {
       output[written].config = configs_[i];
       output[written].runtime = runtime_[i];
+      const int identity = identityIndexLocked(configs_[i].mac);
+      output[written].motionReference = identity >= 0 ? identities_[identity].motion : MotionReference{};
       ++written;
     }
   }
@@ -684,16 +744,32 @@ bool SensorRegistry::updateConfig(const uint8_t mac[6], const String& name,
                                   lil::protocol::EnvironmentalSensorType sensorType,
                                   float temperatureOffsetC,
                                   float batteryCalibrationFactor) {
+  const bool validType = sensorType == lil::protocol::EnvironmentalSensorType::kAutoDetect ||
+      sensorType == lil::protocol::EnvironmentalSensorType::kBme280 ||
+      sensorType == lil::protocol::EnvironmentalSensorType::kBme680 ||
+      lil::protocol::isLiveSensor(sensorType) || sensorType == lil::protocol::EnvironmentalSensorType::kDisabled;
+  if (!validType || !name.length() || !isfinite(temperatureOffsetC) ||
+      !isfinite(batteryCalibrationFactor)) return false;
+  uint16_t assigned = 0;
+  for (const uint8_t field : {fields.temperature, fields.humidity, fields.pressure,
+                            fields.iaq, fields.battery, fields.gasResistance}) {
+    if (field > 8 || (field && (assigned & (1U << field)))) return false;
+    if (field) assigned |= 1U << field;
+  }
   LockGuard storage(storageMutex_);
   LockGuard lock(mutex_);
   const int index = findIndexLocked(mac);
   if (index < 0) {
     return false;
   }
-  SensorConfig& config = configs_[index];
+  SensorConfig config = configs_[index];
+  const SensorConfig previousConfig = config;
   const bool wasProvisioned = config.provisioned;
   const bool sensorTypeChanged =
       config.environmentalSensorType != sensorType;
+  SensorIdentity previousIdentity{};
+  const int identity = rememberIdentityLocked(mac, name.c_str(), &previousIdentity);
+  if (identity < 0) return false;
   copyText(config.name, name);
   const uint32_t newSleepSeconds =
       constrain(sleepSeconds, kMinSleepSeconds, kMaxSleepSeconds);
@@ -723,8 +799,31 @@ bool SensorRegistry::updateConfig(const uint8_t mac[6], const String& name,
   if (config.revision == 0) {
     config.revision = 1;
   }
-  runtime_[index].configPersistencePending = true;
-  const SensorConfig snapshot = configs_[index];
+  SensorIdentity identities[kMaxSensorIdentities];
+  memcpy(identities, identities_, sizeof(identities));
+  identities_[identity] = previousIdentity;
+  const SensorConfig snapshot = config;
+  lock.unlock();
+  const bool configSaved = store_->saveSensorConfig(index, snapshot);
+  const bool identitySaved = configSaved && store_->saveSensorIdentities(identities, kMaxSensorIdentities);
+  if (!configSaved || !identitySaved) {
+    lock.relock();
+    const SensorConfig restored = configs_[index];
+    runtime_[index].configPersistencePending = true;
+    lock.unlock();
+    // An identity-write error may follow a successful config write. Restore
+    // the durable config as well; pending state retries if storage stays full.
+    store_->saveSensorConfig(index, restored);
+    return false;
+  }
+  lock.relock();
+  commitConfigLocked(index, previousConfig, snapshot);
+  identities_[identity] = identities[identity];
+  if (sensorTypeChanged) {
+    if (live_[index].samples) heap_caps_free(live_[index].samples);
+    live_[index] = LiveHistory{};
+    runtime_[index].hasRecordingStatus = false;
+  }
   lock.unlock();
   if (lil::protocol::isLiveSensor(snapshot.environmentalSensorType)) {
     if (history_[index].samples) heap_caps_free(history_[index].samples);
@@ -732,7 +831,7 @@ bool SensorRegistry::updateConfig(const uint8_t mac[6], const String& name,
   } else if (history_[index].bucketSeconds != snapshot.sleepSeconds) {
     configureHistoryLocked(index, snapshot.sleepSeconds, true);
   }
-  return store_->saveSensorConfig(index, snapshot);
+  return true;
 }
 
 bool SensorRegistry::setThingSpeakChannel(const uint8_t mac[6],
@@ -745,11 +844,13 @@ bool SensorRegistry::setThingSpeakChannel(const uint8_t mac[6],
   if (index < 0) {
     return false;
   }
-  SensorConfig& config = configs_[index];
+  SensorConfig config = configs_[index];
+  const SensorConfig previousConfig = config;
   const bool wasProvisioned = config.provisioned;
   config.thingSpeakChannelId = channelId;
   copyText(config.thingSpeakWriteKey, writeKey);
-  config.cloudUploadEnabled = channelId != 0 && writeKey.length() > 0;
+  config.cloudUploadEnabled = channelId != 0 && writeKey.length() > 0 &&
+      !lil::protocol::isLiveSensor(config.environmentalSensorType);
   config.thingSpeakProfileSlot = thingSpeakProfileSlot;
   config.provisioned = true;
   if (!wasProvisioned) {
@@ -759,10 +860,11 @@ bool SensorRegistry::setThingSpeakChannel(const uint8_t mac[6],
       config.revision = 1;
     }
   }
-  runtime_[index].configPersistencePending = true;
-  const SensorConfig snapshot = configs_[index];
+  const SensorConfig snapshot = config;
   lock.unlock();
-  return store_->saveSensorConfig(index, snapshot);
+  const bool saved = store_->saveSensorConfig(index, snapshot);
+  if (saved) { lock.relock(); commitConfigLocked(index, previousConfig, snapshot); }
+  return saved;
 }
 
 bool SensorRegistry::syncThingSpeakProfile(
@@ -773,6 +875,9 @@ bool SensorRegistry::syncThingSpeakProfile(
   LockGuard storage(storageMutex_);
   LockGuard lock(mutex_);
   bool success = true;
+  SensorConfig previous[kMaxSensors];
+  memcpy(previous, configs_, sizeof(previous));
+  bool changed[kMaxSensors]{};
   for (size_t i = 0; i < kMaxSensors; ++i) {
     if (!configs_[i].occupied ||
         configs_[i].thingSpeakProfileSlot != slot) {
@@ -784,10 +889,23 @@ bool SensorRegistry::syncThingSpeakProfile(
       configs_[i].cloudUploadEnabled = false;
     }
     runtime_[i].configPersistencePending = true;
+    changed[i] = true;
     const SensorConfig snapshot = configs_[i];
     lock.unlock();
     success = store_->saveSensorConfig(i, snapshot) && success;
     lock.relock();
+  }
+  if (!success) {
+    for (size_t i = 0; i < kMaxSensors; ++i) if (changed[i]) {
+      configs_[i].thingSpeakChannelId = previous[i].thingSpeakChannelId;
+      copyText(configs_[i].thingSpeakWriteKey, previous[i].thingSpeakWriteKey);
+      configs_[i].cloudUploadEnabled = previous[i].cloudUploadEnabled;
+      const SensorConfig restored = configs_[i];
+      lock.unlock();
+      // Preserve command acknowledgements which arrived while flash was busy.
+      store_->saveSensorConfig(i, restored);
+      lock.relock();
+    }
   }
   return success;
 }
@@ -799,6 +917,9 @@ bool SensorRegistry::removeThingSpeakProfile(uint8_t slot) {
   LockGuard storage(storageMutex_);
   LockGuard lock(mutex_);
   bool success = true;
+  SensorConfig previous[kMaxSensors];
+  memcpy(previous, configs_, sizeof(previous));
+  bool changed[kMaxSensors]{};
   for (size_t i = 0; i < kMaxSensors; ++i) {
     if (!configs_[i].occupied ||
         configs_[i].thingSpeakProfileSlot != slot) {
@@ -809,10 +930,23 @@ bool SensorRegistry::removeThingSpeakProfile(uint8_t slot) {
     configs_[i].thingSpeakWriteKey[0] = '\0';
     configs_[i].cloudUploadEnabled = false;
     runtime_[i].configPersistencePending = true;
+    changed[i] = true;
     const SensorConfig snapshot = configs_[i];
     lock.unlock();
     success = store_->saveSensorConfig(i, snapshot) && success;
     lock.relock();
+  }
+  if (!success) {
+    for (size_t i = 0; i < kMaxSensors; ++i) if (changed[i]) {
+      configs_[i].thingSpeakProfileSlot = previous[i].thingSpeakProfileSlot;
+      configs_[i].thingSpeakChannelId = previous[i].thingSpeakChannelId;
+      copyText(configs_[i].thingSpeakWriteKey, previous[i].thingSpeakWriteKey);
+      configs_[i].cloudUploadEnabled = previous[i].cloudUploadEnabled;
+      const SensorConfig restored = configs_[i];
+      lock.unlock();
+      store_->saveSensorConfig(i, restored);
+      lock.relock();
+    }
   }
   return success;
 }
@@ -824,7 +958,8 @@ bool SensorRegistry::requestFactoryReset(const uint8_t mac[6]) {
   if (index < 0) {
     return false;
   }
-  SensorConfig& config = configs_[index];
+  SensorConfig config = configs_[index];
+  const SensorConfig previousConfig = config;
   config.provisioned = false;
   config.pendingFlags &= ~kAwaitingProvisioningAck;
   config.pendingFlags |= lil::protocol::kFactoryReset;
@@ -832,10 +967,11 @@ bool SensorRegistry::requestFactoryReset(const uint8_t mac[6]) {
   if (config.revision == 0) {
     config.revision = 1;
   }
-  runtime_[index].configPersistencePending = true;
-  const SensorConfig snapshot = configs_[index];
+  const SensorConfig snapshot = config;
   lock.unlock();
-  return store_->saveSensorConfig(index, snapshot);
+  const bool saved = store_->saveSensorConfig(index, snapshot);
+  if (saved) { lock.relock(); commitConfigLocked(index, previousConfig, snapshot); }
+  return saved;
 }
 
 bool SensorRegistry::requestIaqCalibrationReset(const uint8_t mac[6]) {
@@ -845,16 +981,19 @@ bool SensorRegistry::requestIaqCalibrationReset(const uint8_t mac[6]) {
   if (index < 0) {
     return false;
   }
-  configs_[index].pendingFlags |= lil::protocol::kResetIaqCalibration;
-  configs_[index].bme680QuickStartComplete = true;
-  ++configs_[index].revision;
-  if (configs_[index].revision == 0) {
-    configs_[index].revision = 1;
+  const SensorConfig previousConfig = configs_[index];
+  SensorConfig config = previousConfig;
+  config.pendingFlags |= lil::protocol::kResetIaqCalibration;
+  config.bme680QuickStartComplete = true;
+  ++config.revision;
+  if (config.revision == 0) {
+    config.revision = 1;
   }
-  runtime_[index].configPersistencePending = true;
-  const SensorConfig snapshot = configs_[index];
+  const SensorConfig snapshot = config;
   lock.unlock();
-  return store_->saveSensorConfig(index, snapshot);
+  const bool saved = store_->saveSensorConfig(index, snapshot);
+  if (saved) { lock.relock(); commitConfigLocked(index, previousConfig, snapshot); }
+  return saved;
 }
 
 bool SensorRegistry::deleteSensor(const uint8_t mac[6]) {
@@ -863,9 +1002,11 @@ bool SensorRegistry::deleteSensor(const uint8_t mac[6]) {
   const int index = findIndexLocked(mac);
   if (index < 0) return false;
   lock.unlock();
-  if (!store_->deleteSensorConfig(index) ||
-      !store_->deleteHistory(index) ||
-      !store_->deleteLatestTelemetry(index)) {
+  // Keep the durable identity until its old slot files are removed. A failed
+  // filesystem operation must not let a reboot reuse those files for a node.
+  if (!store_->deleteHistory(index) ||
+      !store_->deleteLatestTelemetry(index) ||
+      !store_->deleteSensorConfig(index)) {
     return false;
   }
   lock.relock();
@@ -880,6 +1021,41 @@ bool SensorRegistry::deleteSensor(const uint8_t mac[6]) {
   }
   history_[index] = StoredHistory{};
   return true;
+}
+
+bool SensorRegistry::setMotionReference(const uint8_t mac[6], bool clear) {
+  LockGuard storage(storageMutex_);
+  LockGuard lock(mutex_);
+  const int index = findIndexLocked(mac);
+  if (index < 0) return false;
+  MotionReference reference{};
+  if (!clear) {
+    if (configs_[index].environmentalSensorType != lil::protocol::EnvironmentalSensorType::kAutoDetect &&
+        configs_[index].environmentalSensorType != lil::protocol::EnvironmentalSensorType::kLsm6dsox) return false;
+    const auto& current = runtime_[index];
+    const auto& t = current.telemetry;
+    const uint32_t age = millis() - current.lastSeenMs;
+    const uint32_t limit = configs_[index].sleepSeconds * 1000UL + 2000UL;
+    if (!current.hasTelemetry || t.sensorType != lil::protocol::EnvironmentalSensorType::kLsm6dsox ||
+        !(t.capabilities & lil::protocol::kMotion) || (t.flags & (lil::protocol::kSensorReadFailed | lil::protocol::kBatteryProtectionActive)) ||
+        t.motion.fifoOverrun || (t.live.flags & lil::protocol::kLiveGap) || age > limit ||
+        ((t.live.flags & lil::protocol::kLiveTimingKnown) &&
+         (t.live.acquisitionAgeMs == UINT16_MAX || uint64_t(t.live.acquisitionAgeMs) + age > limit))) return false;
+    memcpy(reference.accelerationG, t.motion.accelerationG, sizeof(reference.accelerationG));
+    memcpy(reference.angularRateDps, t.motion.angularRateDps, sizeof(reference.angularRateDps));
+    if (!validMotionReference(reference)) return false;
+    reference.enabled = true;
+  }
+  const int identity = rememberIdentityLocked(mac, configs_[index].name);
+  if (identity < 0) return false;
+  const MotionReference previous = identities_[identity].motion;
+  identities_[identity].motion = reference;
+  SensorIdentity snapshot[kMaxSensorIdentities];
+  memcpy(snapshot, identities_, sizeof(snapshot));
+  lock.unlock();
+  const bool saved = store_->saveSensorIdentities(snapshot, kMaxSensorIdentities);
+  if (!saved) { lock.relock(); identities_[identity].motion = previous; }
+  return saved;
 }
 
 bool SensorRegistry::saveLatestTelemetryLocked(
@@ -916,18 +1092,24 @@ bool SensorRegistry::recordHistoryLocked(
   // A bucket contains the newest received measurement in one configured
   // sensor interval. The ring size changes with that interval while its time
   // span remains 24 hours.
-  if (sample.timestamp > bucket) return true;
+  if (sample.timestamp > static_cast<uint32_t>(now)) return true;
   sample = HistorySample{};
-  sample.timestamp = bucket;
+  // Buckets choose storage slots; the point retains its real reception time.
+  // Rounding the timestamp backwards can hide a recent reading in short views.
+  sample.timestamp = static_cast<uint32_t>(now);
   sample.capabilities = telemetry.capabilities;
   if ((telemetry.flags & lil::protocol::kBme680RawFallback) != 0) {
     sample.capabilities &= ~lil::protocol::kIaq;
   }
   if ((telemetry.flags & lil::protocol::kSensorReadFailed) != 0)
     sample.capabilities &= lil::protocol::kBattery;
-  for (size_t axis = 0; axis < 3; ++axis) {
-    sample.accelerationMilliG[axis] = static_cast<int16_t>(lroundf(constrain(telemetry.motion.accelerationG[axis], -32.0F, 32.0F) * 1000));
-    sample.angularRateDeciDps[axis] = static_cast<int16_t>(lroundf(constrain(telemetry.motion.angularRateDps[axis], -3000.0F, 3000.0F) * 10));
+  if (telemetry.flags & lil::protocol::kBatteryReadFailed)
+    sample.capabilities &= ~lil::protocol::kBattery;
+  if (sample.capabilities & lil::protocol::kMotion) {
+    for (size_t axis = 0; axis < 3; ++axis) {
+      sample.accelerationMilliG[axis] = static_cast<int16_t>(lroundf(constrain(telemetry.motion.accelerationG[axis], -32.0F, 32.0F) * 1000));
+      sample.angularRateDeciDps[axis] = static_cast<int16_t>(lroundf(constrain(telemetry.motion.angularRateDps[axis], -3000.0F, 3000.0F) * 10));
+    }
   }
   sample.peakAccelerationMilliG = encodeUnsigned(telemetry.motion.peakAccelerationG, 1000.0F);
   sample.peakAngularRateDeciDps = encodeUnsigned(telemetry.motion.peakAngularRateDps, 10.0F);
@@ -1027,14 +1209,31 @@ bool SensorRegistry::generationMatches(const uint8_t mac[6], uint32_t generation
   return index >= 0 && generations_[index] == generation;
 }
 
-bool SensorRegistry::findConfig(const uint8_t mac[6], SensorConfig& output) const {
+bool SensorRegistry::findConfig(const uint8_t mac[6], SensorConfig& output,
+                               uint32_t* generation) const {
   LockGuard lock(mutex_);
   const int index = findIndexLocked(mac);
   if (index < 0) {
     return false;
   }
   output = configs_[index];
+  if (generation) *generation = generations_[index];
   return true;
+}
+
+bool SensorRegistry::cloudUploadMatches(
+    const uint8_t mac[6], uint32_t generation, uint32_t channelId,
+    const char* writeKey, const ThingSpeakFieldMapping& fields) const {
+  if (!writeKey) return false;
+  LockGuard lock(mutex_);
+  const int index = findIndexLocked(mac);
+  if (index < 0 || generations_[index] != generation) return false;
+  const auto& config = configs_[index];
+  return config.provisioned && config.cloudUploadEnabled &&
+      !lil::protocol::isLiveSensor(config.environmentalSensorType) &&
+      config.thingSpeakChannelId == channelId &&
+      !strcmp(config.thingSpeakWriteKey, writeKey) &&
+      !memcmp(&config.thingSpeakFields, &fields, sizeof(fields));
 }
 
 bool SensorRegistry::findView(const uint8_t mac[6], SensorView& output) const {
@@ -1045,6 +1244,8 @@ bool SensorRegistry::findView(const uint8_t mac[6], SensorView& output) const {
   }
   output.config = configs_[index];
   output.runtime = runtime_[index];
+  const int identity = identityIndexLocked(mac);
+  output.motionReference = identity >= 0 ? identities_[identity].motion : MotionReference{};
   return true;
 }
 

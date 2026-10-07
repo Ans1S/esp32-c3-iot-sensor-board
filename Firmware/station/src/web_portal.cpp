@@ -1,4 +1,5 @@
 #include "web_portal.h"
+#include "recording_json.h"
 #include "ota_service.h"
 #include "ota_page.h"
 #include "recording_archive.h"
@@ -11,6 +12,7 @@
 #include <esp_timer.h>
 
 #include "web_pages.h"
+#include "web_input.h"
 
 namespace station {
 
@@ -23,6 +25,22 @@ constexpr uint32_t kLoginBlockMs = 30000;
 constexpr uint32_t kLoginAttemptWindowMs = 5UL * 60UL * 1000UL;
 constexpr uint64_t kSessionLifetimeMs = 30ULL * 60ULL * 1000ULL;
 constexpr uint32_t kSessionLifetimeSeconds = kSessionLifetimeMs / 1000UL;
+
+bool readUnsignedArgument(WebServer& server, const char* name,
+                          uint32_t& value, uint32_t minimum = 0,
+                          uint32_t maximum = UINT32_MAX,
+                          bool optional = false) {
+  if (!server.hasArg(name)) return optional;
+  return webinput::unsignedDecimal(server.arg(name).c_str(), value,
+                                  minimum, maximum);
+}
+
+bool readFieldArgument(WebServer& server, const char* name, uint8_t& field) {
+  uint32_t value = 0;
+  if (!readUnsignedArgument(server, name, value, 0, 8, true)) return false;
+  field = static_cast<uint8_t>(value);
+  return true;
+}
 
 void hashAdminPassword(const String& password, char output[65]) {
   SHA256Builder hash;
@@ -254,13 +272,10 @@ bool WebPortal::begin(StationConfig& config, ConfigStore& store,
       otaUploadAuthorized_ = requireAuthentication() && verifyCsrf();
       otaUploadOk_ = false; otaUploadError_ = "Upload failed";
       if (!otaUploadAuthorized_) return;
-      uint8_t mac[6]; unsigned int parsed[6]; char extra;
-      const String value = server_.arg("mac");
-      if (sscanf(value.c_str(), "%2x:%2x:%2x:%2x:%2x:%2x%c", &parsed[0], &parsed[1],
-          &parsed[2], &parsed[3], &parsed[4], &parsed[5], &extra) != 6) {
+      uint8_t mac[6];
+      if (!SensorRegistry::parseMac(server_.arg("mac"), mac)) {
         otaUploadError_ = "Invalid node address"; return;
       }
-      for (size_t i = 0; i < 6; ++i) mac[i] = parsed[i];
       SensorConfig node{};
       if (!registry_->findConfig(mac, node) || !node.provisioned) {
         otaUploadError_ = "Select a configured node"; return;
@@ -282,6 +297,7 @@ bool WebPortal::begin(StationConfig& config, ConfigStore& store,
   });
   server_.on("/api/recordings", HTTP_GET, [this]() { if (requireAuthentication()) sendRecordings(); });
   server_.on("/api/recording", HTTP_GET, [this]() { if (requireAuthentication()) sendRecording(); });
+  server_.on("/api/motion-reference", HTTP_POST, [this]() { if (requireAuthentication() && verifyCsrf()) setMotionReference(); });
   server_.on("/api/recording/delete", HTTP_POST, [this]() {
     if (requireAuthentication() && verifyCsrf()) deleteRecording();
   });
@@ -674,6 +690,7 @@ void WebPortal::loop() {
 
 void WebPortal::sendJsonStatus() {
   JsonDocument document;
+  document["storageAvailable"] = store_->storageAvailable();
   document["uptimeMs"] = millis();
   document["freeHeap"] = ESP.getFreeHeap();
   JsonObject wifi = document["wifi"].to<JsonObject>();
@@ -718,12 +735,18 @@ void WebPortal::sendJsonStatus() {
     const SensorView& view = sensorViews[i];
     const bool batteryProtection =
         (view.runtime.telemetry.flags & lil::protocol::kBatteryProtectionActive) != 0;
+    const bool recordingActive = view.runtime.hasRecordingStatus &&
+        view.runtime.recording.state == lil::recording::State::Recording;
+    const bool periodicPrecision =
+        (view.runtime.telemetry.sensorType == lil::protocol::EnvironmentalSensorType::kLsm6dsox ||
+         view.runtime.telemetry.sensorType == lil::protocol::EnvironmentalSensorType::kTmp117) &&
+        !recordingActive;
     const uint32_t ageMs = view.runtime.hasTelemetry
                                ? millis() - view.runtime.lastSeenMs
                                : 0;
     const uint32_t onlineLimitMs =
         batteryProtection ? 26UL * 60UL * 60UL * 1000UL :
-        lil::protocol::isLiveSensor(view.runtime.telemetry.sensorType) ? 15000UL :
+        lil::protocol::isLiveSensor(view.runtime.telemetry.sensorType) && !periodicPrecision ? 15000UL :
         max(view.config.sleepSeconds < 60 ? 5000UL : 120000UL, view.config.sleepSeconds * 3000UL);
     JsonObject item = sensors.add<JsonObject>();
     item["mac"] = SensorRegistry::formatMac(view.config.mac);
@@ -744,6 +767,8 @@ void WebPortal::sendJsonStatus() {
         view.config.thingSpeakFields.gasResistance;
     item["configuredSensorType"] =
         static_cast<uint8_t>(view.config.environmentalSensorType);
+    item["configPending"] = !view.runtime.hasTelemetry ||
+        view.runtime.telemetry.appliedConfigRevision != view.config.revision;
     item["sensorType"] =
         static_cast<uint8_t>(view.runtime.telemetry.sensorType);
     item["temperatureOffsetC"] = view.config.temperatureOffsetC;
@@ -780,14 +805,21 @@ void WebPortal::sendJsonStatus() {
     item["live"] = !batteryProtection && lil::protocol::isLiveSensor(view.runtime.telemetry.sensorType);
     item["batteryProtection"] = batteryProtection;
     item["liveRevision"] = view.runtime.receivedPackets;
-    item["reportIntervalMs"] = batteryProtection ? 86400000UL : lil::protocol::isLiveSensor(view.runtime.telemetry.sensorType) ?
-        lil::protocol::liveReportIntervalMs(view.runtime.telemetry.sensorType) : view.config.sleepSeconds * 1000;
+    item["normalSampling"] = periodicPrecision;
+    item["reportIntervalMs"] = batteryProtection ? 86400000UL : lil::protocol::isLiveSensor(view.runtime.telemetry.sensorType) && !periodicPrecision ?
+        (view.runtime.telemetry.sensorType == lil::protocol::EnvironmentalSensorType::kLsm6dsox && recordingActive ?
+            lil::timing::imuRecordingIntervalMs(view.runtime.recording.elapsedMs) :
+            lil::protocol::liveReportIntervalMs(view.runtime.telemetry.sensorType)) : view.config.sleepSeconds * 1000;
     const auto& motion = view.runtime.telemetry.motion;
+    auto reference = item["motionReference"].to<JsonObject>();
+    reference["enabled"] = view.motionReference.enabled;
     const char* accelerationKeys[] = {"ax", "ay", "az"};
     const char* angularKeys[] = {"gx", "gy", "gz"};
     for (size_t axis = 0; axis < 3; ++axis) {
       item[accelerationKeys[axis]] = motion.accelerationG[axis];
       item[angularKeys[axis]] = motion.angularRateDps[axis];
+      reference[accelerationKeys[axis]] = view.motionReference.accelerationG[axis];
+      reference[angularKeys[axis]] = view.motionReference.angularRateDps[axis];
     }
     item["peakAcceleration"] = motion.peakAccelerationG;
     item["peakAngularRate"] = motion.peakAngularRateDps;
@@ -844,13 +876,7 @@ uint64_t recordingSession(const String& text) {
   for (size_t i = 0; i < text.length(); ++i) if (!isxdigit(static_cast<unsigned char>(text[i]))) return 0;
   return strtoull(text.c_str(), nullptr, 16);
 }
-void recordingInfoJson(JsonObject object, const RecordingInfo& info) {
-  char session[17]; snprintf(session, sizeof(session), "%016llx", static_cast<unsigned long long>(info.session));
-  object["session"] = session; object["epochMs"] = info.epochMs;
-  object["durationMs"] = info.durationMs; object["expected"] = info.expected;
-  object["stored"] = info.stored; object["complete"] = info.stored == info.expected;
-  object["sensorType"] = static_cast<uint8_t>(info.type);
-}
+
 }
 void WebPortal::sendRecordings() {
   uint8_t mac[6]{}; SensorConfig config{};
@@ -870,45 +896,30 @@ void WebPortal::sendRecording() {
   }
   std::unique_ptr<lil::recording::Record[]> records(new (std::nothrow) lil::recording::Record[128]);
   if (!records) { sendJsonResult(false, "Recording buffer unavailable"); return; }
-  uint32_t offset = strtoul(server_.arg("offset").c_str(), nullptr, 10);
-  const uint32_t fromMs = server_.hasArg("fromMs") ? strtoul(server_.arg("fromMs").c_str(), nullptr, 10) : UINT32_MAX;
+  uint32_t offset = 0, fromMs = UINT32_MAX;
+  if (!readUnsignedArgument(server_, "offset", offset, 0, UINT32_MAX, true) ||
+      !readUnsignedArgument(server_, "fromMs", fromMs, 0, UINT32_MAX, true)) {
+    sendJsonResult(false, "Invalid recording cursor"); return;
+  }
   RecordingInfo info{};
   const size_t count = recordingArchive.read(mac, session, offset, records.get(), 128, info, fromMs);
   if (!info.session) { sendJsonResult(false, "Recording not found"); return; }
+  if (info.readError) { sendJsonResult(false, "Stored recording failed CRC validation. Synchronize again before exporting."); return; }
   JsonDocument metadata; recordingInfoJson(metadata.to<JsonObject>(), info);
   metadata["nextOffset"] = offset;
   String opening; serializeJson(metadata, opening); opening.remove(opening.length()-1);
   sendNoCache(server_); server_.setContentLength(CONTENT_LENGTH_UNKNOWN); server_.send(200, "application/json", "");
-  server_.sendContent(opening + ",\"points\":[");
+  // Batch points to avoid a TCP/chunked-response write for every JSON field group.
+  String chunk = opening + ",\"points\":[";
+  chunk.reserve(6144);
   for (size_t i = 0; i < count; ++i) {
-    const auto& record = records[i]; const auto t = lil::recording::decode(record);
-    JsonDocument point; point["sampleMs"] = record.sampleMs;
-    point["t"] = int64_t(record.sampleMs) - (record.ageMs == UINT16_MAX ? 0 : record.ageMs);
-    point["estimateT"] = int64_t(record.sampleMs) - (t.live.estimateAgeMs == UINT16_MAX ? 0 : t.live.estimateAgeMs);
-    point["windowMs"] = record.windowMs;
-    point["gap"] = bool(record.flags & lil::protocol::kLiveGap) || t.motion.fifoOverrun;
-    if ((t.capabilities & lil::protocol::kTemperature) && (t.live.flags & lil::protocol::kLiveSampleFresh)) point["temperature"] = t.temperatureC;
-    if (t.capabilities & lil::protocol::kMotion) {
-      const char* keys[] = {"ax","ay","az","gx","gy","gz"};
-      for (int axis = 0; axis < 6; ++axis) point[keys[axis]] = axis < 3 ? t.motion.accelerationG[axis] : t.motion.angularRateDps[axis-3];
-      point["peakAcceleration"] = t.motion.peakAccelerationG; point["peakAngularRate"] = t.motion.peakAngularRateDps;
-      point["sampleCount"] = t.motion.sampleCount;
-      if (t.live.flags & lil::protocol::kMotionFeedbackPresent) {
-        point["steps"] = t.motionFeedback.steps;
-        point["activeSeconds"] = t.motionFeedback.activeSeconds;
-      }
-    }
-    if ((t.capabilities & lil::protocol::kHeartRate) && (t.live.flags & lil::protocol::kLiveEstimateFresh)) point["heartRate"] = t.pulse.beatsPerMinute;
-    point["pulseStatus"] = t.pulse.status; point["quality"] = t.pulse.quality;
-    point["battery"] = record.batteryMv / 1000.0F;
-    auto wave = point["wave"].to<JsonArray>();
-    for (uint8_t j = 0; j < t.live.count; ++j) {
-      auto frame = wave.add<JsonObject>(); frame["t"] = int64_t(record.sampleMs) - t.live.optical[j].ageMs;
-      frame["red"] = t.live.optical[j].red; frame["infrared"] = t.live.optical[j].infrared;
-    }
-    String json; serializeJson(point, json); if (i) server_.sendContent(","); server_.sendContent(json);
+    JsonDocument point; recordingPointJson(point, records[i]);
+    if (i) chunk += ',';
+    appendRecordingJson(point, chunk);
+    if (chunk.length() >= 4096) { server_.sendContent(chunk); chunk = ""; }
   }
-  server_.sendContent("]}"); server_.sendContent("");
+  chunk += "]}";
+  server_.sendContent(chunk); server_.sendContent("");
 }
 void WebPortal::deleteRecording() {
   uint8_t mac[6]{}; SensorView view{};
@@ -922,7 +933,20 @@ void WebPortal::deleteRecording() {
   sendJsonResult(recordingArchive.remove(mac, session), "Recording deleted");
 }
 
+void WebPortal::setMotionReference() {
+  uint8_t mac[6]{};
+  const bool clear = server_.arg("clear") == "1";
+  const bool saved = SensorRegistry::parseMac(server_.arg("mac"), mac) && registry_->setMotionReference(mac, clear);
+  sendJsonResult(saved, saved ? (clear ? "Motion reference cleared." : "All six axes are now relative to this resting position.") :
+      "Could not set the reference. Keep the sensor still on the table and wait for a fresh motion reading.");
+}
+
 void WebPortal::sendJsonHistory() {
+  uint32_t afterMs = 0, since = 0;
+  if (!readUnsignedArgument(server_, "afterMs", afterMs, 0, UINT32_MAX, true) ||
+      !readUnsignedArgument(server_, "since", since, 0, UINT32_MAX, true)) {
+    sendJsonResult(false, "Invalid history cursor"); return;
+  }
   uint8_t mac[6]{};
   if (!SensorRegistry::parseMac(server_.arg("mac"), mac)) {
     sendJsonResult(false, "Invalid sensor MAC address");
@@ -949,7 +973,6 @@ void WebPortal::sendJsonHistory() {
     server_.sendContent(String("{\"live\":true,\"bucketSeconds\":") +
         String(lil::protocol::liveReportIntervalMs(liveView.runtime.telemetry.sensorType) / 1000.0F, 1) + ",\"points\":[");
     size_t emitted = 0;
-    const uint32_t afterMs = strtoul(server_.arg("afterMs").c_str(), nullptr, 10);
     for (size_t i = 0; i < count; ++i) {
       if (server_.hasArg("afterMs") && static_cast<int32_t>(samples[i].receivedMs - afterMs) <= 0) continue;
       const auto& sample = samples[i]; const auto& t = sample.telemetry;
@@ -1024,7 +1047,6 @@ void WebPortal::sendJsonHistory() {
   server_.sendContent(opening);
   String chunk;
   chunk.reserve(2048);
-  const uint32_t since = static_cast<uint32_t>(max(0L, server_.arg("since").toInt()));
   size_t emitted = 0;
   for (size_t i = 0; i < count; ++i) {
     const HistorySample& sample = samples[i];
@@ -1097,6 +1119,7 @@ void WebPortal::sendJsonHistory() {
 
 void WebPortal::sendJsonConfig() {
   JsonDocument document;
+  document["storageAvailable"] = store_->storageAvailable();
   document["hostname"] = "w-charger";
   document["wifiSsid"] = config_->wifiSsid;
   document["wifiPasswordSet"] = config_->wifiPassword[0] != '\0';
@@ -1164,7 +1187,11 @@ void WebPortal::saveSetup() {
   const String userApiKey = server_.arg("userApiKey");
   const String adminPassword = server_.arg("adminPassword");
   const String confirmAdminPassword = server_.arg("confirmAdminPassword");
-  const uint32_t defaultSleep = server_.arg("defaultSleep").toInt();
+  uint32_t defaultSleep = 0;
+  if (!readUnsignedArgument(server_, "defaultSleep", defaultSleep,
+                            kMinSleepSeconds, kMaxSleepSeconds)) {
+    sendJsonResult(false, "Invalid measurement interval"); return;
+  }
   if ((!adminPassword.isEmpty() &&
        (adminPassword.length() < 8 || adminPassword.length() > 64)) ||
       adminPassword != confirmAdminPassword) {
@@ -1204,10 +1231,14 @@ void WebPortal::saveSetupSensor() {
   uint8_t mac[6];
   SensorView view{};
   const String name = server_.arg("name");
-  const uint32_t sleepSeconds = server_.arg("sleepSeconds").toInt();
+  uint32_t sleepSeconds = 0, sensorTypeValue = 0;
+  if (!readUnsignedArgument(server_, "sleepSeconds", sleepSeconds,
+                            kMinSleepSeconds, kMaxSleepSeconds) ||
+      !readUnsignedArgument(server_, "sensorType", sensorTypeValue, 0, 255)) {
+    sendJsonResult(false, "Invalid sensor type or interval"); return;
+  }
   const auto sensorType =
-      static_cast<lil::protocol::EnvironmentalSensorType>(
-          server_.arg("sensorType").toInt());
+      static_cast<lil::protocol::EnvironmentalSensorType>(sensorTypeValue);
   const bool validSensorType =
       sensorType == lil::protocol::EnvironmentalSensorType::kAutoDetect ||
       sensorType == lil::protocol::EnvironmentalSensorType::kBme280 ||
@@ -1266,8 +1297,12 @@ void WebPortal::saveStation() {
   const String newAdminPassword = server_.arg("newAdminPassword");
   const String confirmAdminPassword = server_.arg("confirmAdminPassword");
   const bool removeAdminPassword = server_.hasArg("removeAdminPassword");
-  const uint32_t defaultSleep = server_.arg("defaultSleep").toInt();
-  const int fallbackChannelValue = server_.arg("fallbackChannel").toInt();
+  uint32_t defaultSleep = 0, fallbackChannelValue = 0;
+  if (!readUnsignedArgument(server_, "defaultSleep", defaultSleep,
+                            kMinSleepSeconds, kMaxSleepSeconds) ||
+      !readUnsignedArgument(server_, "fallbackChannel", fallbackChannelValue, 1, 13)) {
+    sendJsonResult(false, "Invalid station interval or radio channel"); return;
+  }
   if (ssid.isEmpty() || ssid.length() > 32 || wifiPassword.length() > 64 ||
       userApiKey.length() > 40 || defaultSleep < kMinSleepSeconds ||
       defaultSleep > kMaxSleepSeconds || fallbackChannelValue < 1 ||
@@ -1330,12 +1365,23 @@ void WebPortal::saveStation() {
 
 void WebPortal::saveSensor() {
   uint8_t mac[6];
-  const uint32_t sleepSeconds = server_.arg("sleepSeconds").toInt();
-  uint32_t channelId = server_.arg("channelId").toInt();
+  uint32_t sleepSeconds = 0, channelId = 0, sensorTypeValue = 0;
+  if (!readUnsignedArgument(server_, "sleepSeconds", sleepSeconds,
+                            kMinSleepSeconds, kMaxSleepSeconds) ||
+      !readUnsignedArgument(server_, "channelId", channelId, 0, UINT32_MAX, true) ||
+      !readUnsignedArgument(server_, "sensorType", sensorTypeValue, 0, 255)) {
+    sendJsonResult(false, "Invalid sensor configuration"); return;
+  }
   String writeKey = server_.arg("writeKey");
   int profileIndex = -1;
-  if (server_.hasArg("profileSlot")) {
-    profileIndex = server_.arg("profileSlot").toInt();
+  if (server_.hasArg("profileSlot") && server_.arg("profileSlot") != "-1") {
+    uint32_t parsedSlot = 0;
+    if (!readUnsignedArgument(server_, "profileSlot", parsedSlot, 0,
+                              kMaxThingSpeakChannels - 1) ||
+        !config_->thingSpeakChannels[parsedSlot].occupied) {
+      sendJsonResult(false, "Invalid channel profile"); return;
+    }
+    profileIndex = static_cast<int>(parsedSlot);
   }
   uint8_t profileSlot = 0xFF;
   if (profileIndex >= 0 &&
@@ -1348,16 +1394,22 @@ void WebPortal::saveSensor() {
   }
   const bool uploadEnabled = server_.hasArg("uploadEnabled");
   ThingSpeakFieldMapping fields{};
-  fields.temperature = server_.arg("temperatureField").toInt();
-  fields.humidity = server_.arg("humidityField").toInt();
-  fields.pressure = server_.arg("pressureField").toInt();
-  fields.iaq = server_.arg("iaqField").toInt();
-  fields.battery = server_.arg("batteryField").toInt();
-  fields.gasResistance = server_.arg("gasResistanceField").toInt();
-  const uint32_t sensorTypeValue = server_.arg("sensorType").toInt();
+  if (!readFieldArgument(server_, "temperatureField", fields.temperature) ||
+      !readFieldArgument(server_, "humidityField", fields.humidity) ||
+      !readFieldArgument(server_, "pressureField", fields.pressure) ||
+      !readFieldArgument(server_, "iaqField", fields.iaq) ||
+      !readFieldArgument(server_, "batteryField", fields.battery) ||
+      !readFieldArgument(server_, "gasResistanceField", fields.gasResistance)) {
+    sendJsonResult(false, "ThingSpeak fields must be integers from 0 to 8"); return;
+  }
   const auto sensorType =
       static_cast<lil::protocol::EnvironmentalSensorType>(sensorTypeValue);
-  const float temperatureOffsetC = server_.arg("temperatureOffsetC").toFloat();
+  float temperatureOffsetC = 0;
+  if (server_.hasArg("temperatureOffsetC") &&
+      !webinput::finiteDecimal(server_.arg("temperatureOffsetC").c_str(),
+                               temperatureOffsetC, -10.0F, 10.0F)) {
+    sendJsonResult(false, "Invalid temperature offset"); return;
+  }
   const bool validSensorType =
       sensorType == lil::protocol::EnvironmentalSensorType::kAutoDetect ||
       sensorType == lil::protocol::EnvironmentalSensorType::kBme280 ||
@@ -1427,7 +1479,7 @@ void WebPortal::saveSensor() {
   if (!validThingSpeakFields(fields, uploadEnabled)) {
     sendJsonResult(
         false,
-        "Do not assign ThingSpeak fields 1ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ8 more than once. At least "
+        "Do not assign ThingSpeak fields 1-8 more than once. At least "
         "one measurement must be enabled.");
     return;
   }
@@ -1453,9 +1505,14 @@ void WebPortal::saveSensor() {
 }
 
 void WebPortal::saveChannelProfile() {
-  int slot = server_.arg("slot").toInt();
-  if (!server_.hasArg("slot") || slot < 0 ||
-      slot >= static_cast<int>(kMaxThingSpeakChannels)) {
+  const StationConfig previousConfig = *config_;
+  uint32_t requestedSlot = 0;
+  if (server_.hasArg("slot") &&
+      !readUnsignedArgument(server_, "slot", requestedSlot, 0, kMaxThingSpeakChannels - 1)) {
+    sendJsonResult(false, "Invalid channel profile"); return;
+  }
+  int slot = server_.hasArg("slot") ? static_cast<int>(requestedSlot) : -1;
+  if (slot < 0) {
     slot = -1;
     for (size_t i = 0; i < kMaxThingSpeakChannels; ++i) {
       if (!config_->thingSpeakChannels[i].occupied) {
@@ -1465,7 +1522,10 @@ void WebPortal::saveChannelProfile() {
     }
   }
   const String name = server_.arg("name");
-  const uint32_t channelId = server_.arg("channelId").toInt();
+  uint32_t channelId = 0;
+  if (!readUnsignedArgument(server_, "channelId", channelId, 1)) {
+    sendJsonResult(false, "Invalid Channel ID"); return;
+  }
   const String readApiKey = server_.arg("readApiKey");
   const String writeApiKey = server_.arg("writeApiKey");
   if (slot < 0 || channelId == 0 || name.length() > 24 ||
@@ -1488,15 +1548,20 @@ void WebPortal::saveChannelProfile() {
     copyText(config_->thingSpeakReadApiKey, readApiKey);
     copyText(config_->thingSpeakWriteApiKey, writeApiKey);
   }
-  const bool saved = store_->saveStationConfig(*config_) &&
-                     registry_->syncThingSpeakProfile(slot, profile);
+  const bool stationSaved = store_->saveStationConfig(*config_);
+  const bool saved = stationSaved && registry_->syncThingSpeakProfile(slot, profile);
+  if (!saved) {
+    *config_ = previousConfig;
+    if (stationSaved) store_->saveStationConfig(previousConfig);
+  }
   sendJsonResult(saved, saved ? "ThingSpeak channel saved."
                                : "Channel could not be saved.");
 }
 
 void WebPortal::deleteChannelProfile() {
-  const int slot = server_.arg("slot").toInt();
-  if (slot < 0 || slot >= static_cast<int>(kMaxThingSpeakChannels) ||
+  const StationConfig previousConfig = *config_;
+  uint32_t slot = 0;
+  if (!readUnsignedArgument(server_, "slot", slot, 0, kMaxThingSpeakChannels - 1) ||
       !config_->thingSpeakChannels[slot].occupied) {
     sendJsonResult(false, "Channel not found.");
     return;
@@ -1507,8 +1572,12 @@ void WebPortal::deleteChannelProfile() {
     config_->thingSpeakReadApiKey[0] = '\0';
     config_->thingSpeakWriteApiKey[0] = '\0';
   }
-  const bool saved = store_->saveStationConfig(*config_) &&
-                     registry_->removeThingSpeakProfile(slot);
+  const bool stationSaved = store_->saveStationConfig(*config_);
+  const bool saved = stationSaved && registry_->removeThingSpeakProfile(slot);
+  if (!saved) {
+    *config_ = previousConfig;
+    if (stationSaved) store_->saveStationConfig(previousConfig);
+  }
   sendJsonResult(saved, saved ? "ThingSpeak channel removed."
                                : "Channel could not be removed.");
 }
@@ -1546,6 +1615,7 @@ void WebPortal::createThingSpeakChannel() {
     sendJsonResult(false, result.error);
     return;
   }
+  const StationConfig previousConfig = *config_;
   auto& profile = config_->thingSpeakChannels[profileSlot];
   profile.occupied = true;
   copyText(profile.name, channelName);
@@ -1558,8 +1628,10 @@ void WebPortal::createThingSpeakChannel() {
     copyText(config_->thingSpeakWriteApiKey, result.writeKey);
   }
   if (!store_->saveStationConfig(*config_)) {
+    *config_ = previousConfig;
     sendJsonResult(false,
-                   "Channel created, but it could not be saved locally.");
+                   "ThingSpeak channel " + String(result.channelId) +
+                   " was created, but its local profile could not be saved. Reload account channels before retrying.");
     return;
   }
 
@@ -1668,6 +1740,12 @@ void WebPortal::createManagedThingSpeakChannel() {
     return;
   }
   const uint32_t channelId = remote["id"] | 0U;
+  if (!channelId) {
+    sendJsonResult(false,
+                   "The cloud response contained no Channel ID. Reload account channels before retrying.");
+    return;
+  }
+  const StationConfig previousConfig = *config_;
   String readKey;
   String writeKey;
   extractApiKeys(remote.as<JsonObjectConst>(), readKey, writeKey);
@@ -1691,8 +1769,10 @@ void WebPortal::createManagedThingSpeakChannel() {
       copyText(config_->thingSpeakWriteApiKey, writeKey);
     }
     if (!store_->saveStationConfig(*config_)) {
+      *config_ = previousConfig;
       sendJsonResult(false,
-                     "Channel created, but the local profile could not be saved.");
+                     "ThingSpeak channel " + String(channelId) +
+                     " was created, but its local profile could not be saved. Reload account channels before retrying.");
       return;
     }
   }
@@ -1711,7 +1791,10 @@ void WebPortal::createManagedThingSpeakChannel() {
 }
 
 void WebPortal::updateManagedThingSpeakChannel() {
-  const uint32_t channelId = server_.arg("channelId").toInt();
+  uint32_t channelId = 0;
+  if (!readUnsignedArgument(server_, "channelId", channelId, 1)) {
+    sendJsonResult(false, "Invalid Channel ID"); return;
+  }
   if (channelId == 0 || !validManagedChannelRequest(server_)) {
     sendJsonResult(false, "Check the Channel ID, name and fields.");
     return;
@@ -1729,25 +1812,42 @@ void WebPortal::updateManagedThingSpeakChannel() {
   if (!deserializeJson(remote, result.response)) {
     extractApiKeys(remote.as<JsonObjectConst>(), readKey, writeKey);
   }
+  const StationConfig previousConfig = *config_;
+  bool changed[kMaxThingSpeakChannels]{};
   bool localChanged = false;
-  bool localSaved = true;
   for (size_t slot = 0; slot < kMaxThingSpeakChannels; ++slot) {
     auto& profile = config_->thingSpeakChannels[slot];
-    if (!profile.occupied || profile.channelId != channelId) {
-      continue;
-    }
+    if (!profile.occupied || profile.channelId != channelId) continue;
     copyText(profile.name, server_.arg("name"));
-    if (!readKey.isEmpty()) {
-      copyText(profile.readApiKey, readKey);
+    if (!readKey.isEmpty()) copyText(profile.readApiKey, readKey);
+    if (!writeKey.isEmpty()) copyText(profile.writeApiKey, writeKey);
+    if (slot == 0) {
+      config_->thingSpeakDefaultChannelId = profile.channelId;
+      copyText(config_->thingSpeakReadApiKey, profile.readApiKey);
+      copyText(config_->thingSpeakWriteApiKey, profile.writeApiKey);
     }
-    if (!writeKey.isEmpty()) {
-      copyText(profile.writeApiKey, writeKey);
-    }
+    changed[slot] = true;
     localChanged = true;
-    localSaved = registry_->syncThingSpeakProfile(slot, profile) && localSaved;
   }
-  if (localChanged) {
-    localSaved = store_->saveStationConfig(*config_) && localSaved;
+  // Save the station profile before applying it to live sensor assignments.
+  // A successful cloud mutation remains successful even if this local save
+  // fails; only local state can be restored here.
+  const bool stationSaved = !localChanged || store_->saveStationConfig(*config_);
+  bool localSaved = stationSaved;
+  if (stationSaved && localChanged) {
+    for (size_t slot = 0; slot < kMaxThingSpeakChannels; ++slot) if (changed[slot]) {
+      localSaved = registry_->syncThingSpeakProfile(slot, config_->thingSpeakChannels[slot]) && localSaved;
+    }
+  }
+  if (!localSaved) {
+    *config_ = previousConfig;
+    if (stationSaved) {
+      // Rollback is best effort when NVS remains unavailable. Registry helpers
+      // also retain pending persistence so restored assignments can retry.
+      store_->saveStationConfig(previousConfig);
+      for (size_t slot = 0; slot < kMaxThingSpeakChannels; ++slot) if (changed[slot])
+        registry_->syncThingSpeakProfile(slot, previousConfig.thingSpeakChannels[slot]);
+    }
   }
   sendJsonResult(localSaved,
                  localSaved ? "ThingSpeak channel updated."
@@ -1755,7 +1855,10 @@ void WebPortal::updateManagedThingSpeakChannel() {
 }
 
 void WebPortal::clearManagedThingSpeakChannel() {
-  const uint32_t channelId = server_.arg("channelId").toInt();
+  uint32_t channelId = 0;
+  if (!readUnsignedArgument(server_, "channelId", channelId, 1)) {
+    sendJsonResult(false, "Invalid Channel ID"); return;
+  }
   if (channelId == 0) {
     sendJsonResult(false, "Invalid Channel ID.");
     return;
@@ -1768,7 +1871,10 @@ void WebPortal::clearManagedThingSpeakChannel() {
 }
 
 void WebPortal::deleteManagedThingSpeakChannel() {
-  const uint32_t channelId = server_.arg("channelId").toInt();
+  uint32_t channelId = 0;
+  if (!readUnsignedArgument(server_, "channelId", channelId, 1)) {
+    sendJsonResult(false, "Invalid Channel ID"); return;
+  }
   if (channelId == 0) {
     sendJsonResult(false, "Invalid Channel ID.");
     return;

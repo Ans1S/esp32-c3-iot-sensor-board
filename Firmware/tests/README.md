@@ -1,5 +1,9 @@
 # Firmware regression checks
 
+The [2026-10-07 reliability review](../RELIABILITY_REVIEW.md) documents the
+current fixes, energy behavior and remaining hardware acceptance. The runner
+now includes 22 production C++ suites.
+
 Run from the repository root after resolving/building the sensor dependencies:
 
 ```sh
@@ -65,6 +69,23 @@ select an installed browser channel. Set `QA_SCREENSHOT_DIR` to save desktop
 and mobile captures. The test uses the actual embedded HTML with mock APIs;
 it never connects to a physical station or cloud account.
 
+Run `node Firmware/tests/test_recording_dashboard.cjs` with the same Playwright
+configuration to verify automatic archive discovery, selector focus during
+telemetry, persistent cursor readouts, slow archive responses, live/archive
+switching during acquisition, partially synchronized sessions and cancelled
+or failed reads. The fixtures exercise the real embedded dashboard; no sensor
+or station is flashed.
+
+Run `node Firmware/tests/test_chart_readability.cjs` to verify single-point
+history charts, time-window switching, browsing retained history, exact cursor
+values, gap-safe visual smoothing, unchanged CSV samples and mobile layouts.
+
+The C++ acquisition suite executes the production acquisition task for normal
+1/10 s measurement windows, recording transitions, startup/read failures,
+rail shutdown and button debounce. Registry checks also cover reception-time
+preservation across history interval changes and exclude cached heartbeats
+from fresh graphs.
+
 ## OTA performance and status
 
 The C++ OTA suite asserts sector-sized writes, a final partial sector, resume
@@ -114,3 +135,96 @@ The registry and browser tests verify persisted battery-only status for live
 sensor types and a protection badge without misleading zero sensor values.
 These are software checks; use the [review's hardware acceptance table](../SENSOR_REVIEW.md)
 to measure absolute accuracy, supply integrity, threshold calibration and current.
+
+## Recording response, identities and motion references
+
+`recording_json_test.cpp` uses the installed ArduinoJson library and the actual
+production point conversion/append writer, including 0/1/16/128-point responses,
+multiple output chunks and all three recording types. This catches destination
+replacement during serialization instead of relying only on mocked API JSON.
+Archive tests also cover torn tails, replay and CRC errors without skipping
+unreadable offsets. Registry tests cover MAC-based names/references after
+removal, re-pairing and reboot, stationary reference validation and reset.
+
+`battery_boot_test.cpp` executes changed-type application in the production
+setup path (one-second reinitialization) and the running live path (fixed type
+back to auto detection). `python Firmware/tests/test_station_upload.py` checks
+that normal uploads preserve flash and only the explicit reset environment
+inserts full erasure. Build the station once to resolve ArduinoJson before
+running the host suites.
+
+`node Firmware/tests/test_sensor_settings_dashboard.cjs` checks all six zeroed
+axes, reference application in saved plots, original values in CSV, clearing the
+reference and selected/applied sensor types with offline name updates. It uses
+the same Playwright environment settings as the other dashboard checks.
+
+## Reliability and persistence faults
+
+`sensor_config_test.cpp` exercises V1-V5 schema migration, wrong identities,
+partial NVS reads, failed writes/reset, RTC caching and retryable migrations.
+`config_store_test.cpp` verifies preserved nonblank filesystem mount failures,
+erased-flash initialization, unreadable partitions and bounded stored settings.
+`web_input_test.cpp` rejects incomplete, overflowing and out-of-range decimal
+HTTP inputs before narrowing. These suites are included in `run_tests.py`.
+
+The BME680 production suite checks ULP cadence, six-hour persistence at accuracy
+zero, corrupted/orphaned/rejected learning state, clock wraps, invalid IAQ,
+heater stability, durable-reset failures and bounded waits. It uses real Bosch
+type/config headers with substituted BSEC algorithm and hardware responses.
+The environmental dispatcher suite checks both Bosch addresses, explicit versus
+automatic selection, absent/mismatched modules and failed-start rail shutdown.
+The live/precision/IMU suites additionally reject cancelled acquisition and
+stale FIFO data after scheduling gaps.
+
+Recording tests cover frozen/idempotent stop duration, delayed first UTC anchor
+and current-request ACK sequence matching. Registry/archive tests reject invalid
+telemetry, saturate finite extreme history values before rounding, preserve
+durable settings across failed/interleaved writes and invalidate stale cloud
+jobs by generation and current settings.
+
+Run `node Firmware/tests/test_ui_reliability.cjs` with the same Playwright
+configuration as the other five browser suites. It checks preserved setup
+drafts/focus, serialized discovery, missing values, storage warnings, startup
+retry, duplicate saves and delayed responses after reopening forms. The
+recording suite additionally checks export progress/cancellation, complete
+loading before the first graph, fixed SVG/cursor identity during growing
+synchronization, explicit snapshot refresh, completion-triggered loading and
+full-session/minute views without extra archive requests; the OTA suite
+checks rejected headers and file-selection races. Together these use the actual
+embedded pages and mock station APIs, not a live device.
+
+The package tests check the real `0x140000` sensor partition boundary, including
+correctly signed oversized-package rejection. The station upload tests execute
+the upload script with a substituted environment and never flash hardware.
+
+Sensor-transition regressions also cover a slow selected chip becoming visible
+after an initial mismatch, releasing an active driver before changing types,
+three bounded startup attempts across deep sleep, early retry reports, return
+to the normal interval and battery protection during recovery. Browser checks
+cover five-second security/cloud notices that stay dismissed across polling,
+new notices when their condition changes, cancellation of obsolete notice
+timers before errors, pending/applied sensor mismatch states and BME280 cards
+without IAQ or gas-resistance tiles. BME680 retains both tiles.
+
+
+## Publication guard
+
+Run `python Firmware/tests/test_publication.py` for binary/ZIP token detection,
+private material versus TLS parser markers, path/file exclusions, redacted
+reports, an index/worktree race and a removed secret in new commit history. Run the checker from the repository root:
+
+```sh
+python Firmware/tools/check_publication.py
+python Firmware/tools/check_publication.py --staged
+python Firmware/tools/check_publication.py --revision HEAD
+python Firmware/tools/check_publication.py --history
+```
+
+Enable `.githooks` with `git config core.hooksPath .githooks`. The pre-commit
+hook scans actual indexed blobs. The pre-push hook scans the pushed commit tree
+and newly introduced history, including binary firmware and ZIP members.
+Historical scans can legitimately fail on already published old objects;
+consult [the review](../PUBLICATION_REVIEW.md) rather than claiming history was
+removed. The checker is heuristic and cannot read text encoded only as pixels;
+review screenshots visually and use synthetic fixtures. It prints locations
+and categories, never matched values.

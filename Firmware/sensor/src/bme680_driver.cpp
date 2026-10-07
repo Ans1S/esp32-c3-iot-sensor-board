@@ -111,9 +111,14 @@ bool Bme680Driver::begin(uint8_t address, float temperatureOffsetC) {
     if (ensureStateStore()) {
       rtcBsecState.stateValid =
           stateStore_.load(rtcBsecState.state, sizeof(rtcBsecState.state));
-      stateStore_.loadCalibration(rtcBsecState.calibrationElapsedSeconds,
-                                  rtcBsecState.calibrationReady);
+      // Calibration metadata cannot establish a learned baseline on its own.
+      // A missing/corrupt state blob must restart calibration honestly.
+      if (rtcBsecState.stateValid) {
+        stateStore_.loadCalibration(rtcBsecState.calibrationElapsedSeconds,
+                                    rtcBsecState.calibrationReady);
+      }
     }
+    rtcBsecState.lastNvsSaveLogicalMs = logicalNowMs();
   }
   calibrationAwakeStartedMs_ = bootElapsedMs();
   calibrationElapsedAtBeginSeconds_ =
@@ -124,6 +129,9 @@ bool Bme680Driver::begin(uint8_t address, float temperatureOffsetC) {
 
   // Run BSEC on every ULP wake to preserve IAQ learning. Initialize the raw
   // Bosch fallback only when this path fails, avoiding a second sensor reset.
+  // beginCommon() resets BSEC configuration but does not reset the wrapper's
+  // millis overflow counter. Repeated initialization must seed it only once.
+  bsec_ = Bsec2{};
   bsec_.allocateMemory(bsecMemory_);
   bsecReady_ = tryAddress(address);
   if (bsecReady_) {
@@ -272,6 +280,11 @@ void Bme680Driver::restoreState() {
     SENSOR_LOG_PRINTF("[BME680] Discarded BSEC state, status %d\n",
                       static_cast<int>(bsec_.status));
     rtcBsecState.stateValid = false;
+    rtcBsecState.calibrationReady = false;
+    rtcBsecState.calibrationElapsedSeconds = 0;
+    rtcBsecState.lastValidIaqSeen = false;
+    calibrationElapsedAtBeginSeconds_ = 0;
+    calibrationAwakeStartedMs_ = bootElapsedMs();
   } else {
     SENSOR_LOG_PRINTLN("[BME680] Restored saved BSEC learning state");
   }
@@ -433,6 +446,9 @@ EnvironmentalReading Bme680Driver::readBsec() {
     reading.capabilities |= lil::protocol::kGasResistance;
   }
   reading.iaqAccuracy = min(reading.iaqAccuracy, static_cast<uint8_t>(3));
+  if ((reading.capabilities & lil::protocol::kIaq) == 0) {
+    reading.iaqAccuracy = 0;
+  }
   reading.valid = hasTemperature && hasHumidity && hasPressure &&
                   (reading.capabilities & lil::protocol::kTemperature) != 0 &&
                   (reading.capabilities & lil::protocol::kHumidity) != 0 &&
@@ -510,12 +526,12 @@ EnvironmentalReading Bme680Driver::readRaw() {
     reading.capabilities |= lil::protocol::kPressure;
   }
 
+  const bool heaterStable = (data.status & BME68X_HEAT_STAB_MSK) != 0;
   const bool gasValid =
       (data.status & BME68X_GASM_VALID_MSK) != 0 &&
+      heaterStable &&
       validReading(reading.gasResistanceOhms) &&
       reading.gasResistanceOhms > 0.0F;
-  const bool heaterStable = (data.status & BME68X_HEAT_STAB_MSK) != 0;
-  (void)heaterStable;
   if (gasValid) {
     reading.capabilities |= lil::protocol::kGasResistance;
   }
@@ -534,8 +550,8 @@ EnvironmentalReading Bme680Driver::readRaw() {
     reading.capabilities |= lil::protocol::kIaq;
   }
   // Raw gas resistance is useful diagnostic data, but it is not Bosch Static
-  // IAQ. Deliberately leave the IAQ capability unset instead of presenting a
-  // locally invented score as a calibrated BSEC result.
+  // IAQ. Only a previously obtained BSEC value can supply the IAQ capability;
+  // its raw-fallback flag marks the retained value as stale.
   SENSOR_LOG_PRINTF(
       "[BME680] Direct reading: %.2f C, %.2f %%, %.1f hPa, %.0f ohm "
       "(gas_valid=%u, heat_stable=%u; no substitute IAQ value)\n",
@@ -551,7 +567,9 @@ void Bme680Driver::updateCalibrationStatus(EnvironmentalReading& reading) {
   // Accuracy 1 is the first BSEC level that provides a usable learned IAQ
   // baseline. From this point onward the sensor remains in normal operation
   // while BSEC continues improving the accuracy in the background.
-  if (reading.iaqAccuracy >= 1 && !rtcBsecState.calibrationReady) {
+  if (reading.valid && !reading.bme680RawFallback &&
+      (reading.capabilities & lil::protocol::kIaq) != 0 &&
+      reading.iaqAccuracy >= 1 && !rtcBsecState.calibrationReady) {
     rtcBsecState.calibrationElapsedSeconds = elapsed;
     rtcBsecState.calibrationReady = true;
     saveCalibrationMetadata();
@@ -595,7 +613,6 @@ void Bme680Driver::saveState(uint8_t iaqAccuracy) {
   const bool accuracyImproved = iaqAccuracy > rtcBsecState.lastSavedAccuracy;
   const uint64_t nowMs = logicalNowMs();
   const bool periodicSaveDue =
-      rtcBsecState.lastNvsSaveLogicalMs != 0 &&
       nowMs >= rtcBsecState.lastNvsSaveLogicalMs &&
       nowMs - rtcBsecState.lastNvsSaveLogicalMs >= kNvsSaveIntervalMs;
   if ((accuracyImproved || periodicSaveDue) && ensureStateStore()) {
@@ -650,11 +667,15 @@ uint32_t Bme680Driver::recommendedSleepSeconds(
       fallbackSeconds);
 }
 
-void Bme680Driver::clearPersistentState() {
+bool Bme680Driver::clearPersistentState() {
+  // Do not acknowledge a reset while flash still contains the old baseline.
+  // Keep the current learning usable when persistence is temporarily broken.
+  if (!ensureStateStore() || !stateStore_.clear()) return false;
   rtcBsecState = BsecRtcState{};
-  if (ensureStateStore()) {
-    stateStore_.clear();
-  }
+  bsecReady_ = rawReady_ = scheduleUpdated_ = false;
+  calibrationElapsedAtBeginSeconds_ = 0;
+  calibrationAwakeStartedMs_ = bootElapsedMs();
+  return true;
 }
 
 }  // namespace sensor

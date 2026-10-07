@@ -36,7 +36,7 @@ class SensorConfigStore {
   bool firmwareChanged() const;
   SensorRuntimeConfig load();
   bool saveIfChanged(const SensorRuntimeConfig& config);
-  void factoryReset();
+  bool factoryReset();
 
  private:
   bool ensurePreferencesOpen();

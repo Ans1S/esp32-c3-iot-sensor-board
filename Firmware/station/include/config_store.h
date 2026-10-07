@@ -3,17 +3,21 @@
 #include <Preferences.h>
 
 #include "app_config.h"
+#include "sensor_identity.h"
 
 namespace station {
 
 class ConfigStore {
  public:
   bool begin();
+  bool storageAvailable() const { return storageAvailable_; }
   StationConfig loadStationConfig();
   bool saveStationConfig(const StationConfig& config);
   bool loadSensorConfigs(SensorConfig* configs, size_t count);
   bool saveSensorConfig(size_t index, const SensorConfig& config);
   bool deleteSensorConfig(size_t index);
+  bool loadSensorIdentities(SensorIdentity* identities, size_t count);
+  bool saveSensorIdentities(const SensorIdentity* identities, size_t count);
   size_t historyBytesLength(size_t index);
   bool loadHistory(size_t index, void* output, size_t length);
   bool loadHistoryRange(size_t index, size_t offset, void* output,
@@ -35,6 +39,7 @@ class ConfigStore {
  private:
   void applyDefaults(StationConfig& config);
   Preferences preferences_;
+  bool storageAvailable_ = false;
 };
 
 }  // namespace station

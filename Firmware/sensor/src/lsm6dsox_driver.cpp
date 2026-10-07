@@ -52,25 +52,33 @@ bool Lsm6dsoxDriver::begin(uint8_t address) {
   if (!writeRegister(0x0A, 0x06) || !readRegisters(0x0A, &value, 1) || value != 6)
     return false;
   initialized_ = true;
+  lastPollMs_ = millis();
   delay(25);
   return poll();
 }
 bool Lsm6dsoxDriver::poll() {
   if (!initialized_) return false;
+  const uint32_t now = millis();
+  const bool pollingGap = now - lastPollMs_ >= 200;
+  lastPollMs_ = now;
   uint8_t status[2];
   if (!readRegisters(0x3A, status, 2)) {
     failed_ = true; initialized_ = false; discardWindow(); return false;
   }
-  if (status[1] & 0x48) {
+  const uint16_t count = status[0] | ((status[1] & 3U) << 8);
+  if ((status[1] & 0x48) || pollingGap || count > 512) {
     // Both FIFO_OVR_IA and OVER_RUN_LATCHED indicate missing samples. Do not
     // average the partial interval before the gap with the surviving tail.
-    overflow_ = true; discardWindow();
+    // FIFO entries carry no enabled timestamp: after a scheduling stall their
+    // real ages are unknown. Discard them instead of dating old data at drain
+    // time. A count above the physical 512-entry FIFO is also invalid.
+    overflow_ = overflow_ || (status[1] & 0x48) || count > 512;
+    gap_ = true; discardWindow();
     if (!writeRegister(0x0A, 0) || !writeRegister(0x0A, 6)) {
       failed_ = true; initialized_ = false;
     }
     return !failed_;
   }
-  const uint16_t count = status[0] | ((status[1] & 3U) << 8);
   // Bound each drain to the FIFO snapshot; new samples wait for the next poll.
   for (uint16_t i = 0; i < count; ++i) {
     uint8_t data[7];
@@ -116,7 +124,7 @@ EnvironmentalReading Lsm6dsoxDriver::read() {
   }
   result.live.flags = lil::protocol::kLiveTimingKnown | (result.valid ? lil::protocol::kLiveSampleFresh : 0);
   result.live.flags |= lil::protocol::kMotionFeedbackPresent;
-  if (overflow_ || failed_) result.live.flags |= lil::protocol::kLiveGap;
+  if (gap_ || overflow_ || failed_) result.live.flags |= lil::protocol::kLiveGap;
   result.live.samplePeriodUs = 1000000UL / lil::timing::kImuHz;
   result.live.windowMs = min(uint32_t(65534), max(accelCount_, gyroCount_) * 1000UL / lil::timing::kImuHz);
   result.live.acquisitionAgeMs = min(uint32_t(65534), max(millis() - lastAccelMs_, millis() - lastGyroMs_));
@@ -125,7 +133,7 @@ EnvironmentalReading Lsm6dsoxDriver::read() {
   if (result.valid) result.capabilities = lil::protocol::kMotion;
   motion_.peakAccelerationG = motion_.peakAngularRateDps = 0;
   accelCount_ = gyroCount_ = 0;
-  overflow_ = failed_ = false;
+  gap_ = overflow_ = failed_ = false;
   return result;
 }
 }  // namespace sensor

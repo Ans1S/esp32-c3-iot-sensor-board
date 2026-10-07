@@ -1,82 +1,71 @@
-# Firmware 4.3.1
+# Firmware 4.3.4
 
-The current sensor release is **4.3.1** (release integer **40304**) for PCB V3
-and V4. This directory publishes the latest signed OTA packages:
+The current release is **4.3.4**, internal release **40307**, for protocol V5.
 
-| File | Target |
-| --- | --- |
-| `sensor-v3-4.3.1.ota` | PCB V3 |
-| `sensor-v4-4.3.1.ota` | PCB V4 |
-| `sensor-v3-4.3.1.factory.bin` | PCB V3, fresh USB installation at offset `0x0` |
-| `sensor-v4-4.3.1.factory.bin` | PCB V4, fresh USB installation at offset `0x0` |
-| `station-4.3.1.factory.bin` | Station, fresh USB installation at offset `0x0` |
+| File | Target | Use |
+| --- | --- | --- |
+| [sensor-v3-4.3.4.ota](sensor-v3-4.3.4.ota) | Sensor PCB V3 | Signed OTA through the station |
+| [sensor-v4-4.3.4.ota](sensor-v4-4.3.4.ota) | Sensor PCB V4 | Signed OTA through the station |
+| [station-4.3.4.bin](station-4.3.4.bin) | ESP32-S3 station | Application-only USB image at `0x10000` |
 
-Factory images include the bootloader, partition table and application. Back up
-the device first, then erase flash before a fresh installation; this clears
-settings, pairing and history. Writing a factory image alone does not erase
-the new recording region. For an NVS-preserving migration, follow the separate
-component workflow in [the migration guide](../RECORDINGS.md).
+The release includes bounded sensor reinitialization, BME680 learning-state
+persistence, MAX30102 weak-signal/independent LED control, durable settings and
+archive fixes, stable complete saved graphs, timed setup notices and correct
+BME280 tiles. Read [the full change inventory](../CHANGELOG.md) for the main
+improvements and every additional correction since 4.3.1 and PR #30.
 
-Build and sign release packages using the [OTA guide](../OTA.md). They require
-the installation key already trusted by both the station and sensor. A newly
-generated key cannot update an existing installation. `SHA256SUMS.txt`
-identifies the published packages; signatures are verified by the packager and
-both devices. The 4.1.3 packages remain available for the previous release; they are not the current update.
+## Installation
 
-The internal release increases from the local 4.3.0 build's 40303 to 40304.
-This permits updating installations that already run that recording build.
+Update the station for UI/storage changes and sensor nodes for driver/recovery
+changes. To build and upload the station normally, run from the repository root:
 
-## Changes
+```sh
+python Firmware/upload.py station
+```
 
-- PCB V4 battery protection below 2.8 V: sensor power off, battery-only reports
-  every 24 hours using deep sleep, and recovery at 2.95 V. The station displays
-  the protected state and retains daily battery history.
-- Checked BME280 register transfers, coherent compensation, conservative
-  100 kHz Bosch startup and safe power-gate/I2C shutdown.
-- Datasheet-reviewed precision drivers with explicit FIFO gaps, ambient-light
-  overflow handling, brownout recovery and rejection of partial I2C reads.
-  See [sensor review and hardware acceptance](../SENSOR_REVIEW.md).
-- Quick feedback above sensor graphs: estimated steps/cadence/active time,
-  temperature stability/rate, and pulse quality/statistics/recovery.
-  See [feedback definitions](../SENSOR_FEEDBACK.md). Update the station first;
-  an existing 40302 recording partition layout remains compatible.
+Normal station uploads preserve settings, identities and recording archives.
+The supplied station BIN contains only the application. It must not be flashed
+at `0x0`, uploaded as a sensor OTA package or mistaken for a factory image.
+On an existing compatible layout, write it at `0x10000` without erasing flash.
+Only the explicit factory-reset environment intentionally erases the device.
 
-- TMP117 and MAX30102 drivers with accuracy-oriented initialization and signal validation.
-- Sensor-timed updates: 50/100 ms LSM6DSOX session means, data-ready TMP117 reports,
-  200 ms optical waveform packets and 1 s pulse estimates.
-- SW2 start/stop, at least 30-minute sensor recording capacity, durable synchronization and saved station sessions.
-- One-minute live/saved graphs and full-session CSV export. Normal BME sleep
-  scheduling is retained; V4 low battery overrides it with daily reporting.
-- One-time USB partition migration on sensor and station; see [recording migration](../RECORDINGS.md).
-- See [precision sensor operation and validation](../PRECISION_SENSORS.md).
+Upload the matching V3/V4 `.ota` on the station's **Firmware updates** page.
+Existing 4.3.1/4.3.2/4.3.3 installations with this trusted signing identity and
+recording layout can use it. Same-version OTA is rejected; rebuilding 4.3.4
+with sanitized compiler paths does not change its release integer. Older
+layouts still need the [one-time USB migration](../RECORDINGS.md#one-time-usb-migration).
+The recording partition layout and low-power policies remain unchanged.
 
-- LSM6DSOX I2C support on both PCBs, continuous 104 Hz acquisition, interval
-  peaks and a fixed 100 ms live dashboard cadence.
-- Signed ESP-NOW updates with 4 KiB buffered writes, 16 KiB durable resume
-  checkpoints, a ten-minute transfer budget, and explicit failure status.
-- Inclusive OTA minimum voltage: PCB V3 3350 mV; PCB V4 2800 mV.
-- Original V5 environmental packet length, a five-second reply retry window
-  only during trial boot, and a 60-second boot guard with automatic rollback.
-- Temporary trial-boot serial diagnostics removed; optional normal logging
-  remains disabled. Bounded measurements, power gating and deep sleep remain
-  active for environmental sensors. See [power management](../POWER_MANAGEMENT.md).
-- Bounded station persistence/upload queues and resilient update-page polling.
+## Integrity and publication
 
-## Compatibility and validation
+[SHA256SUMS.txt](SHA256SUMS.txt) covers all three files. V3/V4 signatures,
+embedded PCB/protocol/version identities and payloads match the final builds
+and the existing installation's public key. That private key and the local
+public header are never uploaded. Firmware intentionally contains the public
+verification key; that is not private key material.
 
-Install the new partition tables once by USB before using manual recordings.
-Use the current station firmware for motion configuration and improved OTA
-status reporting. Environmental telemetry retains compatibility with the
-original V5 packet prefix. Updating a running old client still uses that old
-client's battery threshold and transfer timeout until the new image boots.
-Same-version OTA packages are rejected.
+New builds remap personal compiler paths before compilation. The publication
+checker inspects firmware bytes, source text and ZIP contents with redacted
+findings. Earlier distribution binaries were removed from this current tree
+because they carried local build paths; retained local copies are ignored.
+Their previously published Git objects are still present in history. See
+[the publication review](../PUBLICATION_REVIEW.md) for this limitation.
 
-Both sensor targets and the station build with PlatformIO. The host and browser
-checks are documented in [tests](../tests/README.md). Hardware RF, power-loss,
-bootloader rollback and current measurements remain separate acceptance work;
-no battery-life or transfer-duration benchmark is implied by these checks.
+This directory supplies only the current packages, not flash dumps or factory
+images. The unpublished 4.3.2/4.3.3 intermediate packages are superseded by 4.3.4.
+Historical 4.3.1 behavior and validation are documented in
+[PR #30](https://github.com/Ans1S/esp32-c3-iot-sensor-board/pull/30).
 
-The application includes Bosch BSEC2 binaries under their separate
+## Validation and licenses
+
+All three PlatformIO targets, 22 production C++ suites, six embedded browser
+suites, six cryptographic OTA package tests, two upload tests, three pinned
+library-patch checks and publication regressions pass. Eight station script
+blocks parse. No hardware was flashed or measured. Accuracy, RF/power-loss,
+rollback behavior, rail discharge and current acceptance remain separate work;
+see [tests](../tests/README.md) and [the reliability review](../RELIABILITY_REVIEW.md).
+
+BME680 firmware includes Bosch BSEC2 binaries under their separate
 [license terms](https://github.com/boschsensortec/Bosch-BSEC2-Library/blob/4f559a6aa450f0ce436e602b42dc384f52128c66/LICENSE.md).
 The repository license does not relicense third-party components. Review the
-applicable terms before redistributing a compiled package.
+applicable terms before redistributing compiled packages.

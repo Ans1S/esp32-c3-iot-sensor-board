@@ -8,7 +8,9 @@ the first successful home Wi-Fi connection it normally operates as a Wi-Fi
 station. ESP-NOW remains active alongside the local web interface and the
 optional ThingSpeak uploader. Environmental sensor nodes wake briefly,
 measure, exchange one telemetry/configuration pair with the station and return
-to deep sleep. LSM6DSOX nodes instead acquire motion continuously while provisioned.
+to deep sleep. LSM6DSOX and TMP117 use fresh acquisition windows at the configured
+normal interval and continuous acquisition during SW2 recordings. MAX30102
+acquires only during a manually started SW2 session.
 
 ```text
 PCB V3/V4 sensor

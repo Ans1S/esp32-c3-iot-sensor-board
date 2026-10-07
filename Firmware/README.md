@@ -29,7 +29,7 @@ verify a target without writing to a connected device.
 - [Architecture](ARCHITECTURE.md)
 - [Hardware test plan](HARDWARE_TESTPLAN.md)
 
-Current firmware: **4.3.1**. Initialize the installation signing key as described
+Current firmware: **4.3.4**. Initialize the installation signing key as described
 in the OTA guide before the first build. Never replace an existing signing key.
 
 - [Signed OTA updates](OTA.md)
@@ -39,10 +39,24 @@ in the OTA guide before the first build. Never replace an existing signing key.
 - [Regression checks](tests/README.md)
 - [Manual recordings and USB migration](RECORDINGS.md)
 - [Sensor accuracy review and V4 battery protection](SENSOR_REVIEW.md)
+- [Station and sensor V3/V4 reliability review](RELIABILITY_REVIEW.md)
 
-## Live precision sensors (4.3.1)
+## Live precision sensors
 
-TMP117 and MAX30102 join LSM6DSOX as manually started live sensors (SW2 / GPIO9).
-Reports arrive every 1 s (TMP117), 200 ms (MAX30102 waveform) or 100 ms
-(LSM6DSOX means); pulse estimates update every second, with a
-one-minute live graph and persistent, replayable manual recordings. See [operation, accuracy limits and OTA migration](PRECISION_SENSORS.md).
+TMP117 and LSM6DSOX take fresh normal measurements at the configured interval
+with the external rail off between windows. MAX30102 starts through SW2 only.
+SW2 / GPIO9 starts/stops a separate fast recording: 1 s TMP117 values, 200 ms
+optical waveform packets, or 50 ms IMU means for five minutes and 100 ms afterward.
+Pulse estimates update once per second. Saved recordings load as complete,
+stable snapshots; full-session CSV retains the original samples. See [operation, accuracy limits and OTA migration](PRECISION_SENSORS.md).
+
+
+## Current release and publication checks
+
+Firmware **4.3.4 / 40307** includes bounded sensor reinitialization, durable
+settings/history corrections and the updated recording/dashboard behavior.
+See [the complete change inventory](CHANGELOG.md),
+[release artifacts](releases/README.md) and
+[publication review](PUBLICATION_REVIEW.md). Build diagnostics use relative
+paths; installation keys and device data must stay local. Software tests do not
+replace physical accuracy, rail-voltage and sleep-current acceptance.

@@ -62,6 +62,7 @@ struct SensorRuntime {
 struct SensorView {
   SensorConfig config{};
   SensorRuntime runtime{};
+  MotionReference motionReference{};
 };
 
 class SensorRegistry {
@@ -94,9 +95,14 @@ class SensorRegistry {
   bool requestFactoryReset(const uint8_t mac[6]);
   bool requestIaqCalibrationReset(const uint8_t mac[6]);
   bool deleteSensor(const uint8_t mac[6]);
+  bool setMotionReference(const uint8_t mac[6], bool clear);
   bool channelShared(uint32_t channelId) const;
   bool generationMatches(const uint8_t mac[6], uint32_t generation) const;
-  bool findConfig(const uint8_t mac[6], SensorConfig& output) const;
+  bool findConfig(const uint8_t mac[6], SensorConfig& output,
+                  uint32_t* generation = nullptr) const;
+  bool cloudUploadMatches(const uint8_t mac[6], uint32_t generation,
+                          uint32_t channelId, const char* writeKey,
+                          const ThingSpeakFieldMapping& fields) const;
   bool findView(const uint8_t mac[6], SensorView& output) const;
   void updateRecording(const uint8_t mac[6], const lil::recording::Status& status);
   bool needsPersistence(const uint8_t mac[6]) const;
@@ -111,6 +117,11 @@ class SensorRegistry {
  private:
   int findIndexLocked(const uint8_t mac[6]) const;
   int allocateIndexLocked(const uint8_t mac[6]);
+  int identityIndexLocked(const uint8_t mac[6]) const;
+  int rememberIdentityLocked(const uint8_t mac[6], const char* name,
+                             SensorIdentity* previous = nullptr);
+  void commitConfigLocked(size_t index, const SensorConfig& previous,
+                          const SensorConfig& saved);
   bool recordHistoryLocked(size_t index,
                            const lil::protocol::TelemetryPayload& telemetry,
                            uint32_t bucketSeconds, uint32_t receivedAt);
@@ -145,6 +156,7 @@ class SensorRegistry {
   mutable SemaphoreHandle_t storageMutex_ = nullptr;
   uint32_t generations_[kMaxSensors]{};
   SensorConfig configs_[kMaxSensors]{};
+  SensorIdentity identities_[kMaxSensorIdentities]{};
   SensorRuntime runtime_[kMaxSensors]{};
   StoredHistory history_[kMaxSensors]{};
   struct LiveHistory { LiveSample* samples = nullptr; size_t head = 0, count = 0, capacity = 0; };
