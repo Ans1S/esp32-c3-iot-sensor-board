@@ -48,6 +48,35 @@ class PublicationTests(unittest.TestCase):
         examples = b'apiKey="YOUR_API_KEY"; wifiSsid="test"; password="W-Charger-Setup"; data-ssid="${esc(n.ssid)}";'
         self.assertFalse(self.scan("fixture.cpp", examples))
 
+    def test_device_exports_and_auth_files_are_rejected(self):
+        names = ("device-data/readings.json", "device-backups/station.zip",
+                 "flash-dumps/station.bin", "exports/history.csv", "nvs.csv",
+                 "Readme/raw/dashboard.png", "Readme/private/screen.webp",
+                 ".ssh/id_ed25519", ".aws/config", ".azure/profile.json",
+                 ".config/gcloud/configurations/config_default", ".npmrc",
+                 ".pypirc", "_netrc", "client.ovpn", "signing.keystore")
+        for name in names:
+            with self.subTest(name=name):
+                self.assertEqual(self.scan(name, b"fixture")[0]["category"],
+                                 "private-local-file")
+        self.assertFalse(self.scan("Firmware/tests/fixtures/normal-history.csv", b"fixture"))
+        self.assertFalse(self.scan("Firmware/releases/station-4.4.1.bin", b"fixture"))
+
+    def test_gitignore_preserves_public_build_inputs_and_release_files(self):
+        ignored = [".tools/ota/signing.key", "device-data/readings.json", "nvs.csv",
+                   ".npmrc", "Readme/raw/dashboard.png", "Firmware/releases/flash-dump.bin",
+                   "Firmware/releases/station-unreviewed.bin"]
+        public = ["Firmware/releases/station-4.4.1.bin",
+                  "Firmware/releases/sensor-v4-4.4.1.ota", "Firmware/ota_package.py",
+                  "Firmware/sensor/platformio.ini", "Readme/station-history.webp"]
+        result = subprocess.run(
+            ["git", "check-ignore", "--no-index", "-z", "--stdin"], cwd=guard.ROOT,
+            input=("\0".join(ignored + public) + "\0").encode(),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        self.assertIn(result.returncode, (0, 1))
+        self.assertEqual({name.decode() for name in result.stdout.split(b"\0") if name},
+                         set(ignored))
+
     def test_staged_blob_cannot_be_hidden_by_worktree_edit(self):
         previous_root = guard.ROOT
         with tempfile.TemporaryDirectory(prefix="publication-test-") as temp:

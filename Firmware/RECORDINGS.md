@@ -1,6 +1,6 @@
 # Manual recordings, synchronization and USB migration
 
-Firmware **4.3.4**, internal release **40307**.
+Firmware **4.4.1**, internal release **40401**.
 
 ## Button operation on PCB V3 and V4
 
@@ -71,6 +71,13 @@ session. Capacity is shared across nodes and sessions; it is not thirty
 minutes per node indefinitely. The **Recordings** panel shows available archive
 space. Export and delete completed sessions to free space. A sensor retains
 unacknowledged data if the station cannot store them.
+
+Normal station history now uses a separate adaptive paged ring. It shares the
+filesystem with saved recordings and keeps at least 256 KiB of workspace, plus
+a temporary 64 KiB recording reserve. Archive admission can reclaim only old
+normal-history pages; saved recording files are never silently removed. The
+history period shortens as archives consume shared space. Ordinary sensor
+telemetry still has no persistent offline delivery backlog on PCB V3/V4.
 
 ## Persistence and clocks
 

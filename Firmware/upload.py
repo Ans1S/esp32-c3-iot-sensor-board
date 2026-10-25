@@ -82,6 +82,11 @@ def main() -> int:
         help="compile without writing to a connected board",
     )
     parser.add_argument(
+        "--application-only",
+        action="store_true",
+        help="update an installed station without rewriting its bootloader or partition table",
+    )
+    parser.add_argument(
         "--port",
         metavar="PORT",
         help="serial port if PlatformIO cannot choose one automatically (for example COM5)",
@@ -90,6 +95,10 @@ def main() -> int:
 
     target = args.target or choose_target()
     project_dir, environment, description = TARGETS[target]
+    if args.application_only:
+        if target != "station":
+            parser.error("--application-only is supported only for an installed station")
+        environment = "station_s3_update"
     platformio = find_platformio()
     if platformio is None:
         print(

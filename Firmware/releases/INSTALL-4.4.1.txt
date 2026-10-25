@@ -1,0 +1,54 @@
+W-Charger 4.4.1 / release 40401 / ESP-NOW protocol V5
+
+STATION UPDATE WITH SAVED SETTINGS
+
+station-4.4.1.bin is an application-only ESP32-S3 station image.
+Use the existing recording partition layout from the 4.3.x releases.
+Write this application at address 0x10000 without full flash erasure.
+Wi-Fi credentials, sensor identities, settings and stored files stay in their
+existing partitions. The NVS settings schemas and partition table are unchanged.
+Dashboard order and visibility use a new, separate preferences key.
+
+From the source repository, the application-only update command is:
+  python Firmware/upload.py station --application-only
+
+For an already built image with esptool 5 installed, an example is:
+  python -m esptool --chip esp32s3 --port COM5 write-flash 0x10000 station-4.4.1.bin
+Replace COM5 with the actual station USB port. This command contains only the
+application image. A fresh board or a layout older than the recording release
+needs the initial installation/migration described in Firmware/RECORDINGS.md.
+
+SENSOR OTA
+
+Use the station's Firmware updates page. Select the matching configured node
+and upload sensor-v3-4.4.1.ota for PCB V3, or sensor-v4-4.4.1.ota for PCB V4.
+The sensor receives it at a scheduled successful contact. Stop an active SW2
+recording before updating. The installation signing identity is preserved.
+The station BIN is for station USB installation, not the sensor OTA selector.
+
+RELEASE CONTENT
+
+This release contains all prior 4.4.0 changes and the audited reliability
+corrections: expired live-history protection across millis wrap, preserved
+reopened layout drafts, visible retryable history timeouts, and dashboard
+reconnection without a stale JavaScript callback. V3/V4 use the newer release
+identity so already installed 4.4.0 nodes accept this OTA update.
+
+BEHAVIOR AND STORAGE
+
+The overview shows compact cards. The whole card opens details; the whole
+voltage or other measurement tile opens that measurement's history.
+Arrange saves sensor visibility, order, columns and spacing on the station.
+Normal history adapts to actual shared filesystem space and reporting intervals.
+Saved SW2 recordings stay independent. Short normal intervals use bounded
+batches: sudden power loss can lose the latest uncommitted tail, normally up to
+about 35 seconds, longer if storage fails or scheduling is delayed.
+Raw cursor values and CSV samples are retained despite reduced chart geometry.
+
+CHECKS
+
+SHA256SUMS.txt lists the release files. Sensor signatures were verified against
+the existing installation public key and their payloads match the final builds.
+Host/browser checks and all three builds passed. No hardware was flashed or
+measured while preparing this release; RF load, current, flash endurance and
+physical power-cut behavior require on-device acceptance.

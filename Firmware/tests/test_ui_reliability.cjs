@@ -67,8 +67,10 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
     configFails=true;await page.goto('http://station.test/dashboard');
     await page.getByText('Station configuration unavailable · retrying',{exact:true}).waitFor();
     configFails=false;await page.locator('.sensor h3').waitFor({timeout:7000});
-    assert(await page.locator('#securityBanner').isVisible());
-    assert(await page.locator('#cloudMessage').isVisible());
+    await page.evaluate(()=>openSensorDetail(statusData.sensors[0].mac));
+    await page.locator('.currentReadings > summary').click();
+    assert.equal(await page.locator('#securityBanner').isVisible(),false);
+    assert.equal(await page.locator('#cloudMessage').isVisible(),false);
     await page.waitForTimeout(5200);
     assert.equal(await page.locator('#securityBanner').isVisible(),false);
     assert.equal(await page.locator('#cloudMessage').isVisible(),false);
@@ -79,10 +81,10 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
     assert.equal(await page.locator('#cloudState').textContent(),'Not configured');
     stationConfig.adminPasswordSet=true;
     await page.evaluate(()=>loadConfig());
-    assert(await page.locator('#securityBanner').isVisible(),'Changed password protection displays the new notice');
+    assert.equal(await page.locator('#securityBanner').isVisible(),false,'No startup notice appears when protection changes');
     Object.assign(cloud,{uploadEnabledSensors:1,failedUploads:0});
     await page.evaluate(()=>loadStatus());
-    assert(await page.locator('#cloudMessage').isVisible(),'A changed cloud condition displays a new notice');
+    assert.equal(await page.locator('#cloudMessage').isVisible(),false,'Cloud setup notices stay hidden');
     Object.assign(cloud,{failedUploads:1,lastHttpStatus:401});
     await page.evaluate(()=>loadStatus());
     await page.waitForTimeout(5200);
@@ -110,6 +112,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
     assert.equal(await page.locator('.sensor .values .value').count(),1,
       'Battery-only BME680 protection packets cannot retain an IAQ tile');
 
+    await page.locator('.deviceInformation > summary').click();
     await page.locator('.sensorActions button').click();
     await page.locator('#wizardName').fill('First submitted name');
     await page.evaluate(()=>{window.pendingSave=saveSensorWizard();saveSensorWizard()});
@@ -125,6 +128,6 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
     await page.evaluate(()=>closeWizard());
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
     assert.deepEqual(errors,[]);
-    console.log('UI reliability: setup drafts/focus, serialized saves, outage recovery, timed non-repeating notices, persistent errors, null values, battery-only state and storage diagnostic passed');
+    console.log('UI reliability: setup drafts/focus, serialized saves, outage recovery, absent startup notices, persistent errors, null values, battery-only state and storage diagnostic passed');
   }finally{await browser.close()}
 })().catch(error=>{console.error(error);process.exitCode=1});

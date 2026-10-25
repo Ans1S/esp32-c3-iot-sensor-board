@@ -66,5 +66,18 @@ int main() {
   assert(isfinite(sensor.temperatureOffsetC) && sensor.batteryCalibrationFactor == 1);
   assert(sensor.pendingFlags == (station::kSensorCommandFlags | station::kAwaitingProvisioningAck));
   assert(sensor.thingSpeakFields.temperature == 1 && sensor.thingSpeakFields.humidity == 0 && sensor.thingSpeakFields.pressure == 0);
+  station::DashboardLayout layout{};
+  assert(clean.loadDashboardLayout().count == 0);
+  layout.columns = 2; layout.count = 1; layout.entries[0].mac[0] = 2;
+  layout.entries[0].hidden = 1;
+  assert(clean.saveDashboardLayout(layout));
+  const auto restored = clean.loadDashboardLayout();
+  assert(restored.columns == 2 && restored.count == 1 && restored.entries[0].hidden == 1);
+  const auto afterLayout = clean.loadStationConfig();
+  assert(!memcmp(&afterLayout, &loadedSettings, sizeof(loadedSettings)));
+  assert(clean.loadSensorConfigs(&sensor, 1) && sensor.occupied);
+  layout.columns = 4; assert(!clean.saveDashboardLayout(layout));
+  testPreferences["dashboard1"].back() ^= 1;
+  assert(clean.loadDashboardLayout().count == 0);
   puts("Station configuration: preserved mount failures, erased-flash initialization, bounded strings and sensor settings passed");
 }

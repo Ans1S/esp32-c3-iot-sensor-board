@@ -143,6 +143,10 @@ const assert = require('node:assert/strict');
     assert.equal(rows[2][axColumn], '9', 'CSV must retain the raw spike even with visual smoothing');
 
     await page.setViewportSize({width: 390, height: 844});
+    await page.evaluate(() => fitChartLabels());
+    const labelPixels = await page.locator('.liveSvg text').first().evaluate(text =>
+      Number.parseFloat(getComputedStyle(text).fontSize) * text.ownerSVGElement.getBoundingClientRect().width / 600);
+    assert(labelPixels >= 11.9 && labelPixels <= 12.1, 'Chart labels stay readable after SVG scaling');
     await page.locator('.liveSvg').focus();
     await page.keyboard.press('ArrowRight');
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
@@ -154,8 +158,55 @@ const assert = require('node:assert/strict');
       await page.setViewportSize({width: 1280, height: 1000});
       await page.screenshot({path: path.join(process.env.QA_SCREENSHOT_DIR, 'chart-desktop.png'), fullPage: true});
     }
+    const touchPage = await browser.newPage({viewport: {width: 390, height: 844},
+      hasTouch: true, isMobile: true});
+    touchPage.on('pageerror', error => errors.push(error.message));
+    await touchPage.setContent(html);
+    await touchPage.evaluate(() => {
+      document.querySelector('main').style.display = 'none';
+      document.getElementById('sensorGrid').id = 'unusedSensorGrid';
+      document.body.insertAdjacentHTML('beforeend', '<main><div id="sensorGrid"><article id="touchFixture"></article></div></main>');
+      window.touchNow = Date.now();
+      window.touchSamples = [0, 1, 2, 3].map(i => ({t: touchNow - 3000 + i * 1000, v: 20 + i / 10}));
+      document.getElementById('touchFixture').innerHTML = chartSvg(touchSamples,
+        chartDefinitions.temperature, 1, 1, 60, 'raw', touchNow);
+    });
+    const touchSvg = touchPage.locator('#touchFixture .historySvg');
+    await touchSvg.tap();
+    const pinnedTime = await touchSvg.getAttribute('data-cursor-time');
+    assert((await touchPage.locator('#touchFixture .chartReadout').textContent()).includes('Pinned'));
+    await touchSvg.dispatchEvent('pointerleave', {pointerType: 'touch'});
+    assert.equal(await touchSvg.locator('.hoverCursor').evaluate(g => g.style.display), 'block',
+      'Lifting a finger must leave the exact point visible');
+    await touchSvg.dispatchEvent('pointerdown', {pointerType: 'touch', clientX:100, clientY:100});
+    await touchSvg.dispatchEvent('pointermove', {pointerType: 'touch', clientX:101, clientY:140});
+    await touchSvg.dispatchEvent('pointercancel', {pointerType: 'touch'});
+    assert.equal(await touchSvg.getAttribute('data-cursor-time'), pinnedTime,
+      'A vertical scroll gesture must preserve the previous inspection point');
+    await touchPage.evaluate(() => {
+      updateSensorGrid('<article id="touchFixture">' + chartSvg(touchSamples,
+        chartDefinitions.temperature, 1, 1, 60, 'raw', touchNow) + '</article>');
+    });
+    assert.equal(await touchSvg.getAttribute('data-cursor-time'), pinnedTime,
+      'Incremental status updates preserve a touch selection');
+    await touchPage.getByRole('button', {name: 'Next sample', exact: true}).click();
+    assert(Number(await touchSvg.getAttribute('data-cursor-time')) > Number(pinnedTime));
+    const selectedValue = await touchPage.locator('.chartReadoutValue').textContent();
+    await touchPage.evaluate(() => {
+      updateSensorGrid('<article id="touchFixture">' + chartSvg(
+        [{t: touchNow + 120000, v: 99}], chartDefinitions.temperature,
+        1, 1, 60, 'raw', touchNow + 120000) + '</article>');
+    });
+    assert.equal(await touchPage.locator('.chartReadoutValue').textContent(), selectedValue,
+      'A pinned sample leaving the rolling window must not silently snap to a new value');
+    assert((await touchPage.locator('.chartReadout').textContent()).includes('outside current window'));
+    await touchPage.getByRole('button', {name: 'Clear selected sample', exact: true}).click();
+    assert.equal(await touchSvg.getAttribute('data-cursor-time'), null);
+    assert.equal(await touchSvg.locator('.hoverCursor').evaluate(g => g.style.display), 'none');
+    assert(await touchPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await touchPage.close();
     assert.deepEqual(errors, []);
-    console.log('Chart readability: single samples, time windows, raw cursor/CSV, gap-safe smoothing, XYZ styles and mobile layout passed');
+    console.log('Chart readability: single samples, raw cursor/CSV, gaps, XYZ styles, pinned touch samples and stable updates passed');
   } finally {
     await browser.close();
   }

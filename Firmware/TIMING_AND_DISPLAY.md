@@ -12,8 +12,8 @@ and the pulse trend receives points only when a new estimate was calculated.
 | LSM6DSOX | 104 Hz per axis chain, nominal 9.615 ms/sample while powered | Normal: fresh 100 ms summary at configured interval. Recording: 50 ms axis means for five minutes, then 100 ms (approximately 5-6 or 10-11 samples/chain); raw interval peaks retained | XYZ acceleration on a shared g axis; XYZ angular rate on a separate degrees/s axis; zero references and peak tiles |
 | TMP117 | 8 conversions: 8 x 15.5 = 124 ms typical active time; 1 s conversion cycle when recording | Normal: first fresh eight-conversion result at configured interval. Recording: on data-ready, polled every 10 ms, then nominally once/s | One-minute temperature trend, >=0.1 C vertical span to avoid magnifying quantization, range/change and recent stability |
 | MAX30102 | 100 Hz red/IR conversions, 411 us pulses / 18 bits; four-sample average gives 25 Hz FIFO data, every 40 ms | Up to eight waveform samples/packet, normally five every 200 ms; estimate recalculated once/s from 200 FIFO samples (8 s) | BPM trend over one minute; red/IR optical pulse detail over 10 s, switchable to the full retained minute; contact, warmup and quality |
-| BME280 | Configured x1 T/P/H forced conversion: nominal calculation 1.25 + 2.3 + (2.3 + 0.575) + (2.3 + 0.575) = 9.3 ms | Preserve configured room-monitoring interval and deep sleep | Separate selectable T, RH and pressure trends with their own units; persistent 24 h history |
-| BME680 | BSEC ULP requests measurements every 300 s; heater/conversion depend on the BSEC request; raw fallback uses 150 ms heater plus Bosch-computed conversion time | Preserve BSEC maintenance cadence and configured radio/cloud interval | T/RH/pressure individually, IAQ with learning/accuracy state, gas resistance as a diagnostic; persistent 24 h history |
+| BME280 | Configured x1 T/P/H forced conversion: nominal calculation 1.25 + 2.3 + (2.3 + 0.575) + (2.3 + 0.575) = 9.3 ms | Preserve configured room-monitoring interval and deep sleep | Separate selectable T, RH and pressure trends with their own units; adaptive persistent normal history |
+| BME680 | BSEC ULP requests measurements every 300 s; heater/conversion depend on the BSEC request; raw fallback uses 150 ms heater plus Bosch-computed conversion time | Preserve BSEC maintenance cadence and configured radio/cloud interval | T/RH/pressure individually, IAQ with learning/accuracy state, gas resistance as a diagnostic; adaptive persistent normal history |
 
 104 Hz is the configured IMU rate, not its maximum supported rate. Increasing
 ODR is not automatically an accuracy improvement. The 50/100 ms mean is appropriate
@@ -169,10 +169,10 @@ interpolated by this filter. TMP117 stability feedback still requires real,
 continuous data and reports when more samples or a shorter interval are needed.
 
 Ordinary history charts include axes and a dot even for one valid sample.
-Intervals from 1 s to 24 h limit the displayed data; a short interval may
-correctly contain no reading. Storage buckets retain actual reception
-timestamps for new points. Previously saved timestamps retain their existing
-resolution. Previous/next window controls browse the history currently retained
-on the station, and Now returns to a moving view of the latest data. At normal
-intervals below one minute, history retains the latest 900 points in RAM; at
-longer intervals it retains the existing 24-hour persistent history.
+Periods from one second through multi-day windows and All retained data limit
+the view. A short window may correctly contain no reading. Reception timestamps
+are retained at their stored resolution. Previous/next controls browse the
+actual retained range; Now returns to the latest data. Normal history uses
+bounded persistent pages, with short-interval batches and dynamic fair quotas.
+Only SVG geometry is reduced for large data; original cursor and CSV values
+stay available. See [capacity and power-loss limits](RESOURCE_AND_UX_REVIEW.md).

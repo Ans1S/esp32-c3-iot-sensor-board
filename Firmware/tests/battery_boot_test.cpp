@@ -8,6 +8,7 @@ void resetBoot(bool cold = true) {
   radioAvailable = true; stationReplies = false; powerOff = true;
   configPersistenceSucceeded = iaqClearSucceeded = true; iaqClears = 0;
   sensorStartSucceeded = true;
+  sensorReadSucceeded = true;
   sentPackets.clear(); sensor::batteries.clear();
   sensor::configurationReplies.clear();
   if (cold) { rtcState = {}; sensor::savedConfig = {}; testMillis = 100; }
@@ -113,6 +114,35 @@ int main() {
   assert(boot() == 5 && normalExchanges == 1);
   resetBoot(false); sensorStartSucceeded = false; sensor::batteries.push_back({true,2799});
   assert(boot() == 86400); assertProtected();
+  // A successful chip/config probe does not establish a successful BME280
+  // conversion. Read failures need the same bounded recovery as missing chips.
+  resetBoot(); sensorReadSucceeded = false; sensor::batteries.push_back({true,3500});
+  assert(boot() == 5 && sensorStarts == 1 && powerOff);
+  assert(rtcState.sensorStartAttemptsRemaining == 2 && rtcState.sensorRecoveryPending);
+  assert(sentPackets.back().payload.flags & lil::protocol::kSensorReadFailed);
+  resetBoot(false); testMillis -= 86400000 - 5000;
+  sensorReadSucceeded = false; sensor::batteries.push_back({true,3500});
+  assert(boot() == 5 && normalExchanges == 1 && rtcState.sensorStartAttemptsRemaining == 1);
+  resetBoot(false); sensorReadSucceeded = false; sensor::batteries.push_back({true,3500});
+  assert(boot() == 600 && !rtcState.sensorRecoveryPending && rtcState.sensorStartAttemptsRemaining == 0);
+  resetBoot(false); sensorReadSucceeded = false; sensor::batteries.push_back({true,3500});
+  assert(boot() == 600 && rtcState.sensorStartAttemptsRemaining == 0);
+  resetBoot(false); sensor::batteries.push_back({true,3500});
+  assert(boot() == 600 && rtcState.sensorStartAttemptsRemaining == 3);
+  assert(!(sentPackets.back().payload.flags & lil::protocol::kSensorReadFailed));
+  resetBoot(false); sensorReadSucceeded = false; sensor::batteries.push_back({true,3500});
+  assert(boot() == 5 && rtcState.sensorRecoveryPending);
+  resetBoot(false); sensorReadSucceeded = false; sensor::batteries.push_back({true,2799});
+  assert(boot() == 86400); assertProtected();
+  // BME680 can legitimately return no ready reading during BSEC maintenance.
+  resetBoot(); sensor::savedConfig.environmentalSensorType = lil::protocol::EnvironmentalSensorType::kBme680;
+  sensorReadSucceeded = false; sensor::batteries.push_back({true,3500});
+  assert(boot() == 300 && !rtcState.sensorRecoveryPending && rtcState.sensorStartAttemptsRemaining == 3);
+  resetBoot(); sensor::savedConfig.environmentalSensorType = lil::protocol::EnvironmentalSensorType::kAutoDetect;
+  sensorReadSucceeded = false; sensor::batteries.push_back({true,3500});
+  assert(boot() == 5 && rtcState.lastSensorType == lil::protocol::EnvironmentalSensorType::kBme280);
+  resetBoot(false); sensor::batteries.push_back({true,3500});
+  assert(boot() == 600 && !rtcState.sensorRecoveryPending && rtcState.sensorStartAttemptsRemaining == 3);
   // Fixed -> auto restarts the active live driver instead of retaining TMP117.
   resetBoot(); sensor::savedConfig.environmentalSensorType = lil::protocol::EnvironmentalSensorType::kTmp117;
   sensor::batteries.push_back({true,3500});

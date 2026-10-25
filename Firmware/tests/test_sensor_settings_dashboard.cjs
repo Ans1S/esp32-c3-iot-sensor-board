@@ -37,6 +37,9 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
       return route.fulfill({contentType:'application/json',body:JSON.stringify(body)});
     });
     await page.goto('http://station.test/dashboard');
+    await page.locator('.sensor h3').first().waitFor();
+    await page.evaluate(()=>openSensorDetail(statusData.sensors[0].mac));
+    await page.locator('.deviceInformation > summary').click();
     await page.getByRole('button',{name:'Zero axes here',exact:true}).waitFor();
     await page.getByRole('button',{name:'Zero axes here',exact:true}).click();
     await page.getByRole('button',{name:'Clear reference',exact:true}).waitFor();

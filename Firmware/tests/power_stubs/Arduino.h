@@ -9,7 +9,7 @@ inline int padMode[22]{}, padLatch[22]{};
 inline bool expectInactiveEnable = false;
 inline void pinMode(uint8_t pin, int mode) {
   if (expectInactiveEnable && mode == OUTPUT) {
-    if (pin == 10) assert(padLatch[pin] == 1); // Active-low V4 PMOS.
+    if (pin == 10) assert(padLatch[pin] == (PCB_VERSION == 4 ? HIGH : LOW));
     if (pin == 6) assert(padLatch[pin] == 0);
   }
   padMode[pin] = mode;

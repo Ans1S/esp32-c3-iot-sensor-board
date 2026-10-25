@@ -108,11 +108,17 @@ lil::protocol::EnvironmentalSensorType EnvironmentalSensor::probeSensorType(
     if (measurementBudgetExpired()) return lil::protocol::EnvironmentalSensorType::kAutoDetect;
     Wire.beginTransmission(address);
     Wire.write(kChipIdRegister);
-    if (Wire.endTransmission(false) != 0 ||
-        Wire.requestFrom(address, static_cast<uint8_t>(1)) != 1) {
+    const uint8_t error = Wire.endTransmission(false);
+    if (error != 0) {
+      SENSOR_LOG_PRINTF("[I2C] Bosch probe failed: address=0x%02X error=%u\n", address, error);
+      continue;
+    }
+    if (Wire.requestFrom(address, static_cast<uint8_t>(1)) != 1) {
+      SENSOR_LOG_PRINTF("[I2C] Bosch chip ID read incomplete: address=0x%02X\n", address);
       continue;
     }
     const uint8_t chipId = Wire.read();
+    SENSOR_LOG_PRINTF("[I2C] Bosch probe: address=0x%02X chip_id=0x%02X\n", address, chipId);
     const auto type = chipId == kBme680ChipId ?
         lil::protocol::EnvironmentalSensorType::kBme680 :
         chipId == kBme280ChipId ? lil::protocol::EnvironmentalSensorType::kBme280 :
