@@ -60,6 +60,15 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
     await page.locator('.sensorSummary').first().locator('.meta').click();
     await page.locator('.historySvg').waitFor();
     await checkBackSpacing();
+    assert.equal(await page.locator('.sensorTop .sensorIdentity').count(),1);
+    assert.equal(await page.locator('.sensorTop .sensorActions a').filter({hasText:'Firmware'}).count(),1);
+    assert.equal(await page.locator('.sensorTop .sensorActions button').filter({hasText:'Edit'}).count(),1);
+    assert.equal(await page.locator('.deviceInformation .sensorIdentity,.deviceInformation .sensorActions').count(),0,
+      'Device identity and actions appear only in the detail header');
+    assert(await page.locator('.sensorTop').evaluate(top=>{
+      const name=top.querySelector('h3').getBoundingClientRect(),identity=top.querySelector('.sensorIdentity').getBoundingClientRect(),actions=top.querySelector('.sensorActions').getBoundingClientRect();
+      return identity.left>name.right&&Math.abs(identity.top-name.top)<20&&Math.abs(actions.right-top.getBoundingClientRect().right)<2;
+    }),'Identity follows the name and header actions align with the right edge');
     assert.equal(await page.getByLabel('History metric').inputValue(),'battery');
     assert(historyCalls.length>1&&historyCalls.every(m=>m===mac),'Only the opened sensor is paged');
     await page.getByLabel('Chart time window').selectOption('all');
@@ -76,6 +85,27 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
     assert((await page.locator('.chartReadout').textContent()).includes('Pinned'));
     await page.getByRole('button',{name:'All sensors',exact:false}).click();
     assert.equal(await page.locator('.historySvg').count(),0);
+    // Both parts of the brand and keyboard activation return to the overview.
+    for(const target of ['#homeLogo .mark','#homeLogo b']){
+      await page.locator('.sensorSummary').first().locator('.meta').click();
+      await page.locator('.historySvg').waitFor();
+      await page.getByRole('button',{name:'Settings',exact:true}).click();
+      await page.locator(target).click();
+      assert.deepEqual(errors,[]);
+      assert.equal(await page.locator('#overview.on .sensorSummary').count(),2);
+      assert.equal(await page.locator('.historySvg').count(),0);
+      assert.equal(await page.evaluate(()=>location.hash),'');
+    }
+    for(const key of ['Enter','Space']){
+      await page.getByRole('button',{name:'Arrange',exact:true}).click();
+      await page.getByRole('button',{name:'Settings',exact:true}).click();
+      await page.locator('#homeLogo').focus();await page.keyboard.press(key);
+      assert.equal(await page.locator('#overview.on .sensorSummary').count(),2);
+      assert.equal(await page.locator('#dashboardLayout').isVisible(),false);
+    }
+    await page.locator('.sensorSummary').first().locator('.meta').click();
+    await page.getByRole('button',{name:'Overview',exact:true}).click();
+    assert.equal(await page.locator('#overview.on .sensorSummary').count(),2);
     // The entire voltage tile must navigate, including its bottom edge.
     const tile=page.locator('.sensorSummary').first().locator('.value');
     const box=await tile.boundingBox();await page.touchscreen.tap(box.x+box.width/2,box.y+box.height-8);
