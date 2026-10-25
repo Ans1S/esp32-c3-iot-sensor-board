@@ -1,15 +1,18 @@
 # W-Charger Station Firmware
 
-Firmware 4.3.4 supports LSM6DSOX, TMP117 and MAX30102 live acquisition on PCB V3/V4.
-See [precision sensor operation and timing](../PRECISION_SENSORS.md).
+Firmware **4.4.1 / 40401** uses the existing green light/dark design and a
+compact overview of sensor names and current readings. Click or tap anywhere
+on a sensor card for details, or anywhere on a measurement tile for that
+measurement's chart. **Arrange** saves order, visibility, spacing and column
+count on the station. Hidden sensors keep measuring and saving data.
 
-The overview security/cloud configuration notices disappear after five seconds
-and stay dismissed across status polling until the condition changes. Password
-and cloud state remain available in Settings and the overview status summary.
-Upload/connection errors, storage failures and active battery protection remain
-visible. Pending sensor changes show initialization feedback without reusing
-old sensor errors or values. BME280 cards show temperature, humidity, pressure
-and battery; IAQ and gas resistance are shown only for BME680.
+Details show measurement/time selectors first and disclose display/export and
+device settings separately. A touch selection stays pinned; previous/next
+sample buttons support precise inspection. Automatic orange security/cloud
+setup notices no longer appear. Real upload/storage faults and active battery
+protection remain visible. Settings and Firmware stay available in details.
+See [precision operation](../PRECISION_SENSORS.md) and
+[capacity and validation](../RESOURCE_AND_UX_REVIEW.md).
 
 The station runs on the existing Seeed XIAO ESP32-S3. It keeps Wi-Fi and
 ESP-NOW active at the same time, so the web interface remains available and
@@ -46,7 +49,12 @@ channel profile and maps measurements to fields 1 through 8. Only then does
 the sensor appear in the regular dashboard with its last contact, readings,
 battery voltage, radio quality and switchable local history. Available
 intervals start at one second and include a custom value of up to 24 hours.
-Intervals below one minute retain 900 history slots in RAM instead of a persistent 24-hour ring.
+Normal history uses bounded persistent pages for environmental, battery,
+TMP117 and LSM6DSOX samples. Retention follows the interval and available shared
+space rather than a fixed 24-hour limit. Short intervals are batched; a sudden
+power loss can lose the latest uncommitted batch (normally up to about 35 s,
+longer if storage is failing). The detail view reports saved/buffered points.
+Manual SW2 sessions remain independent. MAX30102 remains SW2-only.
 Each sensor report also carries its actual operating mode. The captive setup
 wizard, pending-sensor list and configured dashboard cards display **Setup
 mode**, **Energy-saving mode**, **Channel recovery** or **Mode unknown**. The
@@ -121,15 +129,12 @@ transmit, it reappears as a new device on its next contact, as expected.
 The editing wizard also provides transparent BME680 commissioning, an explicit
 reset of the IAQ learning state and optional battery-voltage calibration using
 a multimeter reference. Independently of any open browser, the station stores
-a rolling 24-hour history for every sensor. Its windows follow the configured
-report interval and each contains the latest received measurement: temperature,
-humidity, pressure, IAQ and its accuracy, gas resistance and battery voltage.
-A phone or another browser loads the complete data through the local station
-API; keeping or reloading a page is not required for collection. The history
-survives a normal station restart. A drop-down switches the labelled plot
-between every quantity supported by the sensor, with time, value range and unit
-shown on the axes. Truly missing measurement windows are not bridged by an
-invented connecting line.
+an adaptive persistent history for normal measurements. Environmental/battery
+rows retain compact precision; TMP117 and IMU rows retain their floats. A
+selected sensor loads the complete retained data in bounded API pages. No
+browser needs to remain open for collection. The view reports saved/buffered
+points, gaps, interval and estimated capacity, with a raw full-history CSV.
+Short-interval batches have a bounded uncommitted tail on sudden power loss.
 
 The channel ID and read/write API keys can be entered in the captive portal and
 later in the station settings. The read key is used only to read private
@@ -139,8 +144,8 @@ keys are shown in plain text in the local web interface only on explicit
 request and are restored to the fields after a restart. Cloud upload remains
 disabled until it is explicitly enabled in the sensor wizard.
 
-When a user API key is stored, the settings page loads ThingSpeak channels
-automatically. Channels can be created, renamed, edited with their description,
+When a user API key is stored, the settings page can load ThingSpeak channels
+through the explicit Load channels action. Channels can be created, renamed, edited with their description,
 fields, tags, metadata, visibility and location, cleared or deleted. Direct
 channel and feed URLs are displayed. A newly detected sensor can select one of
 these channels in the wizard; its channel ID and write key are then copied into
@@ -148,7 +153,7 @@ a local sensor profile automatically.
 
 The status panel reports **Connected** only after ThingSpeak confirms a write
 with a real entry ID. An incorrect write key, HTTP/TLS error or absence of valid
-measurements produces a specific error message instead. The local 24-hour
+measurements produces a specific error message instead. The local adaptive
 history is stored exclusively on the station and therefore does not depend on
 ThingSpeak or one browser's storage. A complete firmware upload with flash
 erasure and a factory reset intentionally delete this history.
@@ -191,6 +196,18 @@ reported software/build versions and confirmed transfer progress. See
 
 ## Performance changes and verification
 
+The optional ThingSpeak upload worker starts with the first valid enabled
+upload. An empty worker waits for a notification; an installation which has
+never enabled uploads does not allocate its 10 KiB task stack. The bounded
+cloud scheduler and initialization mutexes still occupy memory. Account
+management remains available separately.
+
+The status API reports 64-bit monotonic uptime/contact age and a `memory`
+object containing internal free/minimum/largest-block bytes and PSRAM
+free/largest-block bytes. These support on-device load and fragmentation
+checks. The [resource review](../RESOURCE_AND_UX_REVIEW.md) distinguishes
+current retention limits from the proposed adaptive storage policy.
+
 See [power management](../POWER_MANAGEMENT.md) for default operating modes,
 energy tradeoffs and validation limits. Reproducible host and browser checks
 are in [tests/README.md](../tests/README.md); physical acceptance checks are in
@@ -220,10 +237,21 @@ Normal USB and OTA firmware updates preserve this data and the recording archive
 
 ## Current release and publication checks
 
-Firmware **4.3.4 / 40307** includes bounded sensor reinitialization, durable
-settings/history corrections and the updated recording/dashboard behavior.
+Firmware **4.4.1 / 40401** includes bounded sensor reinitialization, long-uptime
+corrections, adaptive normal history and the compact configurable dashboard.
 See [the complete change inventory](../CHANGELOG.md),
 [release artifacts](../releases/README.md) and
 [publication review](../PUBLICATION_REVIEW.md). Build diagnostics use relative
 paths; installation keys and device data must stay local. Software tests do not
 replace physical accuracy, rail-voltage and sleep-current acceptance.
+
+## Updating an installed station without resetting it
+
+Run `python Firmware/upload.py station --application-only` from the repository
+root, or `pio run -e station_s3_update -t upload` from this directory. This target
+writes only the application at `0x10000`. Use it on the compatible recording
+partition layout already used by releases 4.3.x. It leaves the NVS, Wi-Fi,
+sensor identities, partition table, bootloader and filesystem outside the write.
+The settings schema is unchanged; dashboard preferences use a separate key.
+For a bare/new board use the normal installation target to install the layout.
+Only the explicitly named factory-reset target erases all flash.

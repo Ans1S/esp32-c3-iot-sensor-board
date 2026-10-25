@@ -1,5 +1,92 @@
 # Firmware change inventory
 
+## 4.4.1 / 40401 — 2026-10-25
+
+- Refresh the compact README with current overview, history, settings, saved
+  recording and firmware-update views, plus a concise guide to each workflow.
+  Render all examples locally from the embedded pages with fixed demo data.
+- Extend local-data exclusions and publication guards to device exports,
+  flash dumps and additional authentication files. Preserve release-text bytes
+  across checkouts so distributed checksums also work for a fresh clone.
+- Expire the station's live ring using a 64-bit monotonic timestamp. A full
+  `millis()` wrap cannot revive old samples, and cached contacts or the first
+  fresh sample after a long outage cannot reintroduce them. The existing
+  one-minute window, sample IDs and recording formats remain unchanged.
+- Preserve a reopened dashboard-layout draft when an earlier save completes.
+- Show a retryable history timeout while retaining the previous complete
+  snapshot. Navigation cancellation remains silent and cannot overwrite the
+  selected sensor's state.
+- Fix the dashboard status-error handler's obsolete notice-function call so
+  a disconnected station reports its error and recovers without a script fault.
+- Add interaction stress checks with 19 dashboard nodes, rapid navigation,
+  failed/partial history reads, invalid cursors, timeouts and station restart.
+  Extend host checks to both board power polarities, allocation failure,
+  low-memory recovery, full PSRAM buffers and active-reader CRC faults.
+
+These source corrections retain protocol V5, acquisition/reporting intervals,
+SW2 recording, power limits and persistent data formats. This full release
+includes all changes listed under 4.4.0 and the sensor fixes from earlier
+releases. All three targets use 4.4.1 / 40401. Existing older packages remain
+available. No board was flashed or measured during release preparation.
+
+## 4.4.0 / 40400 — 2026-10-25
+
+- Fix precision acquisition and recording replay stalls after long uptime by
+  replacing inactive/expired signed retry deadlines with explicit unsigned
+  elapsed backoffs. Failed durable recording acknowledgements also back off.
+- Use 64-bit monotonic station uptime, sensor contact age and login blocking.
+  A millis wrap cannot make an old contact fresh or revive an expired block.
+- Pin touch-selected chart samples through pointer leave and status updates;
+  retain the original readout when a point leaves the rolling window. Add
+  adjacent-sample/clear actions and keep axis labels readable on small screens.
+- Start the ThingSpeak upload task only for an enabled valid upload, and wake
+  an idle worker through notifications instead of polling an empty queue.
+- Add heap fragmentation diagnostics to the status API and document current
+  V3/V4/station capacity and mobile interface research in
+  [the resource review](RESOURCE_AND_UX_REVIEW.md).
+- Make a compact current-readings overview the default. The whole sensor card
+  opens details; every measurement tile opens its own history. Save visibility,
+  order, column count and spacing on the station under a separate NVS key.
+- Remove automatic orange security/cloud setup notices. Keep persistent errors
+  visible and make settings, firmware and export explicit detail actions.
+- Replace the normal 24-hour/900-point limit with bounded CRC-checked flash
+  pages, fair per-node quotas and an adaptive filesystem reserve. Preserve
+  TMP117/IMU float precision and separate manual recordings. Import legacy
+  environmental history without changing sensor or Wi-Fi configuration.
+- Load only the opened sensor's history in fixed pages. Offer longer periods
+  and All retained data, reduce only SVG geometry, and keep raw cursor/CSV
+  samples. Preserve expanded controls, focus and pinned values during updates.
+- Add `station_s3_update` and `upload.py station --application-only` for USB
+  application updates without rewriting bootloader or partitions. Normal
+  uploads reject inherited full-erasure flags; explicit factory reset remains.
+
+Protocol V5, NVS settings formats, partition layouts, acquisition schedules and
+battery-protection policies are unchanged. PCB V3/V4 OTA packages retain the
+existing installation signing identity. The station BIN is application-only at
+`0x10000`. No device was flashed or measured during preparation.
+
+## 4.3.5 / 40308 — 2026-10-17
+
+Sensor PCB V4 OTA maintenance update for intermittent BME280 read failures.
+
+- Require a valid BME280 forced-conversion sample before replenishing the
+  bounded recovery budget. Initialization followed by a failed conversion now
+  triggers the existing five-second deep-sleep retry path, including with
+  automatic sensor detection. Persistent failures exhaust the three-attempt
+  budget and return to the configured interval.
+- Add optional Bosch probe and BME280 register/configuration/conversion
+  diagnostics. Normal builds keep diagnostic logging disabled.
+- Preserve BME280 power gating, BME680 maintenance, recording behavior and V4
+  2800/2950 mV battery protection with 24-hour deep sleep.
+- Regression tests cover failed conversions, retry exhaustion, valid-sample
+  recovery, automatic detection and battery protection during recovery.
+
+The package uses the existing installation signing identity and protocol V5.
+The station and PCB V3 distribution remain at 4.3.4; no station update is
+required for this sensor correction. This improves recovery latency and does
+not establish the electrical cause of the reported intermittent fault.
+No hardware was flashed or measured.
+
 ## 4.3.4 / 40307 — 2026-10-07
 
 This inventory covers changes after commit `1f690bc` (firmware 4.3.1 / 40304)

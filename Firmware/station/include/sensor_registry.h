@@ -8,6 +8,7 @@
 #include "config_store.h"
 #include "lil_protocol.h"
 #include "recording_protocol.h"
+#include "paged_history.h"
 
 namespace station {
 
@@ -48,6 +49,7 @@ struct SensorRuntime {
   lil::protocol::TelemetryPayload telemetry{};
   int8_t stationRssi = 0;
   uint32_t lastSeenMs = 0, receivedIntervalMs = 0;
+  uint64_t lastSeenMonotonicMs = 0;
   uint32_t lastSequence = 0;
   bool hasSequence = false;
   uint32_t receivedPackets = 0;
@@ -67,7 +69,9 @@ struct SensorView {
 
 class SensorRegistry {
  public:
-  bool begin(ConfigStore& store, uint32_t defaultSleepSeconds);
+  bool begin(ConfigStore& store, uint32_t defaultSleepSeconds, PagedHistory* paged = nullptr);
+  PagedHistory* normalHistory() const { return paged_; }
+  void flushHistory() { if (paged_) paged_->flushDue(); }
   size_t liveHistory(const uint8_t mac[6], LiveSample* output, size_t capacity) const;
   bool registerTelemetry(const uint8_t mac[6], uint32_t sequence,
                          const lil::protocol::TelemetryPayload& telemetry,
@@ -151,6 +155,7 @@ class SensorRegistry {
   };
 
   ConfigStore* store_ = nullptr;
+  PagedHistory* paged_ = nullptr;
   uint32_t defaultSleepSeconds_ = 600;
   mutable SemaphoreHandle_t mutex_ = nullptr;
   mutable SemaphoreHandle_t storageMutex_ = nullptr;
@@ -159,7 +164,11 @@ class SensorRegistry {
   SensorIdentity identities_[kMaxSensorIdentities]{};
   SensorRuntime runtime_[kMaxSensors]{};
   StoredHistory history_[kMaxSensors]{};
-  struct LiveHistory { LiveSample* samples = nullptr; size_t head = 0, count = 0, capacity = 0; };
+  struct LiveHistory {
+    LiveSample* samples = nullptr;
+    size_t head = 0, count = 0, capacity = 0;
+    uint64_t lastSampleMonotonicMs = 0;
+  };
   LiveHistory live_[kMaxSensors]{};
 };
 

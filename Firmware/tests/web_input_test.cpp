@@ -1,4 +1,5 @@
 #include "web_input.h"
+#include "login_throttle.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -32,5 +33,20 @@ int main() {
     number = 42;
     assert(!finiteDecimal(text, number, -10, 10) && number == 42);
   }
-  puts("HTTP numeric inputs: complete decimals, bounds and narrowing passed");
+  station::LoginThrottle throttle;
+  uint32_t retryAfter = 42;
+  assert(!throttle.blocked(100, retryAfter) && retryAfter == 0);
+  for (unsigned i = 0; i < 4; ++i) assert(!throttle.recordFailure(100+i, retryAfter));
+  assert(throttle.recordFailure(104, retryAfter) && retryAfter == 30);
+  assert(throttle.blocked(105, retryAfter) && retryAfter == 30);
+  assert(!throttle.blocked(30104, retryAfter) && retryAfter == 0);
+  for (unsigned i = 0; i < 5; ++i) throttle.recordFailure(40000+i, retryAfter);
+  assert(!throttle.blocked(0x80010000ULL, retryAfter) && retryAfter == 0);
+  // A current block still applies across the 32-bit millis boundary.
+  for (unsigned i = 0; i < 5; ++i) throttle.recordFailure(0xfffffff0ULL+i, retryAfter);
+  assert(throttle.blocked(0x100000010ULL, retryAfter));
+  assert(!throttle.blocked(0x100010000ULL, retryAfter));
+  // Many wraps and long quiet periods cannot resurrect a previous block.
+  assert(!throttle.blocked(0x800000000ULL, retryAfter));
+  puts("HTTP inputs and login throttling: bounded decimals, monotonic cooldowns and long uptime passed");
 }

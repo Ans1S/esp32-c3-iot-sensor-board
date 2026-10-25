@@ -14,6 +14,7 @@ inline bool radioAvailable = true, stationReplies = false, powerOff = true;
 inline bool configPersistenceSucceeded = true;
 inline bool iaqClearSucceeded = true;
 inline bool sensorStartSucceeded = true;
+inline bool sensorReadSucceeded = true;
 inline int iaqClears = 0;
 inline std::vector<lil::protocol::TelemetryPacket> sentPackets;
 inline uint32_t esp_random() { return 123; }
@@ -74,7 +75,7 @@ class EnvironmentalSensor {
  public:
   bool begin(PowerController&, lil::protocol::EnvironmentalSensorType, float) { ++sensorStarts; powerOff = !sensorStartSucceeded; return sensorStartSucceeded; }
   EnvironmentalReading read() {
-    EnvironmentalReading r{}; r.valid = sensorStartSucceeded; r.sensorType = savedConfig.environmentalSensorType;
+    EnvironmentalReading r{}; r.valid = sensorStartSucceeded && sensorReadSucceeded; r.sensorType = detectedType();
     if (r.valid) { r.temperatureC = 25; r.capabilities = lil::protocol::kTemperature; }
     return r;
   }
@@ -82,7 +83,10 @@ class EnvironmentalSensor {
   bool clearIaqState() { ++iaqClears; return iaqClearSucceeded; }
   void prepareForDeepSleep(uint32_t, lil::protocol::EnvironmentalSensorType) {}
   uint32_t bme680RecommendedSleepSeconds(uint32_t fallback) { return fallback; }
-  lil::protocol::EnvironmentalSensorType detectedType() { return savedConfig.environmentalSensorType; }
+  lil::protocol::EnvironmentalSensorType detectedType() {
+    return savedConfig.environmentalSensorType == lil::protocol::EnvironmentalSensorType::kAutoDetect
+        ? lil::protocol::EnvironmentalSensorType::kBme280 : savedConfig.environmentalSensorType;
+  }
 };
 struct ExchangeResult {
   bool delivered = false, configReceived = false;
@@ -122,7 +126,7 @@ class RecordingStore {
   bool append(uint64_t, const lil::protocol::TelemetryPayload&) { return true; }
   lil::recording::Status status(uint32_t) { return {}; }
   bool next(lil::recording::Upload&) { return false; }
-  void acknowledge(const lil::recording::Record&) {}
+  bool acknowledge(const lil::recording::Record&) { return true; }
   void anchor(uint64_t, uint32_t, uint32_t) {}
 };
 struct LiveCapture { EnvironmentalReading reading; uint64_t capturedMs; bool recording = false; };

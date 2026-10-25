@@ -38,7 +38,7 @@ protocol version.
 - `web_portal`: setup wizard, responsive dashboard, sensor provisioning,
   history, channel profiles and account management
 - `sensor_registry`: MAC-based device management, configuration revisions and
-  a persistent rolling 24-hour history in LittleFS
+  adaptive typed normal history in LittleFS through `paged_history`
 - `espnow_gateway`: short radio callbacks, packet validation and response-first
   configuration replies followed by deferred persistence
 - `thingspeak_service`: a separate FreeRTOS task for blocking HTTPS requests
@@ -75,12 +75,15 @@ flash operations or history allocation. Slot generations invalidate queued
 samples after deletion/reuse. An immediate station power loss can still lose
 an acknowledged sample that has not reached flash.
 
-At intervals of at least 60 seconds, the station keeps a 24-hour ring of
-40-byte V4 samples in LittleFS. Existing 23-byte V3 environmental samples are
-migrated. Reception time determines the bucket independently of flash latency;
-raw-fallback IAQ is excluded. Normal restart preserves this history; factory
-reset or full flash erase removes it. Subminute intervals use a bounded
-900-entry RAM ring and avoid per-report flash persistence; restart clears it.
+The station keeps normal history in bounded CRC-checked append pages. The
+byte budget, reporting interval and number of provisioned consumers determine
+retention. Existing environmental rings are imported; settings formats and
+partition tables stay unchanged. TMP117/IMU precision is retained. Subminute
+reports are batched, with a normally roughly 35-second uncommitted tail under
+healthy scheduling/storage. Failed writes stay bounded. Only old normal pages
+can be reclaimed for recording space; full SW2 archives keep durable ACKs and
+explicit deletion. Selected-node API reads are paged and do not cache entire
+normal histories on the station. See [resource limits](RESOURCE_AND_UX_REVIEW.md).
 
 
 ### Sensor

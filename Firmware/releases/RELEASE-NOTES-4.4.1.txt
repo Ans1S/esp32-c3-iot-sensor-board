@@ -1,0 +1,53 @@
+W-Charger 4.4.1 / 40401 - 2026-10-25
+
+This is a complete release for the ESP32-S3 station and sensor PCB V3/V4,
+including every current firmware change. All targets retain ESP-NOW protocol V5.
+
+INCLUDED FROM 4.4.0 AND EARLIER
+
+- Compact dashboard with whole-card and whole-measurement-tile navigation,
+  station-persisted order/visibility/columns/spacing and touch-pinned inspection.
+- Adaptive persistent normal history with CRC-checked pages, fair per-node
+  quotas, storage reserves, bounded batching and legacy history migration.
+- Selected-node pagination, longer chart periods and bounded display geometry;
+  original samples, raw cursor values and full recording CSV remain intact.
+- Long-uptime acquisition/replay backoff, monotonic contact/login timing and
+  lazy ThingSpeak worker creation with idle notification waits.
+- Bounded sensor startup and BME280 forced-conversion recovery, precision
+  acquisition windows, independent manual SW2 recordings and durable replay.
+- Application-only station USB installation without full erasure.
+- No automatic orange security/cloud setup notices; actual faults remain visible.
+
+ADDITIONAL AUDIT CORRECTIONS IN 4.4.1
+
+- Expired live samples cannot reappear after a full 32-bit millis wrap, including
+  after cached contacts or a first fresh sample following a long outage.
+- An older layout-save response preserves a newly reopened layout draft.
+- A real history timeout shows a retry action and preserves complete loaded
+  data. Superseded navigation requests remain cancelled without stale updates.
+- Dashboard disconnection/reconnection no longer calls a removed JavaScript
+  notice function.
+
+PRESERVED OPERATION
+
+Partition layouts, existing NVS settings schemas, sensor identities and OTA
+installation signing identity are unchanged. BME280 forced measurements and
+deep sleep, BME680 five-minute ULP maintenance, configured reporting intervals,
+normal precision windows and SW2-only manual sessions remain in place.
+V4 battery protection retains 2800 mV entry, 2950 mV recovery and 24-hour sleep.
+
+INSTALLATION AND VALIDATION
+
+Read INSTALL-4.4.1.txt. The station BIN is an application-only USB image for
+0x10000 on the existing compatible recording layout. V3/V4 OTA files are signed
+sensor packages selected through the station's Firmware updates page.
+The release integer is newer than 4.4.0, so those installed nodes can update.
+
+Validation includes all three builds, 24 production C++ suites, eight embedded
+browser suites, OTA cryptography, library patches, upload-preservation checks,
+script syntax, trusted signatures, exact build-payload comparisons, ZIP member
+checks and SHA-256 checksums. Interaction/fault tests include 19 simulated nodes,
+slow/failed/cancelled reads, CRC faults, timeout, restart, low memory and full
+storage. No device was flashed or physically measured during preparation.
+Hardware accuracy, RF/power-loss timing, flash endurance and current consumption
+remain separate acceptance work.

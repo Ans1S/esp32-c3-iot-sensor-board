@@ -43,7 +43,9 @@ bool ThingSpeakService::begin(SensorRegistry& registry) {
   if (queueMutex_ == nullptr || tlsMutex_ == nullptr) {
     return false;
   }
-  return xTaskCreate(taskEntry, "thingspeak", 10240, this, 1, &task_) == pdPASS;
+  // An installation without cloud uploads needs no upload task or its stack.
+  // Account-management requests use the TLS mutex independently of this task.
+  return true;
 }
 
 bool ThingSpeakService::queue(
@@ -51,7 +53,7 @@ bool ThingSpeakService::queue(
     const lil::protocol::TelemetryPayload& telemetry, int8_t stationRssi,
     uint32_t sequence, uint32_t receivedAt, bool sharedChannel,
     uint32_t generation) {
-  if (!config.provisioned || !config.cloudUploadEnabled ||
+  if (!queueMutex_ || !config.provisioned || !config.cloudUploadEnabled ||
       config.thingSpeakChannelId == 0 ||
       config.thingSpeakWriteKey[0] == '\0') {
     return false;
@@ -70,8 +72,14 @@ bool ThingSpeakService::queue(
   job.telemetry = telemetry;
 
   xSemaphoreTake(queueMutex_, portMAX_DELAY);
+  if (!task_ && xTaskCreate(taskEntry, "thingspeak", 10240, this, 1, &task_) != pdPASS) {
+    xSemaphoreGive(queueMutex_);
+    return false;
+  }
   scheduler_.push(job, millis());
   droppedJobs_.store(scheduler_.dropped(), std::memory_order_relaxed);
+  // Notifications are retained if the worker has not entered its wait yet.
+  xTaskNotifyGive(task_);
   xSemaphoreGive(queueMutex_);
   return true;
 }
@@ -87,10 +95,13 @@ void ThingSpeakService::taskLoop() {
     scheduler_.expire(millis());
     const bool ready = WiFi.status() == WL_CONNECTED &&
                        scheduler_.take(millis(), entry);
+    const bool pending = scheduler_.size() != 0;
     droppedJobs_.store(scheduler_.dropped(), std::memory_order_relaxed);
     xSemaphoreGive(queueMutex_);
     if (!ready) {
-      vTaskDelay(pdMS_TO_TICKS(250));
+      // Only queued work needs timed network/rate-limit checks. An empty
+      // worker sleeps until queue() publishes a new valid upload.
+      ulTaskNotifyTake(pdTRUE, pending ? pdMS_TO_TICKS(250) : portMAX_DELAY);
       continue;
     }
     const bool success = upload(entry.job);

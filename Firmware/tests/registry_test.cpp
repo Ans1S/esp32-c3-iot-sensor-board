@@ -7,7 +7,10 @@
 #include <limits>
 #include <vector>
 #include "sensor_registry.h"
+#include "normal_history_policy.h"
 #include "esp_heap_caps.h"
+int64_t testTimeUs = 100000;
+void testRadioTick() { ++testMillis; }
 
 namespace {
 std::function<void()> storageHook;
@@ -221,6 +224,7 @@ int main() {
   const unsigned fastWrites = writes;
   for (uint32_t i = 1; i <= 901; ++i) {
     testMillis += 100;
+    testTimeUs = static_cast<int64_t>(testMillis) * 1000;
     assert(registry.registerTelemetry(mac, 5 + i, telemetry, -60, response, txPower, duplicate, generation));
     assert(registry.persistTelemetry(mac, 5 + i, telemetry, -60, generation, received + i));
   }
@@ -239,6 +243,7 @@ int main() {
   assert(registry.registerTelemetry(mac, 911, telemetry, -60, response, txPower, duplicate, generation));
   assert(registry.liveHistory(mac, motionSamples, station::kLiveCapacity) == 602);
   testMillis += 60001;
+  testTimeUs = static_cast<int64_t>(testMillis) * 1000;
   assert(registry.liveHistory(mac, motionSamples, station::kLiveCapacity) == 0);
   telemetry.flags = lil::protocol::kBatteryProtectionActive;
   telemetry.operatingMode = lil::protocol::SensorOperatingMode::kBatteryProtection;
@@ -262,6 +267,10 @@ int main() {
   assert(registry.setMotionReference(mac, false));
   assert(registry.findView(mac, view) && view.motionReference.enabled);
   assert(view.motionReference.accelerationG[2] == 1.0F);
+  const auto beforeLongOutage = testTimeUs;
+  testTimeUs += (uint64_t(UINT32_MAX) + 1) * 1000;
+  assert(!registry.setMotionReference(mac, false));
+  testTimeUs = beforeLongOutage;
   telemetry.motion.angularRateDps[0] = 50;
   assert(registry.registerTelemetry(mac, 1002, telemetry, -60, response, txPower, duplicate, generation));
   assert(!registry.setMotionReference(mac, false));
@@ -371,5 +380,67 @@ int main() {
   assert(fullCache.updateConfig(mac, "Active sensor", 600, 0, "", false, {}, 0xff,
       lil::protocol::EnvironmentalSensorType::kBme280, 0, 1));
   assert(fullCache.findView(mac, view) && !strcmp(view.config.name, "Active sensor"));
+  // The production paged backend migrates legacy values without changing Wi-Fi
+  // or sensor configuration, and normal precision samples do not need a live ring.
+  station::PagedHistory paged;
+  assert(paged.begin(true));
+  const auto configBeforeMigration = saved[0];
+  station::SensorRegistry withPages;
+  assert(withPages.begin(store, 600, &paged));
+  assert(!memcmp(&saved[0], &configBeforeMigration, sizeof(saved[0])));
+  assert(histories[0].empty() && paged.info(mac).durablePoints == 2);
+  assert(withPages.updateConfig(mac, "Temperature", 1, 0, "", false, {}, 0xff,
+      lil::protocol::EnvironmentalSensorType::kTmp117, 0, 1));
+  telemetry = {}; telemetry.sensorType = lil::protocol::EnvironmentalSensorType::kTmp117;
+  telemetry.operatingMode = lil::protocol::SensorOperatingMode::kEnergySaving;
+  telemetry.capabilities = lil::protocol::kTemperature | lil::protocol::kBattery;
+  telemetry.temperatureC = 21.123046875F; telemetry.batteryMillivolts = 3805;
+  assert(station::usesNormalHistory(telemetry));
+  auto manualTelemetry = telemetry;
+  manualTelemetry.operatingMode = lil::protocol::SensorOperatingMode::kContinuousPrecision;
+  assert(!station::usesNormalHistory(manualTelemetry));
+  telemetry.live.flags = lil::protocol::kLiveTimingKnown | lil::protocol::kLiveSampleFresh;
+  assert(withPages.registerTelemetry(mac, 500, telemetry, -60, response, txPower, duplicate, generation));
+  const uint32_t normalTime = recent + 3600;
+  assert(withPages.persistTelemetry(mac, 500, telemetry, -60, generation, normalTime));
+  assert(withPages.liveHistory(mac, motionSamples, station::kLiveCapacity) == 0);
+  const auto normalCount = paged.info(mac).points;
+  telemetry.live.flags = lil::protocol::kLiveTimingKnown; // Cached contact, no fresh measurement.
+  assert(withPages.registerTelemetry(mac, 501, telemetry, -60, response, txPower, duplicate, generation));
+  assert(withPages.persistTelemetry(mac, 501, telemetry, -60, generation, normalTime + 1));
+  assert(paged.info(mac).points == normalCount);
+  station::NormalHistoryPoint page[4]; bool stale, readError;
+  assert(paged.read(mac, normalTime - 1, normalTime, 0, page, 4, stale, readError) == 1);
+  assert(!stale && !readError && page[0].telemetry.temperatureC == telemetry.temperatureC);
+
+  // A complete millis cycle must not revive expired live samples, including
+  // after a cached heartbeat or the first fresh measurement following an outage.
+  station::SensorRegistry longRunning;
+  assert(longRunning.begin(store, 600));
+  const uint64_t liveStarted = uint64_t(UINT32_MAX) - 15;
+  const auto setLiveTime = [](uint64_t milliseconds) {
+    testMillis = static_cast<uint32_t>(milliseconds);
+    testTimeUs = static_cast<int64_t>(milliseconds * 1000);
+  };
+  setLiveTime(liveStarted);
+  auto longLived = manualTelemetry;
+  longLived.live.flags = lil::protocol::kLiveTimingKnown | lil::protocol::kLiveSampleFresh;
+  assert(longRunning.registerTelemetry(mac, 1, longLived, -60, response, txPower, duplicate, generation));
+  setLiveTime(liveStarted + 20);
+  assert(longRunning.liveHistory(mac, motionSamples, station::kLiveCapacity) == 1);
+  setLiveTime(liveStarted + 60000);
+  assert(longRunning.liveHistory(mac, motionSamples, station::kLiveCapacity) == 1);
+  setLiveTime(liveStarted + 60001);
+  assert(longRunning.liveHistory(mac, motionSamples, station::kLiveCapacity) == 0);
+  setLiveTime(liveStarted + (uint64_t(UINT32_MAX) + 1) + 20);
+  assert(longRunning.liveHistory(mac, motionSamples, station::kLiveCapacity) == 0);
+  longLived.live.flags = lil::protocol::kLiveTimingKnown;
+  assert(longRunning.registerTelemetry(mac, 2, longLived, -60, response, txPower, duplicate, generation));
+  assert(longRunning.liveHistory(mac, motionSamples, station::kLiveCapacity) == 0);
+  longLived.live.flags |= lil::protocol::kLiveSampleFresh;
+  longLived.temperatureC = 22.5F;
+  assert(longRunning.registerTelemetry(mac, 3, longLived, -60, response, txPower, duplicate, generation));
+  assert(longRunning.liveHistory(mac, motionSamples, station::kLiveCapacity) == 1);
+  assert(motionSamples[0].receivedMs == testMillis && motionSamples[0].telemetry.temperatureC == 22.5F);
   puts("Registry: radio/storage interleaving, durable settings, cloud cancellation, semantic validation and bounded history passed");
 }

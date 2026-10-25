@@ -5,6 +5,7 @@
 #include <math.h>
 #include <string.h>
 #include "measurement_budget.h"
+#include "sensor_log.h"
 
 namespace sensor {
 namespace {
@@ -17,8 +18,18 @@ int16_t signed12(uint16_t value) {
 bool Bme280Driver::readBytes(uint8_t reg, uint8_t* bytes, uint8_t count) {
   if (measurementBudgetExpired()) return false;
   Wire.beginTransmission(address_); Wire.write(reg);
-  if (Wire.endTransmission(false) != 0 || Wire.requestFrom(address_, count) != count)
+  const uint8_t error = Wire.endTransmission(false);
+  if (error != 0) {
+    SENSOR_LOG_PRINTF("[BME280] Register select failed: address=0x%02X reg=0x%02X error=%u\n",
+                      address_, reg, error);
     return false;
+  }
+  const uint8_t received = Wire.requestFrom(address_, count);
+  if (received != count) {
+    SENSOR_LOG_PRINTF("[BME280] Short read: address=0x%02X reg=0x%02X expected=%u received=%u\n",
+                      address_, reg, count, received);
+    return false;
+  }
   for (uint8_t i = 0; i < count; ++i) bytes[i] = Wire.read();
   return true;
 }
@@ -26,7 +37,12 @@ bool Bme280Driver::readBytes(uint8_t reg, uint8_t* bytes, uint8_t count) {
 bool Bme280Driver::write8(uint8_t reg, uint8_t value) {
   if (measurementBudgetExpired()) return false;
   Wire.beginTransmission(address_); Wire.write(reg); Wire.write(value);
-  return Wire.endTransmission() == 0;
+  const uint8_t error = Wire.endTransmission();
+  if (error != 0) {
+    SENSOR_LOG_PRINTF("[BME280] Write failed: address=0x%02X reg=0x%02X error=%u\n",
+                      address_, reg, error);
+  }
+  return error == 0;
 }
 
 bool Bme280Driver::waitReady(uint32_t timeoutMs) {
@@ -37,6 +53,7 @@ bool Bme280Driver::waitReady(uint32_t timeoutMs) {
     if ((status & 0x09) == 0) return true;
     measurementWaitUs(1000);
   } while (millis() - started < timeoutMs && !measurementBudgetExpired());
+  SENSOR_LOG_PRINTLN("[BME280] Status did not become ready before the deadline");
   return false;
 }
 
@@ -53,7 +70,10 @@ bool Bme280Driver::begin(uint8_t address) {
       memcmp(trim, check, sizeof(trim)) != 0 ||
       !readBytes(0xE1, humidity, sizeof(humidity)) ||
       !readBytes(0xE1, check, sizeof(humidity)) ||
-      memcmp(humidity, check, sizeof(humidity)) != 0) return false;
+      memcmp(humidity, check, sizeof(humidity)) != 0) {
+    SENSOR_LOG_PRINTLN("[BME280] Calibration transfer failed or repeated reads disagree");
+    return false;
+  }
   t1_ = little16(trim); t2_ = static_cast<int16_t>(little16(trim + 2));
   t3_ = static_cast<int16_t>(little16(trim + 4)); p1_ = little16(trim + 6);
   if (t1_ == 0 || t1_ == 0xFFFF || p1_ == 0 || p1_ == 0xFFFF) return false;
@@ -68,8 +88,13 @@ bool Bme280Driver::begin(uint8_t address) {
   const uint8_t config[][2] = {{0xF2, 1}, {0xF5, 0}, {0xF4, 0x24}};
   for (const auto& entry : config) {
     uint8_t actual;
-    if (!write8(entry[0], entry[1]) || !readBytes(entry[0], &actual, 1) || actual != entry[1])
+    if (!write8(entry[0], entry[1]) || !readBytes(entry[0], &actual, 1))
       return false;
+    if (actual != entry[1]) {
+      SENSOR_LOG_PRINTF("[BME280] Configuration mismatch: reg=0x%02X expected=0x%02X actual=0x%02X\n",
+                        entry[0], entry[1], actual);
+      return false;
+    }
   }
   initialized_ = true;
   return true;
@@ -83,12 +108,19 @@ EnvironmentalReading Bme280Driver::read() {
   // Polling immediately can see measuring=0 before the conversion starts.
   measurementWaitUs(10000);
   uint8_t control, raw[8];
-  if (!waitReady(50) || !readBytes(0xF4, &control, 1) || control != 0x24 ||
-      !readBytes(0xF7, raw, sizeof(raw))) return reading;
+  if (!waitReady(50) || !readBytes(0xF4, &control, 1)) return reading;
+  if (control != 0x24) {
+    SENSOR_LOG_PRINTF("[BME280] Forced conversion control mismatch: expected=0x24 actual=0x%02X\n", control);
+    return reading;
+  }
+  if (!readBytes(0xF7, raw, sizeof(raw))) return reading;
   const uint32_t adcP = (uint32_t(raw[0]) << 12) | (uint32_t(raw[1]) << 4) | (raw[2] >> 4);
   const uint32_t adcT = (uint32_t(raw[3]) << 12) | (uint32_t(raw[4]) << 4) | (raw[5] >> 4);
   const uint16_t adcH = (uint16_t(raw[6]) << 8) | raw[7];
-  if (adcP == 0x80000 || adcT == 0x80000 || adcH == 0x8000) return reading;
+  if (adcP == 0x80000 || adcT == 0x80000 || adcH == 0x8000) {
+    SENSOR_LOG_PRINTLN("[BME280] Conversion returned a skipped/uninitialized channel");
+    return reading;
+  }
 
   // Bosch double-precision compensation, datasheet appendix 8.1. A single
   // burst supplies all channels and the same t_fine compensates P and H.

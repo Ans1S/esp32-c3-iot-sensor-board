@@ -1,6 +1,6 @@
 # W-Charger Sensor Firmware
 
-Firmware 4.3.4 supports LSM6DSOX, TMP117 and MAX30102 live acquisition on PCB V3/V4.
+Firmware 4.4.1 / 40401 supports LSM6DSOX, TMP117 and MAX30102 acquisition on PCB V3/V4.
 See [precision sensor operation and timing](../PRECISION_SENSORS.md).
 
 One shared firmware codebase supports PCB V3 and V4. The only differences are

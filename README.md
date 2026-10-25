@@ -2,301 +2,222 @@
 
 # W-Charger
 
-### Give a discarded vape battery a second life — as a useful, low-power sensor
+### A second life for a recovered battery. A complete wireless sensor network.
 
-<img src="Readme/pcb-v4-with-battery-framed.webp" alt="W-Charger PCB V4 powered by a carefully recovered vape battery" width="840">
-
-<br>
+<img src="Readme/pcb-v4-with-battery-framed.webp" alt="W-Charger PCB V4 with a recovered rechargeable cell" width="760">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-146c43.svg)](LICENSE)
 ![Sensor](https://img.shields.io/badge/Sensor-ESP32--C3-146c43.svg)
 ![Station](https://img.shields.io/badge/Station-ESP32--S3-146c43.svg)
-![Build](https://img.shields.io/badge/Build-PlatformIO-f5822a.svg)
+[![Firmware](https://img.shields.io/badge/Firmware-4.4.1-146c43.svg)](Firmware/releases/README.md)
 
-**[Why it matters](#1--why-it-matters)** · **[Hardware](#2--hardware-built-for-a-second-life)** · **[Software](#3--software-that-removes-the-friction)**
+**[Dashboard](#one-dashboard-for-the-whole-network)** · **[Hardware](#choose-your-sensor)** · **[Get started](#from-clone-to-first-measurement)** · **[Downloads](Firmware/releases/README.md)**
 
 </div>
 
-Disposable vapes are designed for a very short life. The rechargeable lithium
-cell inside them often is not. W-Charger turns suitable recovered cells into
-the power source for compact wireless sensor nodes — then makes the whole
-network easy to see, configure and update from one station.
-
-| ♻️ Give energy another job | 🔋 Make every milliamp count | 📡 See every sensor in one place | 📦 Update without collecting devices |
-|---|---|---|---|
-| Reuse a carefully recovered cell instead of wasting its remaining potential. | Deep sleep and switchable hardware are designed for even small cells. | A friendly local dashboard shows live values and history. | Signed OTA updates travel from the station to sleeping sensor nodes. |
-
-## 1 — Why it matters
-
-### A battery should not become waste with the package around it
-
-Many disposable vapes end up in household bins or as litter. That throws away
-valuable materials, creates a fire risk in waste handling, and can release
-harmful substances when a damaged cell reaches the environment. At the same
-time, the product enclosure gives its rechargeable cell no practical second
-life for the user.
-
-W-Charger starts with a simple idea: **if a safe, undamaged cell can still store
-energy, use that energy for something worthwhile.** A sensor node is a good
-match. It needs little power, can spend most of its time asleep, and can turn a
-cell that once powered a short-lived product into months of useful
-measurements, depending on the cell, sensor and reporting interval.
+W-Charger turns suitable recovered rechargeable cells into power sources for
+compact ESP32-C3 sensor nodes. One ESP32-S3 station collects their measurements
+over ESP-NOW and serves a local website for setup, history, recordings and
+signed sensor updates. Optional ThingSpeak export adds cloud access.
 
 <p align="center">
-  <img src="Readme/second-life-flow.svg" alt="A disposable vape becomes a recovered battery, then a low-power sensor and finally useful measurements in the W-Charger station" width="1000">
+  <img src="Readme/second-life-flow.svg" alt="Recovered battery powers a sensor node that sends measurements to the station" width="960">
 </p>
 
-This project is not only a charger or a PCB. It is the complete path from a
-recovered energy source to an approachable sensor network:
+## One dashboard for the whole network
 
-- a purpose-built ESP32-C3 sensor board;
-- support for BME280, BME680, LSM6DSOX, TMP117 and MAX30102 sensors;
-- a central ESP32-S3 station that discovers nodes automatically;
-- a responsive local web interface for readings, history and configuration;
-- signed over-the-air firmware updates for the sensor fleet.
+<p align="center">
+  <img src="Readme/station-overview.webp" alt="Station overview with climate, air-quality and precision-temperature sensor cards" width="1040">
+</p>
+
+**Click a card to open its details, or a measurement tile to open its chart.**
+The interface adapts to each sensor and works on desktop and phone, with light,
+dark and system themes. Collection continues when the browser is closed.
+
+| What you want to do | Where to find it |
+| --- | --- |
+| Add a node | **Find sensors** discovers nearby nodes. Name the device, choose its sensor and set its interval; no station address or Wi-Fi credentials are hard-coded into sensor firmware. |
+| Keep the overview tidy | **Arrange** saves order, visibility, columns and spacing on the station and exposes the dashboard refresh rate. Hidden nodes continue measuring; **Show hidden** brings them into view. |
+| Check measurements | Cards show current values, battery voltage and last contact. Details add radio strength, firmware, operating mode, pending settings and sensor/storage faults. |
+| Explore history | Choose a measurement and period, browse previous windows or return to **Now**. Hover, tap or use arrow keys for exact values; touch selections stay pinned. |
+| Export data | **Display options & export** provides display filters and full retained-history CSV. Filters and the selected chart window preserve original cursor and export values. |
+| Adjust a sensor | **Device information & settings → Edit** changes type, name, interval and cloud fields. Calibration includes battery voltage, BME680 temperature compensation/IAQ reset and a separate motion zero reference. |
+| Connect ThingSpeak | **Settings** manages optional channel profiles and account channels; each measurement can use a field from 1–8 or **Do not upload**. |
+| Maintain the fleet | **Firmware updates** lists installed versions, checks package/board compatibility and tracks queued, transferring, verifying, restarting and confirmed updates. |
+
+<details>
+<summary><strong>Open the history and settings views</strong></summary>
+
+<p align="center">
+  <img src="Readme/station-history.webp" alt="Air-quality details with current readings, measurement and period selectors, history and CSV controls" width="1040">
+</p>
+
+Normal history is saved on the station. Retention adapts to reporting intervals,
+sensor count and shared storage; the detail view reports saved/buffered points
+and capacity. Choose **All retained data** to inspect the full available range.
+Short intervals are batched, so sudden power loss can lose the latest
+uncommitted samples. Storage is finite and shared with saved recordings.
+
+<p align="center">
+  <img src="Readme/station-settings.webp" alt="Station settings for Wi-Fi, default measurement interval and website access" width="1040">
+</p>
+
+**Settings** groups network, default interval, website password and cloud
+configuration. Sensor intervals can range from one second to 24 hours;
+BME680 keeps its separate five-minute background learning cycle.
+ThingSpeak channels can be loaded, created, edited, cleared or deleted.
+Passwords and API keys are entered through the browser and saved on the station.
+
+</details>
+
+### Record a measurement session
+
+For **LSM6DSOX, TMP117 and MAX30102**, press **SW2 on the sensor** to start a
+separate fast recording, then press it again to stop. The session synchronizes
+after stopping and remains available on the station independently of the node.
+Starting another session replaces any previous unsynchronized sensor copy.
+
+In the sensor details, **Recording selection** switches between the live view
+and saved sessions. Open the whole recording or minute details, inspect exact
+samples, export the **complete selected recording** as CSV, or delete it to free
+space. Completed graphs stay stable while the dashboard refreshes.
+
+<details>
+<summary><strong>Open a saved motion recording in dark mode</strong></summary>
+
+<p align="center">
+  <img src="Readme/station-recording.webp" alt="Saved motion recording with session selection, minute navigation, XYZ graphs and recording export" width="1040">
+</p>
+
+Normal TMP117/LSM6DSOX measurements follow the configured interval with the rail
+off between windows. SW2 starts their independent faster recording mode;
+MAX30102 acquisition is SW2-only. Browser controls browse and export sessions;
+acquisition follows the physical button. See [rates and storage limits](Firmware/RECORDINGS.md).
+
+</details>
+
+### Update sleeping nodes from the station
+
+<p align="center">
+  <img src="Readme/station-ota.webp" alt="Firmware page showing installed versions, a compatible PCB V4 package and an update queued for the next sensor contact" width="1040">
+</p>
+
+Choose a sensor and its signed `.ota` package, then **Upload and schedule**.
+After the station confirms scheduling, it stores the package and serves it at
+the node's next contact. Transfers resume after interruptions; successful trial
+boots are confirmed, and a failed trial can restore the previous image. A
+sleeping sensor waits for its scheduled contact, and battery protection can
+postpone updates. The station itself is updated over USB.
+
+## Choose your sensor
+
+One four-pin I²C connector and one sensor codebase support both PCB revisions.
+Choose the attached sensor in the dashboard:
+
+| Sensor | Measurements | Acquisition |
+| --- | --- | --- |
+| **BME280** | Temperature, humidity, pressure | Forced measurement, report, deep sleep |
+| **BME680** | Climate, gas resistance, estimated indoor air quality | Five-minute BSEC ULP maintenance; separately configured reporting interval |
+| **LSM6DSOX** | XYZ acceleration, angular rate and motion feedback | Normal interval snapshots; faster SW2 recordings |
+| **TMP117** | Precision temperature and stability feedback | Normal interval snapshots; one-second SW2 recording values |
+| **MAX30102** | Red/infrared waveform and estimated pulse | SW2 recordings only; no SpO₂ or clinical accuracy claim |
+| **Battery only** | Battery voltage | A base for experiments without an external sensor |
+
+<details>
+<summary><strong>PCB V3 and V4 hardware</strong></summary>
+
+<table>
+  <tr><th>PCB V3 · earlier prototype</th><th>PCB V4 · current design</th></tr>
+  <tr>
+    <td align="center"><img src="Readme/V3.webp" alt="Front render of PCB V3" width="360"></td>
+    <td align="center"><img src="Readme/FrontV4.webp" alt="Front render of PCB V4" width="360"></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="Readme/pcb-v3-back.webp" alt="Back render of PCB V3" width="360"></td>
+    <td align="center"><img src="Readme/pcb-v4-back.webp" alt="Back render of PCB V4" width="360"></td>
+  </tr>
+</table>
+
+V3 uses a 3.3 V regulator and switchable sensor rail. V4 adds a buck-boost
+supply, switched I²C pull-ups and battery measurement, a side-entry connector
+and revised charging indicators. Below 2.8 V or with an invalid battery reading,
+V4 disables sensors and checks the battery once every 24 hours; recovery requires
+2.95 V. Actual runtime depends on the cell, sensor and interval.
+
+KiCad sources, BOMs and manufacturing outputs are in [`PCB/`](PCB/), including
+the [V4 production package](PCB/Version%204/ESP32-C3-V4/production/).
+
+</details>
 
 > [!CAUTION]
-> **Recovering lithium cells is not a beginner task.** Never use a swollen,
-> punctured, corroded, hot, leaking or deeply discharged cell. Prevent short
-> circuits, verify polarity and voltage before connection, and take questionable
-> cells to an approved battery recycler. W-Charger is an experimental prototype,
-> not a certified consumer product.
+> Recovering lithium cells requires suitable experience. Never use swollen,
+> punctured, corroded, hot, leaking or deeply discharged cells. Prevent short
+> circuits and verify polarity/voltage. This is an experimental prototype;
+> electrical, thermal, RF, accuracy and runtime acceptance require bench testing.
 
-## 2 — Hardware built for a second life
+## From clone to first measurement
 
-### Two generations, one goal
+Install Git, Python and PlatformIO, then clone the repository. Before the first
+build, install Python's `cryptography` package and initialize **your own**
+installation signing identity as described in the [OTA guide](Firmware/OTA.md#initial-installation).
+Keep the same key for the station and both sensor targets. Preserve an existing
+installation's key when updating it.
 
-PCB V3 proved the concept. PCB V4 is the current design and pushes the same idea
-further: use more of the cell's available energy and waste less of it while the
-sensor sleeps.
-
-<table>
-  <tr>
-    <th align="center">PCB V3 · proven prototype</th>
-    <th align="center">PCB V4 · current design</th>
-  </tr>
-  <tr>
-    <td align="center"><img src="Readme/V3.webp" alt="Front render of W-Charger PCB V3" width="390"></td>
-    <td align="center"><img src="Readme/FrontV4.webp" alt="Front render of W-Charger PCB V4" width="390"></td>
-  </tr>
-  <tr>
-    <td align="center"><img src="Readme/pcb-v3-back.webp" alt="Back render of W-Charger PCB V3" width="390"></td>
-    <td align="center"><img src="Readme/pcb-v4-back.webp" alt="Back render of W-Charger PCB V4" width="390"></td>
-  </tr>
-</table>
-
-| What changed | PCB V3 | **PCB V4** |
-|---|---|---|
-| Power delivery | Simple, dependable 3.3 V regulator | Buck-boost supply designed to use more of the cell's discharge range |
-| Sleeping efficiently | The sensor rail can be switched | Sensor rail, I²C pull-ups and battery measurement are powered only when needed |
-| Battery connection | Earlier upright connector layout | Low-profile side-entry connector |
-| Charging feedback | Functional charging circuit | Revised layout with clearer power and charge indicators |
-| Best fit | Existing builds and experiments | New builds and lowest-power development |
-
-Both versions run the same sensor firmware, with a build profile that selects
-the correct power behavior for the board. V4 remains a prototype and still
-requires complete electrical, thermal, RF and long-term runtime validation.
-
-### Connect the measurement your project needs
-
-The board exposes one straightforward four-pin I²C connection. Today the
-firmware supports:
-
-| Sensor | What it adds | Typical behavior |
-|---|---|---|
-| **BME280** | Temperature, humidity and pressure | Wake, measure, report, sleep |
-| **BME680** | Temperature, humidity, pressure, gas resistance and indoor-air-quality estimation | Ultra-low-power background learning with configurable reports |
-| **LSM6DSOX** | Acceleration, angular rate and motion summaries | Continuous acquisition for motion projects |
-| **No external sensor** | Battery-powered ESP32-C3 experimentation | A clean base for future extensions |
-
-The hardware is intentionally open-ended: one compact node, different sensor
-boards, and a growing firmware library instead of a separate product for every
-measurement.
-
-<table>
-  <tr>
-    <td width="50%" align="center" valign="top"><img src="Readme/pcb-v4-closeup-framed.webp" alt="Assembled W-Charger PCB V4, cropped to remove empty margins" width="420"><br><strong>Assembled PCB V4</strong></td>
-    <td width="50%" align="center" valign="top"><img src="Readme/prototype-framed.webp" alt="W-Charger prototype with a recovered cell and USB cable" width="420"><br><strong>Prototype with recovered cell</strong></td>
-  </tr>
-</table>
-
-KiCad sources, BOMs and manufacturing files are available in [`PCB/`](PCB/).
-The current V4 production package is under
-[`PCB/Version 4/ESP32-C3-V4/production/`](PCB/Version%204/ESP32-C3-V4/production/).
-
-## 3 — Software that removes the friction
-
-### One station instead of a pile of USB cables
-
-The station is the calm center of the system. Sensor nodes discover it over
-ESP-NOW, send their readings, and return to their energy-saving routine. You
-open one local website to see the whole network.
-
-<p align="center">
-  <img src="Readme/software-flow.svg" alt="Several sensor nodes connect through ESP-NOW to one W-Charger station and its local web app" width="1000">
-</p>
-
-There is no receiver address or Wi-Fi channel to hard-code into every sensor.
-The station can find new nodes, name them, select their attached sensor,
-configure their measurement interval, keep local history, and optionally map
-values to ThingSpeak.
-
-### A dashboard made for people, not only developers
-
-<p align="center">
-  <img src="Readme/station-overview.webp" alt="Anonymized W-Charger station overview with two demo sensors and live values" width="1000">
-  <br><sub>Live status, battery level, air quality, radio strength and local history. All names, addresses and identifiers shown are synthetic demo data.</sub>
-</p>
-
-Every sensor card adapts to the connected hardware. BME280 cards show
-temperature, humidity, pressure and battery; BME680 adds indoor air quality and
-gas resistance. Motion nodes expose XYZ acceleration and angular rate, TMP117
-shows precise temperature, and MAX30102 shows an optical waveform and estimated
-pulse during a manual recording. Measurement intervals and cloud mappings stay configurable
-per sensor, while useful defaults keep setup short.
-
-### Settings stay visible and understandable
-
-<p align="center">
-  <img src="Readme/station-settings.webp" alt="Anonymized W-Charger settings page for Wi-Fi, measurement interval and protected website access" width="1000">
-  <br><sub>Network, energy, access and cloud options are grouped in one responsive interface. Credentials are blank in this generated demo.</sub>
-</p>
-
-The dashboard works locally. ThingSpeak export is optional. Wi-Fi passwords,
-website credentials and API keys are entered in the browser and stored on the
-station — they are not compiled into the source code.
-
-### OTA updates: improve sensors where they are
-
-Once a sensor has its OTA-capable base firmware, routine updates no longer mean
-finding every node, opening its enclosure and connecting it to a computer.
-Upload a signed firmware package to the station, choose a sensor, and the
-transfer continues automatically whenever that sleeping node checks in.
-
-<p align="center">
-  <img src="Readme/station-ota.webp" alt="Anonymized W-Charger firmware update page showing installed versions and an OTA transfer in progress" width="1000">
-  <br><sub>The station checks board compatibility, tracks transfer progress and waits for the updated sensor to confirm a successful boot. Device addresses and build names are reserved demo values.</sub>
-</p>
-
-Interrupted transfers resume, low batteries can postpone an update, and the
-previous image can be restored when a trial boot does not succeed. This turns a
-collection of scattered devices into a sensor fleet that can keep improving.
-
-### Firmware 4.3.4
-
-The current release improves sensor recovery, BME680 state persistence,
-MAX30102 signal handling, durable configuration/storage and station usability.
-Saved recordings load as complete snapshots and stay readable during polling;
-yellow setup notices disappear after five seconds. BME power-saving and the
-PCB V4 daily battery-protection policy remain active.
-
-- [Complete changes since firmware 4.3.1 and PR #30](Firmware/CHANGELOG.md)
-- [PCB V3/V4 OTA packages and station application](Firmware/releases/README.md)
-- [Publication/privacy review](Firmware/PUBLICATION_REVIEW.md)
-
-### From clone to first measurement
-
-You need VS Code with PlatformIO (or PlatformIO Core), Python, Git, a USB data
-cable and one connected board at a time.
-
-```bash
+```sh
 python Firmware/upload.py
-```
-
-The upload helper offers the station, PCB V3 sensor and PCB V4 sensor as clear
-choices and uses the matching build automatically. Direct commands are also
-available:
-
-```bash
+# Or choose the connected board directly:
 python Firmware/upload.py station
 python Firmware/upload.py sensor-v4
-# For an existing V3 board:
 python Firmware/upload.py sensor-v3
 ```
 
-Then:
+1. Flash the station and join its `W-Charger-XXXXXX` setup network.
+2. Follow the browser wizard for Wi-Fi, a default interval and optional website password/cloud setup.
+3. Flash the sensor target matching the physical PCB V3 or V4.
+4. Open **Find sensors**, name the node, select its sensor and save.
+5. Use the dashboard for measurements, settings, recordings and signed updates.
 
-1. Flash the ESP32-S3 station and join its `W-Charger-XXXXXX` setup network.
-2. Follow the browser wizard to choose Wi-Fi, a sensible default interval and an optional website password.
-3. Flash and power a matching sensor board.
-4. Open **Find sensors**, give the node a name, choose its attached sensor and save.
-5. From then on, use the station dashboard for readings, configuration and signed sensor updates.
+**Current release: [4.4.1 / 40401](Firmware/releases/README.md)** — compact
+dashboard, adaptive history, touch inspection and long-uptime/recovery fixes.
+The [complete bundle](Firmware/releases/w-charger-4.4.1.zip) includes the station
+application, both sensor packages, installation instructions and checksums.
+Published sensor packages require the signing identity trusted by the installed
+base firmware; new builders use their own key and matching packages.
 
 > [!IMPORTANT]
-> Normal station USB updates preserve saved settings, pairing and archives.
-> Only the explicit `station_s3_factory_reset` upload erases the complete flash.
-> Older recording layouts require the documented one-time USB migration. Disconnect a recovered battery before the first USB upload and
-> confirm whether the connected sensor PCB is V3 or V4.
+> Normal station USB updates preserve settings, pairing and archives. For an
+> existing compatible layout, `python Firmware/upload.py station --application-only`
+> updates only the application; the supplied station BIN is written at `0x10000`.
+> Only the explicit factory-reset target erases all flash. Older layouts need the
+> [one-time migration](Firmware/RECORDINGS.md#one-time-usb-migration).
+> Disconnect a recovered battery before the first USB upload.
 
 <details>
-<summary><strong>What the software already handles</strong></summary>
+<summary><strong>Documentation, development and security</strong></summary>
 
-- Automatic station and Wi-Fi-channel discovery across all 13 ESP-NOW channels.
-- Board-specific power control for PCB V3 and V4 from one sensor codebase.
-- Energy-saving deep sleep for environmental sensors.
-- BME680 operation with Bosch BSEC2 in ultra-low-power mode.
-- Rolling local history and CSV export.
-- Optional ThingSpeak channel management and field mapping.
-- Responsive light, dark and system themes.
-- Signed, resumable ESP-NOW OTA with compatibility checks and boot confirmation.
+Only [`Firmware/`](Firmware/README.md) is maintained. Its independent
+[`station_s3`](Firmware/station/README.md),
+[`sensor_pcb_v3` and `sensor_pcb_v4`](Firmware/sensor/README.md) targets share
+protocol V5. [`Readme/`](Readme/) contains documentation graphics.
 
-</details>
+- [Changes and release notes](Firmware/CHANGELOG.md) · [Packages and checksums](Firmware/releases/README.md)
+- [Precision sensors](Firmware/PRECISION_SENSORS.md) · [Recordings and CSV](Firmware/RECORDINGS.md)
+- [Power management](Firmware/POWER_MANAGEMENT.md) · [Architecture](Firmware/ARCHITECTURE.md)
+- [Regression checks](Firmware/tests/README.md) · [Hardware test plan](Firmware/HARDWARE_TESTPLAN.md)
+- [Publication checks and historical findings](Firmware/PUBLICATION_REVIEW.md)
 
-<details>
-<summary><strong>Repository map and technical documentation</strong></summary>
+Rebuild the UI images with `node Readme/generate-ui-screenshots.cjs` using
+Playwright and Sharp; `CODEX_NODE_MODULES` can point to their package directory.
+The generator renders the embedded pages locally without connecting to a station.
 
-```text
-.
-├── Firmware/
-│   ├── station/        # ESP32-S3 station and local web app
-│   ├── sensor/         # ESP32-C3 firmware for PCB V3 and V4
-│   └── shared/         # Shared protocol and OTA components
-├── PCB/
-│   ├── Version 1–3/    # Earlier hardware revisions
-│   └── Version 4/      # Current KiCad and production files
-└── Readme/             # Documentation graphics and reproducible UI images
-```
+The dashboard belongs on a trusted local network: website access supports a
+password but uses HTTP. ThingSpeak uses HTTPS. ESP-NOW validates packet
+version/length/CRC; it currently has no per-device cryptographic authentication.
+Before publication, run `python Firmware/tools/check_publication.py` and enable
+the staged/pushed-blob guards with `git config core.hooksPath .githooks`.
 
-- [Firmware overview](Firmware/README.md)
-- [Station behavior and security model](Firmware/station/README.md)
-- [Sensor behavior and hardware profiles](Firmware/sensor/README.md)
-- [OTA setup, signing and recovery](Firmware/OTA.md)
-- [Power-management design](Firmware/POWER_MANAGEMENT.md)
-- [System architecture](Firmware/ARCHITECTURE.md)
-- [Hardware test plan](Firmware/HARDWARE_TESTPLAN.md)
-- [LSM6DSOX motion guide](Firmware/LSM6DSOX.md)
-- [Precision sensor operation and recordings](Firmware/PRECISION_SENSORS.md)
-- [Regression tests](Firmware/tests/README.md)
-
-The screenshots in this README are generated from the real embedded pages with
-deterministic, anonymized fixtures. Rebuild them with
-`node Readme/generate-ui-screenshots.cjs`; set `CODEX_NODE_MODULES` if
-Playwright and Sharp are installed outside the default development runtime.
+Project sources use the [MIT License](LICENSE). The optional BME680 build
+downloads Bosch BSEC2 under its separate license; the project license does not
+relicense that dependency.
 
 </details>
-
-### Security, privacy and project status
-
-The dashboard is intended for a trusted home network. Website access can be
-password protected, but the local UI uses HTTP; ThingSpeak requests use HTTPS.
-ESP-NOW packets currently include versioning, length checks and CRC32, but not
-per-device cryptographic authentication. Treat the system as a prototype, not
-as a security boundary.
-
-Before publishing, run `python Firmware/tools/check_publication.py` and enable
-`git config core.hooksPath .githooks`. The hooks inspect staged/pushed blobs,
-including firmware and ZIP contents, without printing detected secret values.
-Local signing keys, device data and agent instructions stay ignored. The
-[publication review](Firmware/PUBLICATION_REVIEW.md) distinguishes the cleaned
-current tree from historical exposures already present in older commits.
-
-Current firmware targets are `station_s3`, `sensor_pcb_v3` and
-`sensor_pcb_v4`. Project-owned firmware and hardware sources are released under
-the [MIT License](LICENSE). The optional BME680 path downloads Bosch BSEC2
-during the build and remains subject to Bosch's separate license.
-
-<div align="center">
-
-**A short-lived product can still become a long-lived tool.**
-
-</div>

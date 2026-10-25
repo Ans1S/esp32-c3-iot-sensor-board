@@ -21,6 +21,7 @@
 #include "low_power_wait.h"
 #include "power_policy.h"
 #include "power_options.h"
+#include "precision_cadence.h"
 
 namespace {
 // Discovery is deliberately limited to sensors which have not been added to a
@@ -381,7 +382,8 @@ void runLiveMode(sensor::BatteryReading battery) {
   acquisition.normal(runtimeConfig.sleepSeconds);
   uint32_t handledPresses = 0, lastTelemetry = millis() - 5000, lastStatus = millis() - 1000;
   uint32_t lastBattery = millis(), batteryStarted = 0, lastOta = millis() - 30000;
-  uint32_t lastRecovery = millis(), nextRadio = 0, nextSync = 0;
+  uint32_t lastRecovery = millis();
+  lil::timing::RetryBackoff radioBackoff, syncBackoff;
   bool batteryPending = false, radioReady = espNowTransport.begin(), haveLatest = false, haveMeasurement = false;
   lil::protocol::TelemetryPacket latest{};
   uint64_t latestCapturedMs = 0;
@@ -432,7 +434,7 @@ void runLiveMode(sensor::BatteryReading battery) {
         }
       }
     }
-    if (static_cast<int32_t>(now - nextRadio) >= 0 &&
+    if (radioBackoff.ready(now) &&
         (haveLatest || now - lastTelemetry >= 5000)) {
       if (!radioReady) radioReady = espNowTransport.begin();
       auto outgoing = latest;
@@ -491,9 +493,9 @@ void runLiveMode(sensor::BatteryReading battery) {
           sensor::checkOta(espNowTransport, runtimeConfig, adcReader, battery.millivolts);
           acquisition.pauseNormal(false);
         }
-        nextRadio = millis();
+        radioBackoff.clear();
       } else {
-        nextRadio = millis() + 1000;
+        radioBackoff.wait(millis(), 1000);
         if (radioReady) { espNowTransport.end(); radioReady = false; }
       }
     }
@@ -507,15 +509,15 @@ void runLiveMode(sensor::BatteryReading battery) {
         recordings.anchor(ack.stationEpochMs, status.payload.elapsedMs, millis() - started);
       lastStatus = millis();
     }
-    if (radioReady && !recordings.recording() && static_cast<int32_t>(now - nextSync) >= 0) {
+    if (radioReady && !recordings.recording() && syncBackoff.ready(now)) {
       lil::recording::UploadPacket upload{};
       if (recordings.next(upload.payload)) {
         lil::protocol::finalize(upload, lil::recording::kRecordMessage, ++rtcState.sequence);
         lil::recording::Ack ack{}; const auto& record = upload.payload.record;
         if (espNowTransport.recordingExchange(runtimeConfig, &upload, sizeof(upload),
-            record.session, record.sampleMs, lil::recording::checksum(record), ack) && ack.stored)
-          recordings.acknowledge(record);
-        else nextSync = millis() + 1000;
+            record.session, record.sampleMs, lil::recording::checksum(record), ack) && ack.stored &&
+            recordings.acknowledge(record)) syncBackoff.clear();
+        else syncBackoff.wait(millis(), 1000);
       }
     }
     if (!recordings.recording() && !acquisition.normal() && handledPresses == acquisition.presses())
@@ -603,18 +605,26 @@ void setup() {
     const bool sensorStarted = environmentalSensor.begin(
         powerController, runtimeConfig.environmentalSensorType,
         runtimeConfig.temperatureOffsetC);
+    environment = environmentalSensor.read();
+    // A responding BME280 can still fail its forced conversion (bus fault,
+    // reset or stuck status). Only a valid sample replenishes its retry budget.
+    // BSEC maintenance and SW2-only sensors can legitimately have no sample.
+    const bool bme280ReadFailed = sensorStarted &&
+        environmentalSensor.detectedType() == lil::protocol::EnvironmentalSensorType::kBme280 &&
+        !environment.valid;
     if (sensorStarted) {
       rtcState.lastSensorType = environmentalSensor.detectedType();
+    }
+    if (sensorStarted && !bme280ReadFailed) {
       rtcState.sensorRecoveryPending = false;
       rtcState.sensorStartAttemptsRemaining = kSensorStartAttempts;
     } else if (rtcState.sensorStartAttemptsRemaining > 0) {
       --rtcState.sensorStartAttemptsRemaining;
       rtcState.sensorRecoveryPending = rtcState.sensorStartAttemptsRemaining > 0;
-      // Report failed initialization and each retry promptly, including BME680
-      // maintenance wakes that normally leave the radio off.
+      // Report failed initialization/conversion and each retry promptly,
+      // including BME680 maintenance wakes that normally leave the radio off.
       reportDue = true;
     }
-    environment = environmentalSensor.read();
     const bool continuousLive = sensorStarted && energySavingMode &&
         lil::protocol::isLiveSensor(environment.sensorType);
     if (!continuousLive) environmentalSensor.end();
