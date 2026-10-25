@@ -19,7 +19,8 @@ void LiveAcquisition::loop() {
   // SW2 on both PCB V3 and V4 shorts GPIO9 to GND. Require a release after boot.
   pinMode(9, INPUT_PULLUP);
   lil::recording::Button button; button.begin(digitalRead(9) == LOW, millis());
-  uint32_t lastReport = 0, retryMs = 0, sessionStarted = 0;
+  uint32_t lastReport = 0, sessionStarted = 0;
+  lil::timing::RetryBackoff retry;
   uint8_t failures = 0;
   bool gap = false;
   Profile previous = Profile::Stopped;
@@ -45,7 +46,7 @@ void LiveAcquisition::loop() {
     const bool normal = profile == Profile::Normal;
     if (profile != previous) {
       if (active_.load()) { sensor_->end(); active_.store(false); }
-      sessionStarted = 0; retryMs = now;
+      sessionStarted = 0; retry.clear();
       if (normal) normalCadence.reset(now);
       previous = profile;
     }
@@ -61,7 +62,7 @@ void LiveAcquisition::loop() {
     }
     if (!active_.load()) {
       if (normal && !normalCadence.due(now)) { delay(5); continue; }
-      if (static_cast<int32_t>(now - retryMs) < 0) { delay(5); continue; }
+      if (!retry.ready(now)) { delay(5); continue; }
       if (normal || !sessionStarted) sensor_->resetMotionFeedback();
       // Include startup in active() so the main task can wait for I2C and rail
       // ownership to be released before entering battery protection. Recheck
@@ -83,7 +84,7 @@ void LiveAcquisition::loop() {
           // failures must not create an immediate series of retry windows.
           if (normalCadence.due(millis())) normalCadence.started(millis(), configuredInterval);
         }
-        retryMs = normal ? millis() : millis() + 1000;
+        if (!normal) retry.wait(millis(), 1000);
         delay(5); continue;
       }
       // Initialization can yield to the main task for hundreds of ms. A stop
@@ -115,7 +116,7 @@ void LiveAcquisition::loop() {
     }
     enqueue(capture);
     failures = capture.reading.valid ? 0 : failures + 1;
-    if (failures >= 3) { sensor_->end(); active_.store(false); retryMs = now + 1000; gap = true; }
+    if (failures >= 3) { sensor_->end(); active_.store(false); retry.wait(now, 1000); gap = true; }
     delay(1);
   }
 }

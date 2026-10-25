@@ -37,9 +37,15 @@ LITERAL = re.compile(
     rb"[\"\x27]?\s*[:=]\s*([\"\x27])([^\r\n\"\x27]{1,128})\1", re.I)
 PLACEHOLDERS = {b"test", b"test-key", b"test-password", b"demo", b"test-network",
                 b"demo home network", b"w-charger-setup", b"w-charger-demo"}
-DENIED_NAME = re.compile(r"(?:^|/)(?:\.env(?:\..*)?|(?:secrets?|credentials?)"
-                         r"(?:\..*)?|config\.local\..*|.*\.(?:pem|key|p12|pfx))$", re.I)
-LOCAL_COMPONENTS = {".tools", ".pio", ".agents", ".codex", "captures"}
+DENIED_NAME = re.compile(
+    r"(?:^|/)(?:\.env(?:\..*)?|(?:secrets?|credentials?)(?:\..*)?|"
+    r"config\.local\..*|.*\.(?:pem|key|p12|pfx|keystore|jks|ovpn|wireguard)|"
+    r"\.(?:npmrc|pypirc|netrc)|_netrc|id_(?:rsa|ed25519).*|"
+    r"nvs\.(?:bin|csv)|(?:flash-dump|coredump)\..*)$", re.I)
+LOCAL_COMPONENTS = {
+    ".tools", ".pio", ".agents", ".codex", "captures", ".ssh", ".aws",
+    ".azure", "device-data", "device-backups", "flash-dumps", "exports",
+}
 MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
 
 
@@ -53,7 +59,9 @@ def path_is_private(name):
     path = PurePosixPath(name.replace("\\", "/"))
     return (bool(DENIED_NAME.search(path.as_posix())) or
             any(part.lower() in LOCAL_COMPONENTS for part in path.parts) or
-            path.name in {"AGENTS.md", "AGENTS.override.md", "ota_public_key.h"})
+            path.name in {"AGENTS.md", "AGENTS.override.md", "ota_public_key.h"} or
+            path.as_posix().lower().startswith(("readme/private/", "readme/raw/")) or
+            ".config/gcloud/" in path.as_posix().lower())
 
 
 def placeholder(value):

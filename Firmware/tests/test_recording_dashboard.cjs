@@ -65,6 +65,8 @@ const assert = require('node:assert/strict');
       return route.fulfill({contentType:'application/json',body:JSON.stringify(body)}).catch(()=>{});
     });
     await page.goto('http://station.test/dashboard');
+    await page.locator('.sensor h3').first().waitFor();
+    await page.evaluate(()=>openSensorDetail(statusData.sensors[0].mac));
     await page.waitForFunction(()=>document.querySelector('[aria-label="Recording selection"]')?.options.length===3);
     const selector=page.getByLabel('Recording selection');
     assert.equal(await page.locator('.recordingPanel').count(),1,'BME normal history does not show manual recordings');

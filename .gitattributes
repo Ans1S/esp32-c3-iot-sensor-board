@@ -7,3 +7,8 @@
 *.webp binary
 *.zip binary
 *.exe binary
+*.bin binary
+*.ota binary
+
+# Release checksums and bundled text must retain identical bytes after cloning.
+Firmware/releases/*.txt -text

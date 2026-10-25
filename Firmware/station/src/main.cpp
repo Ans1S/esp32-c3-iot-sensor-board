@@ -43,9 +43,12 @@ void setup() {
     fatal("NVS configuration storage could not be opened");
   }
   stationConfig = configStore.loadStationConfig();
+  if(!station::pagedHistory.begin(configStore.storageAvailable())){
+    fatal("History storage could not be initialized");
+  }
 
   if (!sensorRegistry.begin(configStore,
-                            stationConfig.defaultSleepSeconds)) {
+                            stationConfig.defaultSleepSeconds, &station::pagedHistory)) {
     fatal("Sensor registry could not be initialized");
   }
   if (!wifiService.begin(stationConfig)) {

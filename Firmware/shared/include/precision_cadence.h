@@ -2,6 +2,25 @@
 #include "lil_protocol.h"
 
 namespace lil::timing {
+// An idle retry has no deadline. Signed comparisons with a long-expired
+// deadline become negative after 2^31 ms and can stall work for weeks.
+class RetryBackoff {
+ public:
+  void clear() { waiting_ = false; }
+  void wait(uint32_t now, uint32_t durationMs) {
+    startedMs_ = now;
+    durationMs_ = durationMs;
+    waiting_ = durationMs != 0;
+  }
+  bool ready(uint32_t now) {
+    if (waiting_ && uint32_t(now - startedMs_) >= durationMs_) clear();
+    return !waiting_;
+  }
+ private:
+  uint32_t startedMs_ = 0, durationMs_ = 0;
+  bool waiting_ = false;
+};
+
 constexpr bool supportsNormalPrecisionMeasurements(
     protocol::EnvironmentalSensorType type) {
   return type == protocol::EnvironmentalSensorType::kLsm6dsox ||

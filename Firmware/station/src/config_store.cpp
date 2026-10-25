@@ -1,4 +1,5 @@
 #include "config_store.h"
+#include "filesystem_guard.h"
 
 #include <LittleFS.h>
 #include <WiFi.h>
@@ -232,6 +233,7 @@ bool validAdminPasswordHash(const char* hash) {
 }  // namespace
 
 bool ConfigStore::begin() {
+  if(!initializeFilesystemLock())return false;
   if (!preferences_.begin(kNamespace, false)) return false;
   storageAvailable_ = LittleFS.begin(false);
   // A mount error must never erase existing recordings. Initialize storage
@@ -515,6 +517,21 @@ size_t ConfigStore::historyBytesLength(size_t index) {
   return file ? file.size() : 0;
 }
 
+DashboardLayout ConfigStore::loadDashboardLayout() {
+  DashboardLayout layout{};
+  if(preferences_.getBytesLength("dashboard1")!=sizeof(layout)||
+     preferences_.getBytes("dashboard1",&layout,sizeof(layout))!=sizeof(layout)||
+     layout.magic!=0x31424457||layout.version!=1||layout.columns>3||layout.comfortable>1||layout.count>kMaxSensors||
+     layout.crc!=lil::protocol::crc32(reinterpret_cast<const uint8_t*>(&layout),offsetof(DashboardLayout,crc)))return {};
+  return layout;
+}
+bool ConfigStore::saveDashboardLayout(DashboardLayout layout) {
+  if(layout.columns>3||layout.comfortable>1||layout.count>kMaxSensors)return false;
+  layout.magic=0x31424457;layout.version=1;
+  layout.crc=lil::protocol::crc32(reinterpret_cast<const uint8_t*>(&layout),offsetof(DashboardLayout,crc));
+  return preferences_.putBytes("dashboard1",&layout,sizeof(layout))==sizeof(layout);
+}
+
 bool ConfigStore::loadHistory(size_t index, void* output, size_t length) {
   if (index >= kMaxSensors || output == nullptr || length == 0 ||
       historyBytesLength(index) != length) {
@@ -615,6 +632,7 @@ bool ConfigStore::deleteHistory(size_t index) {
   if (index >= kMaxSensors || !storageAvailable_) {
     return false;
   }
+  FilesystemGuard guard;
   const String key = historyKey(index);
   return !LittleFS.exists(key) || LittleFS.remove(key);
 }
@@ -635,6 +653,7 @@ bool ConfigStore::saveLatestTelemetry(size_t index, const void* data,
   if (index >= kMaxSensors || data == nullptr || length == 0) {
     return false;
   }
+  FilesystemGuard guard;
   const String key = latestTelemetryKey(index);
   const String temporary = key + ".tmp";
   File file = LittleFS.open(temporary, FILE_WRITE);
@@ -653,6 +672,7 @@ bool ConfigStore::deleteLatestTelemetry(size_t index) {
   if (index >= kMaxSensors || !storageAvailable_) {
     return false;
   }
+  FilesystemGuard guard;
   const String key = latestTelemetryKey(index);
   return !LittleFS.exists(key) || LittleFS.remove(key);
 }

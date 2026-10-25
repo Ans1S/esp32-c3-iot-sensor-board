@@ -8,6 +8,7 @@
 #include "sensor_registry.h"
 #include "thingspeak_service.h"
 #include "wifi_service.h"
+#include "login_throttle.h"
 
 namespace station {
 
@@ -23,12 +24,6 @@ class WebPortal {
     char token[33]{};
     uint64_t createdAtMs = 0;
     bool active = false;
-  };
-
-  struct LoginThrottle {
-    uint32_t lastAttemptMs = 0;
-    uint32_t blockedUntilMs = 0;
-    uint8_t failures = 0;
   };
 
   bool authenticationEnabled() const;
@@ -50,6 +45,8 @@ class WebPortal {
   bool verifyCsrf();
   void sendJsonStatus();
   void sendJsonHistory();
+  void sendPagedHistory(const uint8_t mac[6]);
+  void saveDashboardLayout();
   void sendRecordings();
   void sendRecording();
   void deleteRecording();

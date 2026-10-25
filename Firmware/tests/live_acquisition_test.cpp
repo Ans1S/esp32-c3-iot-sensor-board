@@ -48,6 +48,28 @@ int main() {
       }
     }
   }
+  // A long-running task must not interpret its old startup/retry time as a
+  // future deadline after 2^31 ms. Reset the cadence through a real interval
+  // change after the simulated uptime jump, independently of the retry state.
+  for (auto type : {Type::kTmp117, Type::kLsm6dsox}) {
+    testMillis = 100; testButtonLow = false; captures.clear();
+    sensor::EnvironmentalSensor longRunning;
+    sensor::PowerController power;
+    sensor::LiveAcquisition longAcquisition;
+    assert(longAcquisition.begin(longRunning, power, type, 0));
+    longAcquisition.normal(1);
+    bool advanced = false;
+    steer = [&]() {
+      if (!advanced && !captures.empty()) {
+        advanced = true;
+        testMillis = 0x80001000UL;
+        longAcquisition.setNormalInterval(10);
+      }
+    };
+    run(longAcquisition, 0x80002000UL);
+    assert(advanced && captures.size() == 2 && longRunning.starts.size() == 2);
+    assert(captures.back().reading.valid && !longRunning.powered);
+  }
   // A changed normal interval cannot slow down a button recording. Stopping
   // resumes fresh normal measurements and leaves no automatic journal data.
   testMillis = 100; testButtonLow = false; captures.clear();

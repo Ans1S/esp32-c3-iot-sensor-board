@@ -1,8 +1,11 @@
 #include "sensor_registry.h"
+#include "normal_history_policy.h"
 #include "telemetry_validation.h"
+#include "precision_cadence.h"
 
 #include <algorithm>
 #include <esp_heap_caps.h>
+#include <esp_timer.h>
 #include <iterator>
 #include <limits.h>
 #include <string.h>
@@ -214,7 +217,7 @@ void SensorRegistry::updateTxPowerLocked(size_t index, int8_t rssi,
   }
 }
 
-bool SensorRegistry::begin(ConfigStore& store, uint32_t defaultSleepSeconds) {
+bool SensorRegistry::begin(ConfigStore& store, uint32_t defaultSleepSeconds, PagedHistory* paged) {
   store_ = &store;
   defaultSleepSeconds_ = constrain(defaultSleepSeconds, kMinSleepSeconds,
                                    kMaxSleepSeconds);
@@ -268,6 +271,29 @@ bool SensorRegistry::begin(ConfigStore& store, uint32_t defaultSleepSeconds) {
       runtime_[i].stationRssi = latest.stationRssi;
       runtime_[i].hasPersistedTelemetry = true;
     }
+  }
+  if (paged) {
+    paged->configure(configs_, kMaxSensors);
+    size_t legacyBytes = 0;
+    for (size_t i=0;i<kMaxSensors;++i) if(configs_[i].occupied) legacyBytes += store_->historyBytesLength(i);
+    paged->setLegacyBytes(legacyBytes);
+    for (size_t i=0;i<kMaxSensors;++i) {
+      auto& h=history_[i];
+      if(h.samples){
+        std::sort(h.samples,h.samples+h.capacity,[](const HistorySample& a,const HistorySample& b){return a.timestamp<b.timestamp;});
+        bool ok=true;size_t imported=0;
+        for(size_t row=0;row<h.capacity&&ok;++row)if(h.samples[row].timestamp){
+          ok=paged->appendLegacy(configs_[i].mac,h.samples[row],h.bucketSeconds);++imported;
+          if (row % 32 == 0) delay(1);
+        }
+        if(ok&&imported&&paged->flush(configs_[i].mac)){
+          const size_t bytes=store_->historyBytesLength(i);
+          if(store_->deleteHistory(i)){legacyBytes=legacyBytes>bytes?legacyBytes-bytes:0;paged->setLegacyBytes(legacyBytes);}
+        }
+        heap_caps_free(h.samples);h={};
+      }
+    }
+    paged_=paged;
   }
   return true;
 }
@@ -612,10 +638,14 @@ bool SensorRegistry::registerTelemetry(
   current.hasTelemetry = true;
   current.telemetry = displayTelemetry;
   current.stationRssi = rssi;
-  current.receivedIntervalMs = current.receivedPackets ? millis() - current.lastSeenMs : 0;
+  const uint64_t monotonicMs = static_cast<uint64_t>(esp_timer_get_time()) / 1000;
+  current.receivedIntervalMs = current.receivedPackets ?
+      static_cast<uint32_t>(min<uint64_t>(UINT32_MAX, monotonicMs - current.lastSeenMonotonicMs)) : 0;
   current.lastSeenMs = millis();
+  current.lastSeenMonotonicMs = monotonicMs;
   current.receivedPackets++;
-  if (lil::protocol::isLiveSensor(telemetry.sensorType) && !discoveryMode &&
+  const bool ordinaryPrecision = paged_ && usesNormalHistory(telemetry);
+  if (lil::protocol::isLiveSensor(telemetry.sensorType) && !ordinaryPrecision && !discoveryMode &&
       !(telemetry.flags & lil::protocol::kBatteryProtectionActive)) {
     const bool timed = (telemetry.live.flags & lil::protocol::kLiveTimingKnown) != 0;
     const bool fresh = (telemetry.live.flags & lil::protocol::kLiveSampleFresh) != 0;
@@ -630,6 +660,11 @@ bool SensorRegistry::registerTelemetry(
     auto& live = live_[index];
     const size_t capacity = 60000 / lil::protocol::liveHistoryIntervalMs(telemetry.sensorType) + 1;
     if (live.samples && live.capacity != capacity) { heap_caps_free(live.samples); live = LiveHistory{}; }
+    // A 32-bit sample ID can wrap after a long outage. Expire the old ring
+    // before either a cached contact or a fresh sample can make it look recent.
+    if (live.count && monotonicMs - live.lastSampleMonotonicMs > 60000) {
+      live.head = live.count = 0;
+    }
     live.capacity = capacity;
     if (storeSample && !live.samples) live.samples = static_cast<LiveSample*>(heap_caps_calloc(
         capacity, sizeof(LiveSample), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
@@ -637,6 +672,7 @@ bool SensorRegistry::registerTelemetry(
       live.samples = static_cast<LiveSample*>(heap_caps_calloc(capacity, sizeof(LiveSample), MALLOC_CAP_8BIT));
     if (storeSample && live.samples) {
       live.samples[live.head] = {current.lastSeenMs, telemetry};
+      live.lastSampleMonotonicMs = monotonicMs;
       live.head = (live.head + 1) % live.capacity;
       if (live.count < live.capacity) ++live.count;
     }
@@ -668,6 +704,8 @@ bool SensorRegistry::persistTelemetry(
   if (index < 0 || generations_[index] != generation) return false;
   const SensorRuntime snapshot = runtime_[index];
   const SensorConfig config = configs_[index];
+  static SensorConfig historyConfigs[kMaxSensors];
+  if(paged_)memcpy(historyConfigs,configs_,sizeof(historyConfigs));
   lock.unlock();
   bool success = true;
   bool initialized = !snapshot.storageInitializationPending;
@@ -679,16 +717,24 @@ bool SensorRegistry::persistTelemetry(
   }
   const bool discovery = (telemetry.flags & lil::protocol::kDiscoveryBeacon) != 0;
   const bool batteryProtection = (telemetry.flags & lil::protocol::kBatteryProtectionActive) != 0;
-  const bool live = lil::protocol::isLiveSensor(telemetry.sensorType) && !batteryProtection;
+  const bool precisionNormal = lil::timing::supportsNormalPrecisionMeasurements(telemetry.sensorType) &&
+      telemetry.operatingMode == lil::protocol::SensorOperatingMode::kEnergySaving;
+  const bool freshNormal = !(telemetry.live.flags & lil::protocol::kLiveTimingKnown) ||
+      (telemetry.live.flags & (lil::protocol::kLiveSampleFresh|lil::protocol::kLiveGap));
+  const bool live = lil::protocol::isLiveSensor(telemetry.sensorType) && !batteryProtection && (!paged_ || !usesNormalHistory(telemetry));
   bool latestSaved = false;
   if (snapshot.hasSequence && snapshot.lastSequence == sequence &&
       (!discovery || !snapshot.hasPersistedTelemetry) && (batteryProtection || config.sleepSeconds >= 60) &&
-      !live) {
+      !live && (!precisionNormal || freshNormal)) {
     latestSaved = saveLatestTelemetryLocked(index, snapshot.telemetry, rssi);
     success = latestSaved && success;
   }
   if (!discovery && initialized && !live) {
-    success = recordHistoryLocked(index, telemetry,
+    if(paged_){
+      paged_->configure(historyConfigs,kMaxSensors);
+      if(!precisionNormal||freshNormal)success=paged_->append(mac,receivedAt,telemetry,
+          batteryProtection?86400:config.sleepSeconds)&&success;
+    }else success = recordHistoryLocked(index, telemetry,
                                   batteryProtection && config.sleepSeconds < 60 ? 86400 : config.sleepSeconds,
                                   receivedAt) && success;
   }
@@ -708,6 +754,8 @@ size_t SensorRegistry::liveHistory(const uint8_t mac[6], LiveSample* output, siz
   const int index = findIndexLocked(mac);
   if (index < 0 || !live_[index].samples) return 0;
   const auto& live = live_[index];
+  const uint64_t monotonicMs = static_cast<uint64_t>(esp_timer_get_time()) / 1000;
+  if (monotonicMs - live.lastSampleMonotonicMs > 60000) return 0;
   size_t count = 0;
   const uint32_t now = millis();
   for (size_t i = 0; i < live.count && count < capacity; ++i) {
@@ -825,6 +873,14 @@ bool SensorRegistry::updateConfig(const uint8_t mac[6], const String& name,
     runtime_[index].hasRecordingStatus = false;
   }
   lock.unlock();
+  if(paged_){
+    // Typed pages keep earlier measurements available after a sensor change.
+    // A settings acknowledgement depends only on the durable settings writes.
+    static SensorConfig historyConfigs[kMaxSensors];
+    lock.relock();memcpy(historyConfigs,configs_,sizeof(historyConfigs));lock.unlock();
+    paged_->configure(historyConfigs,kMaxSensors);
+    return true;
+  }
   if (lil::protocol::isLiveSensor(snapshot.environmentalSensorType)) {
     if (history_[index].samples) heap_caps_free(history_[index].samples);
     history_[index] = StoredHistory{};
@@ -1002,6 +1058,7 @@ bool SensorRegistry::deleteSensor(const uint8_t mac[6]) {
   const int index = findIndexLocked(mac);
   if (index < 0) return false;
   lock.unlock();
+  if(paged_&&!paged_->clear(mac))return false;
   // Keep the durable identity until its old slot files are removed. A failed
   // filesystem operation must not let a reboot reuse those files for a node.
   if (!store_->deleteHistory(index) ||
@@ -1020,6 +1077,11 @@ bool SensorRegistry::deleteSensor(const uint8_t mac[6]) {
     heap_caps_free(history_[index].samples);
   }
   history_[index] = StoredHistory{};
+  if(paged_){
+    static SensorConfig historyConfigs[kMaxSensors];
+    lock.relock();memcpy(historyConfigs,configs_,sizeof(historyConfigs));lock.unlock();
+    paged_->configure(historyConfigs,kMaxSensors);
+  }
   return true;
 }
 
@@ -1034,7 +1096,7 @@ bool SensorRegistry::setMotionReference(const uint8_t mac[6], bool clear) {
         configs_[index].environmentalSensorType != lil::protocol::EnvironmentalSensorType::kLsm6dsox) return false;
     const auto& current = runtime_[index];
     const auto& t = current.telemetry;
-    const uint32_t age = millis() - current.lastSeenMs;
+    const uint64_t age = static_cast<uint64_t>(esp_timer_get_time()) / 1000 - current.lastSeenMonotonicMs;
     const uint32_t limit = configs_[index].sleepSeconds * 1000UL + 2000UL;
     if (!current.hasTelemetry || t.sensorType != lil::protocol::EnvironmentalSensorType::kLsm6dsox ||
         !(t.capabilities & lil::protocol::kMotion) || (t.flags & (lil::protocol::kSensorReadFailed | lil::protocol::kBatteryProtectionActive)) ||
@@ -1165,6 +1227,7 @@ size_t SensorRegistry::history(const uint8_t mac[6], HistorySample* output,
 }
 
 size_t SensorRegistry::historyCapacity(const uint8_t mac[6]) const {
+  if(paged_)return paged_->info(mac).capacityPoints;
   LockGuard storage(storageMutex_);
   LockGuard lock(mutex_);
   const int index = findIndexLocked(mac);
@@ -1172,6 +1235,7 @@ size_t SensorRegistry::historyCapacity(const uint8_t mac[6]) const {
 }
 
 uint32_t SensorRegistry::historyBucketSeconds(const uint8_t mac[6]) const {
+  if(paged_)return paged_->info(mac).intervalSeconds;
   LockGuard storage(storageMutex_);
   LockGuard lock(mutex_);
   const int index = findIndexLocked(mac);
@@ -1184,6 +1248,7 @@ uint32_t SensorRegistry::historyBucketSeconds(const uint8_t mac[6]) const {
 }
 
 uint32_t SensorRegistry::historyRevision(const uint8_t mac[6]) const {
+  if(paged_)return paged_->info(mac).revision;
   LockGuard storage(storageMutex_);
   LockGuard lock(mutex_);
   const int index = findIndexLocked(mac);

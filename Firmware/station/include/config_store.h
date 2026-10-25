@@ -13,6 +13,8 @@ class ConfigStore {
   bool storageAvailable() const { return storageAvailable_; }
   StationConfig loadStationConfig();
   bool saveStationConfig(const StationConfig& config);
+  DashboardLayout loadDashboardLayout();
+  bool saveDashboardLayout(DashboardLayout layout);
   bool loadSensorConfigs(SensorConfig* configs, size_t count);
   bool saveSensorConfig(size_t index, const SensorConfig& config);
   bool deleteSensorConfig(size_t index);
