@@ -21,9 +21,14 @@ const assert = require('node:assert/strict');
     availableMs:90000,expected:1800,stored:1800,complete:true,sensorType:3};
   const partial = {...saved,session:'0000000000005678',durationMs:1800000,
     complete:false,expected:21000,stored:280,availableMs:14000};
+  const temperature={...motion,mac:'02:03:04:05:06:09',name:'Temperature test',
+    sensorType:4,configuredSensorType:4,normalHistory:true,temperature:23.383,
+    capabilities:17,recording:{state:3,pending:16,capacity:44352}};
+  const temperatureSession={...saved,session:'0000000000009012',sensorType:4,
+    stored:510,expected:525,complete:false,durationMs:525000,availableMs:510000};
   const archived = Array.from({length:1800},(_,i)=>({sampleMs:(i+1)*50,
     t:(i+1)*50,estimateT:(i+1)*50,ax:Math.sin(i/10),ay:.2,az:1,gx:2,gy:3,gz:4,wave:[]}));
-  let statusCalls=0,recordingCalls=0,slowNextRecording=false,failedNextRecording=false;
+  let statusCalls=0,recordingCalls=0,slowNextRecording=false,failedNextRecording=false,invalidNextRecording=false;
   const browser = await chromium.launch({headless:true,
     ...(process.env.PLAYWRIGHT_CHANNEL?{channel:process.env.PLAYWRIGHT_CHANNEL}:{})});
   try {
@@ -37,7 +42,7 @@ const assert = require('node:assert/strict');
         thingSpeakChannels:[],wifiSsid:'test',adminPasswordSet:true};
       else if(url.pathname==='/api/status') {
         statusCalls++;
-        body={sensors:[motion,climate],wifi:{connected:true,ssid:'test',ip:'192.0.2.1'},cloud:{}};
+        body={sensors:[motion,climate,temperature],wifi:{connected:true,ssid:'test',ip:'192.0.2.1'},cloud:{}};
       } else if(url.pathname==='/api/history') {
         if(url.searchParams.get('mac')===mac) {
           const end=Date.now(),base=motion.liveRevision*100000;
@@ -46,7 +51,7 @@ const assert = require('node:assert/strict');
             ax:motion.ax,ay:.2,az:1,gx:2,gy:3,gz:4
           })).filter(p=>p.id>Number(url.searchParams.get('afterMs')||0))};
         } else body={bucketSeconds:900,points:[{t:Date.now()-300000,temperature:22.5}]};
-      } else if(url.pathname==='/api/recordings')body={freeBytes:100000,sessions:url.searchParams.get('mac')===mac?[saved,partial]:[]};
+      } else if(url.pathname==='/api/recordings')body={freeBytes:100000,sessions:url.searchParams.get('mac')===mac?[saved,partial]:url.searchParams.get('mac')===temperature.mac?[temperatureSession]:[]};
       else if(url.pathname==='/api/recording') {
         recordingCalls++;
         if(slowNextRecording){slowNextRecording=false;await new Promise(resolve=>setTimeout(resolve,4500))}
@@ -55,10 +60,11 @@ const assert = require('node:assert/strict');
           let offset=Number(url.searchParams.get('offset')||0);
           if(url.searchParams.has('fromMs'))offset=archived.findIndex(p=>p.sampleMs>=Number(url.searchParams.get('fromMs')));
           if(offset<0)offset=archived.length;
-          const info=url.searchParams.get('session')===partial.session?partial:saved;
-          const points=archived.slice(offset,Math.min(offset+128,info.stored));
+          const info=url.searchParams.get('session')===temperatureSession.session?temperatureSession:url.searchParams.get('session')===partial.session?partial:saved;
+          const points=info.sensorType===4?Array.from({length:Math.min(128,info.stored-offset)},(_,i)=>({t:(offset+i+1)*1000,sampleMs:(offset+i+1)*1000,temperature:23.383+i/1000})):archived.slice(offset,Math.min(offset+128,info.stored));
           body={...info,
             nextOffset:offset+points.length,points};
+          if(invalidNextRecording){invalidNextRecording=false;body.nextOffset++}
         }
       } else body={success:true,sensors:[]};
       // A superseded archive request can be aborted before this fixture replies.
@@ -184,7 +190,59 @@ const assert = require('node:assert/strict');
     assert.equal(await page.evaluate(()=>recordingTransfers),0,'Cancellation releases archive bandwidth for telemetry');
     assert.equal(await page.getByRole('button',{name:'Export recording',exact:true}).isEnabled(),true);
     assert.equal(await page.getByRole('button',{name:'Cancel export',exact:true}).count(),0);
+
+    // Opening an individual measurement must not hide a subsequently selected
+    // recording (TMP117 normally uses persistent history between recordings).
+    await page.evaluate(()=>{openMetricChart(statusData.sensors[0].mac,'ax')});
+    await selector.selectOption(saved.session);
+    await page.waitForFunction(()=>!recordingViews[statusData.sensors[0].mac].busy);
+    assert.equal(await page.locator('.recordingCharts svg.liveSvg').count(),2,
+      'Explicit recording selection takes priority over an earlier metric view');
+
+    // A structural replacement must receive the complete cached chart, even
+    // though the previous version is still in the document during rendering.
+    await page.evaluate(()=>{
+      const foot=document.querySelector('.sensorFoot'),replacement=document.createElement('section');
+      replacement.className=foot.className;replacement.append(...foot.childNodes);foot.replaceWith(replacement);
+      redrawRecordings();
+    });
+    assert.equal(await page.locator('.recordingCharts svg.liveSvg').count(),2,
+      'Rebuilding a chart ancestor cannot insert an empty cache placeholder');
+
+    await page.evaluate(mac=>openMetricChart(mac,'temperature'),temperature.mac);
+    await selector.selectOption(temperatureSession.session);
+    await page.getByRole('button',{name:'Show available data',exact:true}).click();
+    await page.waitForFunction(()=>!recordingViews['02:03:04:05:06:09'].busy&&recordingViews['02:03:04:05:06:09'].points.length===510);
     assert.deepEqual(errors,[]);
-    console.log('Recording dashboard: full snapshots, fixed graph/cursor during synchronization, explicit refresh, cached minute navigation, slow responses and cancellation passed');
+    assert.equal(await page.locator('.recordingCharts svg[aria-label="Temperature trend"]').count(),1,
+      'The reported TMP117 partial snapshot is visible after opening a temperature tile');
+    assert.equal(await page.evaluate(()=>recordingViews['02:03:04:05:06:09'].points.length),510);
+    temperatureSession.stored=520;temperatureSession.availableMs=520000;
+    await page.evaluate(mac=>loadRecordings(mac,true),temperature.mac);
+    await page.getByText('New synchronized data available.',{exact:false}).waitFor();
+    assert.equal(await page.locator('.recordingCharts svg.liveSvg').count(),1);
+    // Simulate an emptied DOM container: a later redraw repairs it from cache.
+    await page.evaluate(()=>{document.querySelector('.recordingCharts').replaceChildren();redrawRecordings()});
+    assert.equal(await page.locator('.recordingCharts svg.liveSvg').count(),1);
+    await page.getByRole('button',{name:'Load latest data',exact:true}).click();
+    await page.waitForFunction(()=>!recordingViews['02:03:04:05:06:09'].busy&&recordingViews['02:03:04:05:06:09'].points.length===520);
+    await page.evaluate(()=>window.temperatureSvg=document.querySelector('.recordingCharts svg.liveSvg'));
+    invalidNextRecording=true;
+    await page.getByRole('button',{name:'Load latest data',exact:true}).click();
+    await page.getByText('Recording page is incomplete or its cursor is invalid.',{exact:false}).waitFor();
+    assert(await page.evaluate(()=>temperatureSvg===document.querySelector('.recordingCharts svg.liveSvg')&&recordingViews['02:03:04:05:06:09'].points.length===520),
+      'A malformed page retains the previous complete snapshot and its graph');
+    await page.getByRole('button',{name:'Retry',exact:true}).click();
+    await page.waitForFunction(()=>!recordingViews['02:03:04:05:06:09'].busy&&!recordingViews['02:03:04:05:06:09'].error);
+    if(process.env.QA_SCREENSHOT_DIR){
+      fs.mkdirSync(process.env.QA_SCREENSHOT_DIR,{recursive:true});
+      await page.screenshot({path:path.join(process.env.QA_SCREENSHOT_DIR,'tmp117-recording-desktop.png'),fullPage:true});
+      await page.setViewportSize({width:390,height:844});
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+      assert(await page.getByRole('button',{name:'Edit',exact:true}).isVisible());
+      await page.screenshot({path:path.join(process.env.QA_SCREENSHOT_DIR,'tmp117-recording-mobile.png'),fullPage:true});
+    }
+    assert.deepEqual(errors,[]);
+    console.log('Recording dashboard: full snapshots, TMP117 partial synchronization, metric/archive switching, structural cache repair, invalid-page recovery, fixed cursors, slow responses and cancellation passed');
   } finally {await browser.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});
