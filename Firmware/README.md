@@ -29,7 +29,12 @@ verify a target without writing to a connected device.
 - [Architecture](ARCHITECTURE.md)
 - [Hardware test plan](HARDWARE_TESTPLAN.md)
 
-Current firmware: **4.3.4**. Initialize the installation signing key as described
+Current station and PCB V3/V4 release: **4.4.1 / 40401**, protocol V5.
+It adds a compact configurable dashboard, touch inspection, adaptive persistent
+normal history and long-uptime corrections. See [release packages](releases/README.md).
+For an installed station, `python Firmware/upload.py station --application-only`
+updates only its application and preserves Wi-Fi, sensors, settings and files.
+Initialize the installation signing key as described
 in the OTA guide before the first build. Never replace an existing signing key.
 
 - [Signed OTA updates](OTA.md)
@@ -40,6 +45,7 @@ in the OTA guide before the first build. Never replace an existing signing key.
 - [Manual recordings and USB migration](RECORDINGS.md)
 - [Sensor accuracy review and V4 battery protection](SENSOR_REVIEW.md)
 - [Station and sensor V3/V4 reliability review](RELIABILITY_REVIEW.md)
+- [Mobile usability, long-uptime fixes and storage capacity](RESOURCE_AND_UX_REVIEW.md)
 
 ## Live precision sensors
 
@@ -51,10 +57,10 @@ Pulse estimates update once per second. Saved recordings load as complete,
 stable snapshots; full-session CSV retains the original samples. See [operation, accuracy limits and OTA migration](PRECISION_SENSORS.md).
 
 
-## Current release and publication checks
+## Full release and publication checks
 
-Firmware **4.3.4 / 40307** includes bounded sensor reinitialization, durable
-settings/history corrections and the updated recording/dashboard behavior.
+Firmware **4.4.1 / 40401** includes bounded sensor reinitialization, long-uptime
+corrections, adaptive normal history and the compact configurable dashboard.
 See [the complete change inventory](CHANGELOG.md),
 [release artifacts](releases/README.md) and
 [publication review](PUBLICATION_REVIEW.md). Build diagnostics use relative

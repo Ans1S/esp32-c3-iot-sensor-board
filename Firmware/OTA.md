@@ -6,6 +6,15 @@ sizes, history backup and NVS-preserving USB installation. Live recording
 must stop before a scheduled OTA transfer starts.
 
 
+## Updating the station without resetting settings
+
+Release 4.4.1 uses the same NVS and partition layouts as the existing recording
+release. `python Firmware/upload.py station --application-only` builds and
+writes only the installed station application. The distributed station BIN
+also goes at `0x10000`, without full erasure. Wi-Fi credentials, paired sensors,
+settings and files are preserved. The station itself is updated by USB; its
+web update page accepts the signed sensor packages listed below.
+
 ## Implemented scope
 
 The station accepts a signed `.ota` package for a configured PCB V3 or V4
@@ -210,7 +219,8 @@ for the compiler behavior. Scan the final application and signed package bytes
 with `python Firmware/tools/check_publication.py` before staging them. Never
 publish flash dumps containing device NVS, credentials or recordings.
 
-The current distribution contains 4.3.4 packages only. Older binaries with
+The current distribution contains the full 4.3.4 release and the PCB V4
+4.3.5 maintenance OTA package. Older binaries with
 personal compiler paths were withdrawn from the current tree and kept in an
 ignored local archive; the old objects still exist in published Git history.
 See [publication scope](PUBLICATION_REVIEW.md). Keys and the trusted public

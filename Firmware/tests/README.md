@@ -2,7 +2,7 @@
 
 The [2026-10-07 reliability review](../RELIABILITY_REVIEW.md) documents the
 current fixes, energy behavior and remaining hardware acceptance. The runner
-now includes 22 production C++ suites.
+now includes 24 production C++ suites.
 
 Run from the repository root after resolving/building the sensor dependencies:
 
@@ -79,6 +79,18 @@ or station is flashed.
 Run `node Firmware/tests/test_chart_readability.cjs` to verify single-point
 history charts, time-window switching, browsing retained history, exact cursor
 values, gap-safe visual smoothing, unchanged CSV samples and mobile layouts.
+Touch regressions use a touch-enabled browser context and verify pinning after
+pointer leave, adjacent-sample controls, incremental updates and retained raw
+values when a selected point leaves the rolling window. Axis label sizing
+follows the rendered SVG width without enlarging the stored data.
+
+Long-uptime regressions exercise normal precision acquisition after a simulated
+2^31 ms uptime, inactive/expired retries, millis wrap, 64-bit login cooldowns
+and stale motion-reference rejection after a complete millis cycle. These are
+accelerated deterministic checks, not a multi-week physical soak test. The
+status API exposes internal-heap minimum/free/largest-block and PSRAM
+free/largest-block bytes for the remaining device load checks. See
+[the resource and usability review](../RESOURCE_AND_UX_REVIEW.md).
 
 The C++ acquisition suite executes the production acquisition task for normal
 1/10 s measurement windows, recording transitions, startup/read failures,
@@ -200,8 +212,11 @@ the upload script with a substituted environment and never flash hardware.
 Sensor-transition regressions also cover a slow selected chip becoming visible
 after an initial mismatch, releasing an active driver before changing types,
 three bounded startup attempts across deep sleep, early retry reports, return
-to the normal interval and battery protection during recovery. Browser checks
-cover five-second security/cloud notices that stay dismissed across polling,
+to the normal interval and battery protection during recovery. BME280 conversion
+failures after successful initialization also consume the bounded retry budget;
+tests cover exhaustion, valid-sample recovery, automatic detection, low battery
+during retries and unchanged BME680 maintenance without a new sample. Browser checks
+cover absent startup security/cloud notices across polling,
 new notices when their condition changes, cancellation of obsolete notice
 timers before errors, pending/applied sensor mismatch states and BME280 cards
 without IAQ or gas-resistance tiles. BME680 retains both tiles.
@@ -211,7 +226,10 @@ without IAQ or gas-resistance tiles. BME680 retains both tiles.
 
 Run `python Firmware/tests/test_publication.py` for binary/ZIP token detection,
 private material versus TLS parser markers, path/file exclusions, redacted
-reports, an index/worktree race and a removed secret in new commit history. Run the checker from the repository root:
+reports, an index/worktree race and a removed secret in new commit history.
+The seven checks also reject device exports and authentication files while
+confirming that Git ignore rules preserve public source/build inputs and the
+reviewed release files. Run the checker from the repository root:
 
 ```sh
 python Firmware/tools/check_publication.py
@@ -228,3 +246,51 @@ consult [the review](../PUBLICATION_REVIEW.md) rather than claiming history was
 removed. The checker is heuristic and cannot read text encoded only as pixels;
 review screenshots visually and use synthetic fixtures. It prints locations
 and categories, never matched values.
+
+## Compact dashboard and adaptive normal history
+
+`paged_history_test.cpp` runs the production paged store against actual temporary
+files: all 19 nodes, fair quotas, full storage, explicit reserve, immutable
+pagination ceilings, stale readers, CRC/torn-tail recovery and exact precision
+values. Registry integration also imports the legacy ring, preserves settings,
+and rejects cached precision contacts as new measurements. The configuration
+suite checks the independent dashboard NVS key and CRC fallback.
+
+`node Firmware/tests/test_compact_dashboard.cjs` exercises the actual page with
+a 4,400-point, multi-week fixture. It checks entire-card and entire-voltage-tile
+touch navigation, selected-node-only paging, retained raw points, bounded SVG
+geometry, long periods, station-backed order/visibility/columns, mobile width,
+reachable settings/firmware and absent startup notices. Together with the
+existing six browser suites and the interaction stress suite, there are eight
+embedded-page browser checks.
+
+The upload tests verify inherited erasure removal and the application-only
+target. These software tests never flash a board. Power-cut recovery under
+actual LittleFS/flash timing, 19-node RF load, PSRAM failure and flash endurance
+still require the hardware plan.
+
+## Interaction and fault stress checks
+
+Run `node Firmware/tests/test_interaction_stress.cjs` with the same Playwright
+configuration. It uses the actual embedded dashboard on a mobile viewport and
+19 synthetic nodes. It checks keyboard/touch navigation, cancellation during
+slow history reads, a reopened layout while an older save finishes, failed
+later pages without publishing a partial snapshot, HTTP failure, a stuck
+pagination cursor, the real 15-second request timeout, explicit retry,
+station restart with unchanged revisions, and disconnection/recovery without
+JavaScript errors. The overview must not fetch all nineteen histories.
+
+The registry suite tests a full 32-bit millis cycle without reviving expired
+live points, both with no new contact and with cached/fresh packets after the
+outage. It retains the inclusive 60-second boundary and normal wrap handling.
+The power-pin suite executes the production controller separately for PCB V3
+and V4, including inactive output latches before pin enable and the absence of
+an ADC gate on V3.
+
+Paged-history checks additionally inject low internal RAM, absent PSRAM and
+allocation failure, then verify recovery without recording rejected values.
+They exercise full PSRAM pages through a TMP117-to-IMU row-width change and
+report a CRC error encountered by an active reader. The existing full-storage,
+nineteen-node quotas, torn-tail, durable-ACK and power-protection checks remain.
+These are accelerated software scenarios; physical flash power cuts, RF load,
+real PSRAM/heap behavior and current/accuracy measurements require hardware.

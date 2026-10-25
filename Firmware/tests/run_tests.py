@@ -26,9 +26,11 @@ def main():
     driver = ROOT / "sensor/.pio/libdeps/sensor_pcb_v3/BME68x Sensor library/src/bme68x"
     suites = {
         "power_pins": ["tests/power_pins_test.cpp", "sensor/src/power_controller.cpp"],
+        "power_pins_v3": ["tests/power_pins_test.cpp", "sensor/src/power_controller.cpp"],
         "battery_boot": ["tests/battery_boot_test.cpp", "shared/src/lil_protocol.cpp"],
         "sensor_config": ["tests/sensor_config_test.cpp"],
-        "config_store": ["tests/config_store_test.cpp", "station/src/config_store.cpp"],
+        "config_store": ["tests/config_store_test.cpp", "station/src/config_store.cpp",
+                         "station/src/filesystem_guard.cpp", "shared/src/lil_protocol.cpp"],
         "web_input": ["tests/web_input_test.cpp"],
         "bme280": ["tests/bme280_test.cpp", "sensor/src/bme280_driver.cpp"],
         "bme680": ["tests/bme680_test.cpp", "sensor/src/bme680_driver.cpp",
@@ -36,7 +38,11 @@ def main():
         "environmental_sensor": ["tests/environmental_sensor_test.cpp", "sensor/src/environmental_sensor.cpp"],
         "motion_feedback": ["tests/motion_feedback_test.cpp"],
         "recording": ["tests/recording_test.cpp", "shared/src/recording_journal.cpp", "shared/src/lil_protocol.cpp"],
-        "recording_archive": ["tests/recording_archive_test.cpp", "station/src/recording_archive.cpp", "shared/src/lil_protocol.cpp"],
+        "recording_archive": ["tests/recording_archive_test.cpp", "station/src/recording_archive.cpp",
+                              "station/src/paged_history.cpp", "station/src/filesystem_guard.cpp",
+                              "shared/src/lil_protocol.cpp"],
+        "paged_history": ["tests/paged_history_test.cpp", "station/src/paged_history.cpp",
+                          "station/src/filesystem_guard.cpp", "shared/src/lil_protocol.cpp"],
         "recording_json": ["tests/recording_json_test.cpp", "shared/src/lil_protocol.cpp"],
         "recording_store": ["tests/recording_store_test.cpp", "sensor/src/recording_store.cpp", "shared/src/recording_journal.cpp", "shared/src/lil_protocol.cpp"],
         "precision_sensors": ["tests/precision_sensors_test.cpp", "sensor/src/precision_sensors.cpp"],
@@ -46,7 +52,9 @@ def main():
         "power_and_upload": ["tests/power_and_upload_test.cpp", "shared/src/lil_protocol.cpp"],
         "transport": ["tests/transport_test.cpp", "sensor/src/espnow_transport.cpp",
                       "shared/src/lil_protocol.cpp"],
-        "registry": ["tests/registry_test.cpp", "station/src/sensor_registry.cpp"],
+        "registry": ["tests/registry_test.cpp", "station/src/sensor_registry.cpp",
+                     "station/src/paged_history.cpp", "station/src/filesystem_guard.cpp",
+                     "shared/src/lil_protocol.cpp"],
         "clock_budget": ["tests/clock_budget_test.cpp", "sensor/src/logical_clock.cpp",
                          "sensor/src/measurement_budget.cpp"],
         "bme68x_fault": ["tests/bme68x_fault_test.cpp", str(driver / "bme68x.c")],
@@ -63,6 +71,8 @@ def main():
                 includes.insert(0, ROOT / "tests/sensor_config_stubs")
             if name == "config_store":
                 includes.insert(0, ROOT / "tests/station_stubs")
+            if name in {"registry", "paged_history"}:
+                includes.insert(0, ROOT / "tests/history_stubs")
             if name == "bme280":
                 includes.insert(0, ROOT / "tests/bme280_stubs")
             if name == "bme680":
@@ -88,14 +98,18 @@ def main():
                 archive_path = Path(output) / "archive"
                 archive_path.mkdir()
                 compile_command += [f'-DRECORDING_MOUNT_PATH="{archive_path.as_posix()}"']
+            if name in {"recording_archive", "registry", "paged_history"}:
+                history_path = Path(output) / (name + "-history")
+                history_path.mkdir()
+                compile_command += [f'-DNORMAL_HISTORY_MOUNT_PATH="{history_path.as_posix()}"']
                 if os.name == "nt":
                     compile_command += ["-Dfsync=_commit", "-include", "io.h"]
             if name == "battery_boot":
                 includes.insert(0, ROOT / "tests/boot_stubs")
                 compile_command += ["-DPCB_VERSION=4"]
-            if name == "power_pins":
+            if name in {"power_pins", "power_pins_v3"}:
                 includes.insert(0, ROOT / "tests/power_stubs")
-                compile_command += ["-DPCB_VERSION=4"]
+                compile_command += ["-DPCB_VERSION=" + ("3" if name == "power_pins_v3" else "4")]
             for include in includes:
                 compile_command += ["-I", str(include)]
             base_command = list(compile_command)

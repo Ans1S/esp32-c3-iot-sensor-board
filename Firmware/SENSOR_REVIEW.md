@@ -80,6 +80,52 @@ Confirmed software weaknesses were corrected:
 The pull-up estimate uses `t_r = 0.8473 * R * C` from
 [NXP UM10204](https://www.nxp.com/docs/en/user-guide/UM10204.pdf).
 
+## Intermittent BME280 read failure follow-up (2026-10-17)
+
+The reported PCB V4 dashboard shows firmware 4.3.4, a BME280 read error,
+4.145 V battery voltage and -92 dBm RSSI. The dashboard error covers both
+initialization and conversion failure; it does not establish that chip ID or
+the I2C address disappeared. A weak radio link can delay delivery, but the
+sensor error is generated from the node's local acquisition result.
+
+The code review found a recovery gap: `main.cpp` replenished the startup retry
+budget immediately after successful initialization, before checking the forced
+conversion. Thus a BME280 that acknowledged initialization but failed every
+conversion never entered the bounded five-second recovery path. The corrected
+path requires a valid BME280 sample. Three consecutive failed attempts exhaust
+the budget; subsequent wakes use the configured interval until a valid sample
+or changed measurement configuration permits another recovery sequence.
+BME680's BSEC schedule and V4's 24-hour battery protection retain priority.
+
+This fixes recovery latency, not a demonstrated electrical cause of the initial
+failure. The existing code already uses 100 kHz for Bosch sensors, searches
+0x76/0x77, resets and validates calibration/configuration, and retries failed
+initialization once with 100 ms off and 200 ms power-up settling. Every ordinary
+BME280 wake also initializes afresh and turns the rail off afterward.
+
+For diagnosis, add `-DSENSOR_DIAGNOSTIC_LOGGING=1` to the selected sensor
+environment's build flags, rebuild and monitor at 115200 baud. Bosch probe logs
+now include address, transfer error and chip ID; the BME280 driver distinguishes
+short reads, failed writes, inconsistent calibration, configuration mismatch,
+stuck status and skipped/uninitialized channels. Logging is disabled in normal
+builds. A diagnostic USB connection may change the power conditions, so record
+whether the failure occurs on battery or USB.
+
+On the failing assembly, compare a complete power disconnect/reconnect with an
+ESP32 reset. Measure the switched J1 supply and SDA/SCL during startup and the
+failed read, preferably with an oscilloscope or logic analyzer. A 100 ms off
+command does not prove the module capacitors actually discharged. Check short
+wiring, common ground, module-side regulation, CSB tied high for I2C and a
+defined SDO level. Bosch specifies that pulling CSB low locks out I2C until the
+next power-on reset (datasheet section 6.1). Compare the suspect module/cable on
+a known-good board and a known-good module on this V4. Do not connect the bare
+BME280 to the 4.145 V battery; its maximum operating VDD is 3.6 V.
+
+Host regression reproduces the old read-failure recovery gap and covers retry
+exhaustion, later recovery, explicit/auto-detected BME280, early reports, battery
+protection and unchanged BME680 maintenance. No failing board was connected,
+flashed or measured; the actual intermittent fault remains unconfirmed.
+
 ## V4 battery protection
 
 Normal V4 builds now enable the policy in `sensor/include/power_options.h`.

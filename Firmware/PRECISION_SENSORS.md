@@ -58,6 +58,13 @@ interval; exhausted attempts stop short recovery wakes until a later successful
 startup or a changed measurement configuration. Cold boots also allow this
 bounded recovery. V4 battery protection overrides every retry.
 
+BME280 recovery requires a valid forced-conversion sample, not only a successful
+chip/configuration probe. A failed conversion consumes the same three-attempt
+budget and triggers the five-second deep-sleep retry/report path. Continued
+failures return to the configured interval after exhaustion; a valid sample
+replenishes the budget. BME680 maintenance can legitimately produce no new
+sample and retains its existing BSEC schedule.
+
 Pending type changes display an initialization hint with empty new-sensor
 values. They do not inherit error flags or recording state from the previous
 driver. A mismatch reported after applying the selection remains an error.

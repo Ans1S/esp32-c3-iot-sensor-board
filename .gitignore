@@ -15,8 +15,9 @@
 # Build directories
 build/
 *.bin
-!Firmware/releases/*.factory.bin
 !Firmware/releases/station-4.3.4.bin
+!Firmware/releases/station-4.4.0.bin
+!Firmware/releases/station-4.4.1.bin
 *.elf
 *.map
 *.hex
@@ -55,6 +56,33 @@ monitor*.log
 Firmware/shared/include/ota_public_key.h
 *.p12
 *.pfx
+*.keystore
+*.jks
+*.ovpn
+*.wireguard
+**/.ssh/
+**/.aws/
+**/.azure/
+**/.config/gcloud/
+**/.npmrc
+**/.pypirc
+**/.netrc
+**/_netrc
+**/id_rsa*
+**/id_ed25519*
+
+# Device exports and raw captures can contain network keys and personal data.
+# Keep public fixtures and versioned release packages available to other users.
+device-data/
+device-backups/
+flash-dumps/
+exports/
+**/nvs.bin
+**/nvs.csv
+**/flash-dump.*
+**/coredump.*
+Readme/private/
+Readme/raw/
 
 # Local Codex project guidance and skills (never publish)
 **/AGENTS.md

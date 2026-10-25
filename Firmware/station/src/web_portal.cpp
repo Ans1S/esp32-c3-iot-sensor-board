@@ -20,9 +20,6 @@ namespace {
 constexpr size_t kMaxScannedNetworks = 20;
 constexpr char kSessionCookieName[] = "wch_session";
 constexpr char kPasswordHashDomain[] = "W-Charger website password v1";
-constexpr uint8_t kMaxLoginAttempts = 5;
-constexpr uint32_t kLoginBlockMs = 30000;
-constexpr uint32_t kLoginAttemptWindowMs = 5UL * 60UL * 1000UL;
 constexpr uint64_t kSessionLifetimeMs = 30ULL * 60ULL * 1000ULL;
 constexpr uint32_t kSessionLifetimeSeconds = kSessionLifetimeMs / 1000UL;
 
@@ -304,6 +301,7 @@ bool WebPortal::begin(StationConfig& config, ConfigStore& store,
   server_.on("/api/config", HTTP_GET, [this]() {
     if (requireAuthentication()) sendJsonConfig();
   });
+  server_.on("/api/dashboard-layout",HTTP_POST,[this](){if(requireAuthentication()&&verifyCsrf())saveDashboardLayout();});
   server_.on("/api/wifi-scan", HTTP_GET, [this]() {
     if (requireAuthentication()) sendWifiScan();
   });
@@ -540,39 +538,13 @@ void WebPortal::revokeCurrentSession() {
 }
 
 bool WebPortal::loginBlocked(uint32_t& retryAfterSeconds) {
-  LoginThrottle& throttle = loginThrottle_;
-  const uint32_t now = millis();
-  if (throttle.blockedUntilMs != 0 &&
-      static_cast<int32_t>(now - throttle.blockedUntilMs) < 0) {
-    retryAfterSeconds =
-        (throttle.blockedUntilMs - now + 999UL) / 1000UL;
-    return true;
-  }
-  if (throttle.blockedUntilMs != 0 ||
-      now - throttle.lastAttemptMs > kLoginAttemptWindowMs) {
-    throttle.blockedUntilMs = 0;
-    throttle.failures = 0;
-  }
-  retryAfterSeconds = 0;
-  return false;
+  return loginThrottle_.blocked(static_cast<uint64_t>(esp_timer_get_time()) / 1000,
+                                retryAfterSeconds);
 }
 
 bool WebPortal::recordFailedLogin(uint32_t& retryAfterSeconds) {
-  LoginThrottle& throttle = loginThrottle_;
-  const uint32_t now = millis();
-  if (now - throttle.lastAttemptMs > kLoginAttemptWindowMs) {
-    throttle.failures = 0;
-  }
-  throttle.lastAttemptMs = now;
-  ++throttle.failures;
-  if (throttle.failures < kMaxLoginAttempts) {
-    retryAfterSeconds = 0;
-    return false;
-  }
-  throttle.failures = 0;
-  throttle.blockedUntilMs = now + kLoginBlockMs;
-  retryAfterSeconds = kLoginBlockMs / 1000UL;
-  return true;
+  return loginThrottle_.recordFailure(static_cast<uint64_t>(esp_timer_get_time()) / 1000,
+                                      retryAfterSeconds);
 }
 
 void WebPortal::clearLoginFailures() {
@@ -691,8 +663,16 @@ void WebPortal::loop() {
 void WebPortal::sendJsonStatus() {
   JsonDocument document;
   document["storageAvailable"] = store_->storageAvailable();
-  document["uptimeMs"] = millis();
+  document["uptimeMs"] = static_cast<uint64_t>(esp_timer_get_time()) / 1000;
   document["freeHeap"] = ESP.getFreeHeap();
+  JsonObject memory = document["memory"].to<JsonObject>();
+  constexpr uint32_t internalCaps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+  constexpr uint32_t externalCaps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+  memory["internalFreeBytes"] = heap_caps_get_free_size(internalCaps);
+  memory["internalMinimumFreeBytes"] = heap_caps_get_minimum_free_size(internalCaps);
+  memory["internalLargestBlockBytes"] = heap_caps_get_largest_free_block(internalCaps);
+  memory["psramFreeBytes"] = heap_caps_get_free_size(externalCaps);
+  memory["psramLargestBlockBytes"] = heap_caps_get_largest_free_block(externalCaps);
   JsonObject wifi = document["wifi"].to<JsonObject>();
   wifi["connected"] = wifi_->stationConnected();
   wifi["ssid"] = wifi_->stationSsid();
@@ -741,8 +721,8 @@ void WebPortal::sendJsonStatus() {
         (view.runtime.telemetry.sensorType == lil::protocol::EnvironmentalSensorType::kLsm6dsox ||
          view.runtime.telemetry.sensorType == lil::protocol::EnvironmentalSensorType::kTmp117) &&
         !recordingActive;
-    const uint32_t ageMs = view.runtime.hasTelemetry
-                               ? millis() - view.runtime.lastSeenMs
+    const uint64_t ageMs = view.runtime.hasTelemetry
+                               ? static_cast<uint64_t>(esp_timer_get_time()) / 1000 - view.runtime.lastSeenMonotonicMs
                                : 0;
     const uint32_t onlineLimitMs =
         batteryProtection ? 26UL * 60UL * 60UL * 1000UL :
@@ -751,6 +731,16 @@ void WebPortal::sendJsonStatus() {
     JsonObject item = sensors.add<JsonObject>();
     item["mac"] = SensorRegistry::formatMac(view.config.mac);
     item["name"] = view.config.name;
+    if(auto* history=registry_->normalHistory()){
+      const auto info=history->info(view.config.mac);
+      item["normalHistory"] = !recordingActive && view.runtime.telemetry.sensorType != lil::protocol::EnvironmentalSensorType::kMax30102;
+      JsonObject retention=item["history"].to<JsonObject>();
+      retention["points"]=info.points;retention["durablePoints"]=info.durablePoints;
+      retention["pendingPoints"]=info.pendingPoints;retention["capacityPoints"]=info.capacityPoints;
+      retention["oldest"]=info.oldest;retention["newest"]=info.newest;
+      retention["intervalSeconds"]=info.intervalSeconds;retention["writeFailed"]=info.writeFailed;
+      retention["dropped"]=info.dropped;retention["available"]=info.available;
+    }
     item["sleepSeconds"] = view.config.sleepSeconds;
     item["revision"] = view.config.revision;
     item["provisioned"] = view.config.provisioned;
@@ -959,6 +949,10 @@ void WebPortal::sendJsonHistory() {
   }
 
   SensorView liveView{};
+  if(registry_->normalHistory() && server_.arg("source")!="live" &&
+      config.environmentalSensorType!=lil::protocol::EnvironmentalSensorType::kMax30102){
+    sendPagedHistory(mac);return;
+  }
   if (registry_->findView(mac, liveView) && lil::protocol::isLiveSensor(liveView.runtime.telemetry.sensorType) &&
       !(liveView.runtime.telemetry.flags & lil::protocol::kBatteryProtectionActive)) {
     const size_t liveCapacity = 60000 / lil::protocol::liveHistoryIntervalMs(liveView.runtime.telemetry.sensorType) + 1;
@@ -1117,6 +1111,74 @@ void WebPortal::sendJsonHistory() {
   }
 }
 
+void WebPortal::sendPagedHistory(const uint8_t mac[6]) {
+  uint32_t after=0,until=0,oldest=0;
+  if(!readUnsignedArgument(server_,"after",after,0,UINT32_MAX,true)||
+     !readUnsignedArgument(server_,"until",until,0,UINT32_MAX,true)||
+     !readUnsignedArgument(server_,"oldest",oldest,0,UINT32_MAX,true)){
+    sendJsonResult(false,"Invalid history page");return;
+  }
+  auto* history=registry_->normalHistory();const auto info=history->info(mac);
+  if(!info.available){sendJsonResult(false,"History storage is unavailable; existing files were preserved.");return;}
+  if(!until)until=info.newest;
+  if(!oldest)oldest=info.oldest;
+  constexpr size_t capacity=128;
+  auto* points=static_cast<NormalHistoryPoint*>(heap_caps_calloc(capacity,sizeof(NormalHistoryPoint),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
+  if(!points&&heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT)>capacity*sizeof(NormalHistoryPoint)+96U*1024U)
+    points=static_cast<NormalHistoryPoint*>(heap_caps_calloc(capacity,sizeof(NormalHistoryPoint),MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
+  if(!points){sendJsonResult(false,"History memory is temporarily unavailable");return;}
+  bool stale=false,error=false;const size_t count=history->read(mac,after,until,oldest,points,capacity,stale,error);
+  if(stale||error){heap_caps_free(points);sendJsonResult(false,stale?"History changed while loading. Retry the selected window.":"History page failed CRC validation.");return;}
+  sendNoCache(server_);server_.setContentLength(CONTENT_LENGTH_UNKNOWN);server_.send(200,"application/json","");
+  JsonDocument header;header["mac"]=SensorRegistry::formatMac(mac);header["paged"]=true;
+  header["bucketSeconds"]=info.intervalSeconds;header["capacityPoints"]=info.capacityPoints;
+  header["pointsTotal"]=info.points;header["durablePoints"]=info.durablePoints;header["pendingPoints"]=info.pendingPoints;
+  header["until"]=until;header["oldest"]=oldest;header["nextAfter"]=count==capacity&&points[count-1].timestamp<until?points[count-1].timestamp:0;
+  String opening;serializeJson(header,opening);opening.remove(opening.length()-1);opening+=",\"points\":[";server_.sendContent(opening);
+  String chunk;chunk.reserve(4096);
+  for(size_t i=0;i<count;++i){
+    const auto& p=points[i];const auto& t=p.telemetry;JsonDocument row;
+    row["t"]=uint64_t(p.timestamp)*1000;row["sensorType"]=static_cast<uint8_t>(t.sensorType);
+    if(t.pcbVersion)row["pcbVersion"]=t.pcbVersion;
+    row["iaqAccuracy"]=t.iaqAccuracy;row["gap"]=bool(t.live.flags&lil::protocol::kLiveGap)||t.motion.fifoOverrun;
+    if(t.capabilities&lil::protocol::kTemperature)row["temperature"]=t.temperatureC;
+    if(t.capabilities&lil::protocol::kHumidity)row["humidity"]=t.humidityPercent;
+    if(t.capabilities&lil::protocol::kPressure)row["pressure"]=t.pressureHpa;
+    if((t.capabilities&lil::protocol::kIaq)&&t.iaqAccuracy)row["iaq"]=t.iaq;
+    if(t.capabilities&lil::protocol::kGasResistance)row["gas"]=t.gasResistanceOhms/1000.0F;
+    if(t.capabilities&lil::protocol::kBattery)row["battery"]=t.batteryMillivolts/1000.0F;
+    if(t.capabilities&lil::protocol::kMotion){const char* keys[]={"ax","ay","az","gx","gy","gz"};
+      for(size_t axis=0;axis<6;++axis)row[keys[axis]]=axis<3?t.motion.accelerationG[axis]:t.motion.angularRateDps[axis-3];
+      row["peakAcceleration"]=t.motion.peakAccelerationG;row["peakAngularRate"]=t.motion.peakAngularRateDps;}
+    String json;serializeJson(row,json);if(i)chunk+=',';chunk+=json;
+    if(chunk.length()>=3072){server_.sendContent(chunk);chunk="";}
+  }
+  heap_caps_free(points);chunk+="]}";server_.sendContent(chunk);server_.sendContent("");server_.setContentLength(CONTENT_LENGTH_NOT_SET);
+}
+
+void WebPortal::saveDashboardLayout() {
+  DashboardLayout layout{};uint32_t columns=0,comfortable=0;
+  if(!readUnsignedArgument(server_,"columns",columns,0,3)||!readUnsignedArgument(server_,"comfortable",comfortable,0,1)){
+    sendJsonResult(false,"Invalid dashboard layout");return;
+  }
+  layout.columns=columns;layout.comfortable=comfortable;
+  const String order=server_.arg("order"),hidden=server_.arg("hidden");
+  if(order.length()>kMaxSensors*18||hidden.length()>kMaxSensors*18){sendJsonResult(false,"Too many dashboard sensors");return;}
+  auto parse=[&](const String& text,bool hide){
+    if(!text.length())return true;
+    char bytes[kMaxSensors*18+1];text.toCharArray(bytes,sizeof(bytes));char* state=nullptr;
+    for(char* token=strtok_r(bytes,",",&state);token;token=strtok_r(nullptr,",",&state)){
+      uint8_t mac[6]{};SensorConfig sensor{};if(!SensorRegistry::parseMac(token,mac)||!registry_->findConfig(mac,sensor)||!sensor.provisioned)return false;
+      size_t index=0;while(index<layout.count&&memcmp(layout.entries[index].mac,mac,6))++index;
+      if(hide){if(index==layout.count)return false;layout.entries[index].hidden=1;}
+      else{if(index<layout.count||layout.count==kMaxSensors)return false;memcpy(layout.entries[layout.count++].mac,mac,6);}
+    }return true;
+  };
+  if(!parse(order,false)||!parse(hidden,true)){sendJsonResult(false,"Dashboard sensor list is invalid or changed. Reload and try again.");return;}
+  const bool saved=store_->saveDashboardLayout(layout);
+  sendJsonResult(saved,saved?"Dashboard layout saved.":"Could not save dashboard layout.");
+}
+
 void WebPortal::sendJsonConfig() {
   JsonDocument document;
   document["storageAvailable"] = store_->storageAvailable();
@@ -1132,6 +1194,11 @@ void WebPortal::sendJsonConfig() {
   document["apIp"] = wifi_->accessPointIp();
   document["accessPointPassword"] = config_->accessPointPassword;
   document["csrfToken"] = csrfToken_;
+  const auto layout=store_->loadDashboardLayout();
+  JsonObject dashboard=document["dashboard"].to<JsonObject>();
+  dashboard["columns"]=layout.columns;dashboard["comfortable"]=bool(layout.comfortable);
+  JsonArray order=dashboard["order"].to<JsonArray>();JsonArray hidden=dashboard["hidden"].to<JsonArray>();
+  for(size_t i=0;i<layout.count;++i){const String mac=SensorRegistry::formatMac(layout.entries[i].mac);order.add(mac);if(layout.entries[i].hidden)hidden.add(mac);}
   JsonArray channels = document["thingSpeakChannels"].to<JsonArray>();
   for (size_t i = 0; i < kMaxThingSpeakChannels; ++i) {
     const auto& profile = config_->thingSpeakChannels[i];

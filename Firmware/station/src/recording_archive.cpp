@@ -1,4 +1,6 @@
 #include "recording_archive.h"
+#include "filesystem_guard.h"
+#include "paged_history.h"
 #include "telemetry_validation.h"
 #include <LittleFS.h>
 #include <stdio.h>
@@ -65,7 +67,7 @@ uint32_t readableTail(FILE* file, const Header& header, uint32_t count, lil::rec
   return count;
 }
 }
-bool RecordingArchive::begin() { mutex_ = xSemaphoreCreateMutex(); return mutex_ != nullptr; }
+bool RecordingArchive::begin() { mutex_ = xSemaphoreCreateMutex(); return mutex_ != nullptr && initializeFilesystemLock(); }
 size_t RecordingArchive::freeBytes() const {
   const size_t total = LittleFS.totalBytes(), used = LittleFS.usedBytes();
   return total > used + kReserveBytes ? total - used - kReserveBytes : 0;
@@ -76,7 +78,9 @@ bool RecordingArchive::append(const uint8_t mac[6], const lil::recording::Upload
       !lil::protocol::validTelemetryValues(lil::recording::decode(record)) ||
       !upload.totalRecords || upload.totalRecords > 200000 ||
       record.sampleMs > upload.durationMs) return false;
+  pagedHistory.reserveForArchive();
   Guard guard(mutex_);
+  FilesystemGuard filesystem;
   char path[320]; pathFor(mac, record.session, path, sizeof(path));
   FILE* file = fopen(path, "r+b");
   Header h{}; uint32_t count = 0;
@@ -177,6 +181,7 @@ size_t RecordingArchive::read(const uint8_t mac[6], uint64_t session, uint32_t& 
 bool RecordingArchive::remove(const uint8_t mac[6], uint64_t session) {
   if (!mutex_) return false;
   Guard guard(mutex_); char path[320]; pathFor(mac, session, path, sizeof(path));
+  FilesystemGuard filesystem;
   return ::remove(path) == 0;
 }
 }  // namespace station

@@ -88,4 +88,17 @@ inline void copyText(char (&destination)[N], const String& source) {
   source.substring(0, N - 1).toCharArray(destination, N);
 }
 
+// Separate NVS key: dashboard preferences do not alter existing Wi-Fi or nodes.
+#pragma pack(push, 1)
+struct DashboardEntry { uint8_t mac[6]{}; uint8_t hidden = 0; };
+struct DashboardLayout {
+  uint32_t magic = 0x31424457;
+  uint16_t version = 1;
+  uint8_t columns = 0, comfortable = 0, count = 0, reserved[3]{};
+  DashboardEntry entries[kMaxSensors]{};
+  uint32_t crc = 0;
+};
+#pragma pack(pop)
+static_assert(sizeof(DashboardLayout) == 149);
+
 }  // namespace station

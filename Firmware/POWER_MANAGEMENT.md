@@ -1,4 +1,4 @@
-# Power management in firmware 4.3.4
+# Power management
 
 ## Default behavior
 
@@ -7,7 +7,9 @@
 | BME280 | Forced measurement with 1x oversampling; battery and radio at the configured report interval | Sensor rail off, Wi-Fi off, ESP32-C3 deep sleep |
 | BME680 | BSEC ULP maintenance approximately every 300 seconds; V4 checks the battery first on every wake; radio only when a report is due | Sensor rail off and deep sleep until the next maintenance/report deadline |
 | Battery only | ADC and radio at the configured report interval | Sensor rail off, Wi-Fi off, deep sleep |
-| LSM6DSOX | Continuous 104 Hz FIFO acquisition, interval summaries sent at the selected interval | CPU and sensor remain active to retain motion events |
+| LSM6DSOX | Normal: fresh 100 ms summary after startup at the configured interval. SW2 recording: continuous 104 Hz FIFO acquisition with faster summaries | Sensor rail off between normal windows; CPU and sensor active during manual recording |
+| TMP117 | Normal: a fresh eight-conversion result at the configured interval. SW2 recording: the existing one-second cycle | Sensor rail off between normal windows; active during manual recording |
+| MAX30102 | SW2-only optical acquisition | Sensor rail off while waiting for a recording |
 | Discovery | Bounded channel scan; ten-second wakes initially, five-minute wakes after ten minutes | Deep sleep |
 | OTA | Download while awake only when an update is offered; bounded retries and session duration | Return to scheduled operation after completion/recovery |
 | V4 battery protection | Below 2.8 V or invalid ADC: no external measurements, one bounded battery reporting window every 24 hours; resume at 2.95 V | Sensor/ADC rails off, Wi-Fi off, deep sleep |
@@ -49,8 +51,10 @@ daily battery-protection path.
 Existing reporting settings are retained. Selecting one-second reports increases
 wake/radio frequency. Dashboard refresh alone does not change a node's saved
 report interval. Continuous LSM6DSOX acquisition is intentionally more demanding
-than environmental deep sleep, even with a long reporting interval. One-second
-motion summaries are supported by the protocol; manual sessions currently
+than environmental deep sleep, even with a long reporting interval. This
+continuous profile applies to SW2 recordings; normal IMU measurements use
+independent windows with the rail off between them. One-second normal
+motion intervals are supported; manual sessions currently
 report every 50 ms for five minutes and every 100 ms thereafter. See
 [LSM6DSOX](LSM6DSOX.md) for FIFO limits and history semantics.
 
@@ -70,12 +74,15 @@ regression or improvement is claimed without those measurements.
 
 ## Station behavior
 
-Fast history uses a bounded 900-entry RAM ring instead of a flash write for
-every subminute report. Restart clears that fast history; intervals of at least
-60 seconds retain persistent history. Radio callbacks hand off persistence to a
-bounded queue. ThingSpeak scheduling retains per-channel limits, fair service,
-bounded retries and queue expiry. These changes target flash wear and station
-responsiveness; the station is not the battery-powered sensor.
+Normal history uses bounded CRC-checked flash pages with shared storage quotas.
+Subminute reports are batched in bounded RAM buffers before persistence;
+intervals of at least 60 seconds flush immediately. Restart can lose the latest
+uncommitted batch, while durable pages remain. The separate one-minute live
+ring is volatile, and manual recording archives retain their durable storage
+acknowledgements. Radio callbacks hand off persistence to a bounded queue.
+ThingSpeak scheduling retains per-channel limits, fair service, bounded retries
+and queue expiry. See [storage behavior](RECORDINGS.md) and
+[regression checks](tests/README.md); the station is not the battery-powered sensor.
 
 
 ## Bounded startup recovery

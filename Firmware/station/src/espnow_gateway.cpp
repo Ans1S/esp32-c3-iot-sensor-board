@@ -2,6 +2,7 @@
 #include "ota_service.h"
 #include "recording_archive.h"
 #include "telemetry_validation.h"
+#include "normal_history_policy.h"
 #include <sys/time.h>
 
 #include <esp_wifi.h>
@@ -111,9 +112,10 @@ void EspNowGateway::taskLoop() {
 void EspNowGateway::persistenceTaskLoop() {
   EspNowPersistenceEvent event{};
   for (;;) {
-    if (xQueueReceive(persistenceQueue_, &event, portMAX_DELAY) == pdTRUE) {
+    if (xQueueReceive(persistenceQueue_, &event, pdMS_TO_TICKS(250)) == pdTRUE) {
       persist(event);
     }
+    registry_->flushHistory();
   }
 }
 
@@ -289,7 +291,8 @@ void EspNowGateway::handle(const EspNowRxEvent& event) {
   }
 
   const bool liveTelemetry = lil::protocol::isLiveSensor(packet.payload.sensorType) &&
-      !(packet.payload.flags & lil::protocol::kBatteryProtectionActive);
+      !(packet.payload.flags & lil::protocol::kBatteryProtectionActive) &&
+      !(registry_->normalHistory() && usesNormalHistory(packet.payload));
   if (!duplicate && (!liveTelemetry || registry_->needsPersistence(event.sourceMac))) {
     EspNowPersistenceEvent persistence{};
     persistence.receivedAt = event.receivedAt;
@@ -300,7 +303,7 @@ void EspNowGateway::handle(const EspNowRxEvent& event) {
     persistence.rssi = event.rssi;
     persistence.telemetry = packet.payload;
     persistence.responseConfig = responseConfig;
-    persistence.queueCloudUpload = !liveTelemetry &&
+    persistence.queueCloudUpload = !lil::protocol::isLiveSensor(packet.payload.sensorType) &&
         (packet.payload.flags &
          (lil::protocol::kDiscoveryBeacon |
           lil::protocol::kBme680Commissioning)) == 0;
