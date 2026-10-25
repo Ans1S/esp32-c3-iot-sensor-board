@@ -1,5 +1,23 @@
 # Firmware change inventory
 
+## Unreleased
+
+- Restore saved recording charts after opening a measurement tile. Explicit
+  archive selection takes priority over the previous normal-history view.
+  Cache complete chart markup so rebuilding a parent cannot insert an empty
+  graph; retain fixed snapshots and cursors during synchronization updates.
+- Reject mismatched recording identities and inconsistent page cursors before
+  publishing a snapshot. Failed refreshes retain the previous loaded graph.
+- Return to the dashboard overview through either the header icon/title or
+  the Overview navigation button, clearing the selected detail and layout
+  editor. Support mouse, touch, Enter and Space activation of the header.
+- Add browser regressions for TMP117 partial recordings, metric/archive
+  switching, chart ancestor replacement, cache recovery, malformed pages and
+  dashboard home navigation from details and settings.
+- Keep device identity beside the sensor name in the detail header, with
+  Firmware and Edit aligned right. Wrap the header on small screens and avoid
+  duplicating these controls in the lower device information panel.
+
 ## 4.4.1 / 40401 — 2026-10-25
 
 - Refresh the compact README with current overview, history, settings, saved
