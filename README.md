@@ -27,7 +27,7 @@ signed sensor updates. Optional ThingSpeak export adds cloud access.
 ## One dashboard for the whole network
 
 <p align="center">
-  <img src="Readme/station-overview.webp" alt="Station overview with climate, air-quality and precision-temperature sensor cards" width="1040">
+  <img src="Readme/station-overview-4.4.1.webp" alt="Station overview with climate, air-quality and precision-temperature sensor cards" width="1040">
 </p>
 
 **Click a card to open its details, or a measurement tile to open its chart.**
@@ -49,7 +49,7 @@ dark and system themes. Collection continues when the browser is closed.
 <summary><strong>Open the history and settings views</strong></summary>
 
 <p align="center">
-  <img src="Readme/station-history.webp" alt="Air-quality details with current readings, measurement and period selectors, history and CSV controls" width="1040">
+  <img src="Readme/station-history-4.4.1.webp" alt="Air-quality details with current readings, measurement and period selectors, history and CSV controls" width="1040">
 </p>
 
 Normal history is saved on the station. Retention adapts to reporting intervals,
@@ -59,7 +59,7 @@ Short intervals are batched, so sudden power loss can lose the latest
 uncommitted samples. Storage is finite and shared with saved recordings.
 
 <p align="center">
-  <img src="Readme/station-settings.webp" alt="Station settings for Wi-Fi, default measurement interval and website access" width="1040">
+  <img src="Readme/station-settings-4.4.1.webp" alt="Station settings for Wi-Fi, default measurement interval and website access" width="1040">
 </p>
 
 **Settings** groups network, default interval, website password and cloud
@@ -86,7 +86,7 @@ space. Completed graphs stay stable while the dashboard refreshes.
 <summary><strong>Open a saved motion recording in dark mode</strong></summary>
 
 <p align="center">
-  <img src="Readme/station-recording.webp" alt="Saved motion recording with session selection, minute navigation, XYZ graphs and recording export" width="1040">
+  <img src="Readme/station-recording-4.4.1.webp" alt="Saved motion recording with session selection, minute navigation, XYZ graphs and recording export" width="1040">
 </p>
 
 Normal TMP117/LSM6DSOX measurements follow the configured interval with the rail
@@ -99,7 +99,7 @@ acquisition follows the physical button. See [rates and storage limits](Firmware
 ### Update sleeping nodes from the station
 
 <p align="center">
-  <img src="Readme/station-ota.webp" alt="Firmware page showing installed versions, a compatible PCB V4 package and an update queued for the next sensor contact" width="1040">
+  <img src="Readme/station-ota-4.4.1.webp" alt="Firmware page showing installed versions, a compatible PCB V4 package and an update queued for the next sensor contact" width="1040">
 </p>
 
 Choose a sensor and its signed `.ota` package, then **Upload and schedule**.
