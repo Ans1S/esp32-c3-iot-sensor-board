@@ -186,7 +186,7 @@ async function saveWebp(page, name, options = {}) {
     await page.setViewportSize({ width: viewport.width, height });
   }
   const png = await page.screenshot({ animations: 'disabled', ...options });
-  const output = path.join(__dirname, name + '.webp');
+  const output = path.join(__dirname, name + '-4.4.1.webp');
   await sharp(png).webp({ quality: 88, effort: 6 }).toFile(output);
   if (options.fullPage) await page.setViewportSize(viewport);
   console.log('Created ' + path.relative(repoRoot, output));
