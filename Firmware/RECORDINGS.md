@@ -81,6 +81,15 @@ telemetry still has no persistent offline delivery backlog on PCB V3/V4.
 
 ## Persistence and clocks
 
+Selecting a saved recording opens its archive graph even if the detail page
+was entered through an individual measurement tile. Incomplete synchronization
+still waits by default; **Show available data** opens a fixed snapshot of the
+records already on the station. **Load latest data** explicitly replaces that
+snapshot. Status updates preserve the loaded graph and cursor. Failed or
+inconsistent page reads leave the previous snapshot available with a retry
+action. Returning through the header icon/title opens the dashboard overview;
+saved recordings remain on the station.
+
 The acquisition task owns I2C and reads independently of radio waits. Its
 64-entry queue is drained into an append-only flash journal. Each record has
 a session ID, monotonic sample time and CRC32. A flash commit bit is written
