@@ -29,7 +29,7 @@ const common = {
   provisioned: true, seen: true, online: true, pcbVersion: 4,
   revision: 3, appliedRevision: 3, historyRevision: 1, operatingMode: 2,
   ageMs: 18000, rssi: -56, profileSlot: 255, uploadEnabled: false,
-  version: '4.4.0', build: 'demo-build-v4', live: false,
+  version: '4.4.2', build: 'demo-build-v4', live: false,
   normalHistory: true, temperatureField: 1, humidityField: 2,
   pressureField: 3, batteryField: 5
 };
@@ -154,11 +154,12 @@ function demoResponse(url) {
     const points = recordingPoints.slice(offset, offset + 128);
     body = { ...recording, nextOffset: offset + points.length, points };
   } else if (url.pathname === '/api/ota') body = {
-    available: true, mac: demoSensors[1].mac, targetVersion: '4.4.1',
-    state: 'Waiting for next contact', bytes: 0, total: 1107104,
+    available: true, mac: demoSensors[1].mac, targetVersion: '4.4.3',
+    state: 'Waiting for next contact', bytes: 0,
+    total: fs.statSync(path.join(repoRoot, 'Firmware/releases/sensor-v4-4.4.3.ota')).size,
     reason: 'The signed package is stored on the station. The sensor will request it at its next scheduled contact.',
     nodes: demoSensors.map(sensor => ({ mac: sensor.mac, pcb: sensor.pcbVersion,
-      version: sensor.version, release: 40400, build: sensor.build }))
+      version: sensor.version, release: 40402, build: sensor.build }))
   };
   else if (url.pathname === '/favicon.ico') return { contentType: 'image/x-icon', body: '' };
   else throw new Error('Missing public fixture for ' + url.pathname);
@@ -186,7 +187,7 @@ async function saveWebp(page, name, options = {}) {
     await page.setViewportSize({ width: viewport.width, height });
   }
   const png = await page.screenshot({ animations: 'disabled', ...options });
-  const output = path.join(__dirname, name + '-4.4.1.webp');
+  const output = path.join(__dirname, name + '-4.4.3.webp');
   await sharp(png).webp({ quality: 88, effort: 6 }).toFile(output);
   if (options.fullPage) await page.setViewportSize(viewport);
   console.log('Created ' + path.relative(repoRoot, output));
@@ -226,6 +227,8 @@ async function generateScreenshots() {
     });
 
     await page.locator('.sensorSummary').nth(1).locator('.meta').click();
+    await page.evaluate(() => loadFirmwareVersions());
+    await page.locator('[data-firmware]').first().filter({ hasText: 'Software 4.4.2' }).waitFor();
     await page.locator('.historySvg').waitFor();
     await page.waitForFunction(mac => (stationHistory[mac] || []).length > 0
       && historyRevisions[mac] != null, demoSensors[1].mac);
@@ -241,6 +244,8 @@ async function generateScreenshots() {
     await page.goto(origin + '/dashboard');
     await page.locator('.sensorSummary').first().waitFor();
     await page.evaluate(mac => openSensorDetail(mac), demoSensors[3].mac);
+    await page.evaluate(() => loadFirmwareVersions());
+    await page.locator('[data-firmware]').first().filter({ hasText: 'Software 4.4.2' }).waitFor();
     await page.getByLabel('Recording selection').selectOption(recording.session);
     await page.waitForFunction(() => document.querySelector('.recordingCharts svg.liveSvg')
       && !recordingViews['02:00:00:00:10:04'].busy);
@@ -251,7 +256,7 @@ async function generateScreenshots() {
 
     await page.goto(origin + '/updates?mac=' + encodeURIComponent(demoSensors[1].mac));
     await page.locator('#stateBadge').filter({ hasText: 'Waiting for next contact' }).waitFor();
-    await page.locator('#file').setInputFiles(path.join(repoRoot, 'Firmware/releases/sensor-v4-4.4.1.ota'));
+    await page.locator('#file').setInputFiles(path.join(repoRoot, 'Firmware/releases/sensor-v4-4.4.3.ota'));
     await page.waitForFunction(() => document.getElementById('compatibilityValue').textContent === 'Compatible');
     await page.evaluate(() => { document.documentElement.dataset.theme = 'light'; window.scrollTo(0, 0); });
     await saveWebp(page, 'station-ota', { fullPage: true });

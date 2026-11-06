@@ -66,7 +66,7 @@ class PublicationTests(unittest.TestCase):
         ignored = [".tools/ota/signing.key", "device-data/readings.json", "nvs.csv",
                    ".npmrc", "Readme/raw/dashboard.png", "Firmware/releases/flash-dump.bin",
                    "Firmware/releases/station-unreviewed.bin"]
-        public = ["Firmware/releases/station-4.4.1.bin",
+        public = ["Firmware/releases/station-4.4.1.bin", "Firmware/releases/station-4.4.3.bin",
                   "Firmware/releases/sensor-v4-4.4.1.ota", "Firmware/ota_package.py",
                   "Firmware/sensor/platformio.ini", "Readme/station-history-4.4.1.webp"]
         result = subprocess.run(
