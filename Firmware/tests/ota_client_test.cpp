@@ -1,4 +1,5 @@
 #include "ota_test_platform.h"
+#include "power_options.h"
 #include <cstdio>
 bool lil::ota::verifyManifest(const Manifest& m) { return validManifest(m) && sensor::signatureValid; }
 using namespace sensor;
@@ -15,9 +16,16 @@ void reset() {
   signatureValid=offerEnabled=true; bootState=ESP_OTA_IMG_VALID; bootConfirmed=rolledBack=false;
   beginOtaBootGuard();
 }
-void run(uint16_t battery=4000) { EspNowTransport radio; SensorRuntimeConfig config; AdcReader adc; checkOta(radio,config,adc,battery); }
+BatteryReading run(uint16_t millivolts=4000) { EspNowTransport radio; SensorRuntimeConfig config; AdcReader adc; BatteryReading battery{true,millivolts}; checkOta(radio,config,adc,battery); return battery; }
 void complete() { bool restarted=false; try {run();} catch(Restart&) {restarted=true;} assert(restarted&&selected); assert(std::equal(image.begin(),image.end(),flash.begin())); }
 int main() {
+  lil::ota::Identity identity{};
+  identity.pcb=4; identity.protocol=lil::protocol::kVersion;
+  memset(identity.version,'x',sizeof(identity.version));
+  assert(!lil::ota::validIdentity(identity));
+  identity.version[sizeof(identity.version)-1]='\0';
+  assert(lil::ota::validIdentity(identity));
+  identity.pcb=9; assert(!lil::ota::validIdentity(identity));
   reset(); complete(); assert(began==1 && !values["attempted"].empty());
   assert(writeSizes.size() == (image.size() + 4095) / 4096);
   for (size_t i = 0; i + 1 < writeSizes.size(); ++i) assert(writeSizes[i] == 4096);
@@ -51,8 +59,11 @@ int main() {
     assert(restarted && selected); // Equality is accepted at start and during transfer.
     reset(); kHardware.pcbVersion=pcb; offer.pcb=pcb;
     updateBattery.millivolts=minimum - 1;
-    run(minimum);
-    assert(began && aborted && !selected && states.back()==lil::ota::State::LowBattery);
+    const auto measured = run(minimum);
+    assert(measured.valid && measured.millivolts == minimum - 1);
+    assert(began && aborted && !selected);
+    if (minimum - 1 < SENSOR_LOW_BATTERY_PAUSE_MV) assert(states.empty());
+    else assert(states.back()==lil::ota::State::LowBattery);
   }
   reset(); failWrite=true; run(); assert(aborted&&!selected && failures.back()==lil::ota::Failure::FlashWrite);
   reset(); failEnd=true; run(); assert(!selected && states.back()==lil::ota::State::Rejected && failures.back()==lil::ota::Failure::ImageValidation);

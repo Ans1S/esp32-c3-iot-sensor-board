@@ -18,6 +18,9 @@ namespace {
 constexpr size_t kReceiveQueueSize = 64;
 constexpr size_t kPersistenceQueueSize = 64;
 constexpr TickType_t kResponseCompletionWait = pdMS_TO_TICKS(80);
+// A permanently missing driver callback otherwise blocks every later reply.
+// Allow substantial flash/Wi-Fi latency before recovering the whole radio.
+constexpr uint32_t kSendStallRestartMs = 10000;
 }
 
 bool EspNowGateway::begin(SensorRegistry& registry,
@@ -77,7 +80,7 @@ void EspNowGateway::sendCallback(const wifi_tx_info_t* info,
   (void)info;
   (void)status;
   if (instance_ != nullptr && instance_->task_ != nullptr) {
-    instance_->sendPending_.store(false, std::memory_order_release);
+    instance_->sendGuard_.complete();
     xTaskNotifyGive(instance_->task_);
   }
 }
@@ -103,8 +106,14 @@ void EspNowGateway::archiveTaskEntry(void* context) {
 void EspNowGateway::taskLoop() {
   EspNowRxEvent event{};
   for (;;) {
-    if (xQueueReceive(receiveQueue_, &event, portMAX_DELAY) == pdTRUE) {
+    if (xQueueReceive(receiveQueue_, &event, pdMS_TO_TICKS(250)) == pdTRUE) {
       handle(event);
+    }
+    // There is no safe way to correlate a late callback with a newer frame.
+    // Restart rather than clear the pending flag and risk overlapping sends.
+    if (sendGuard_.stalled(millis(), kSendStallRestartMs)) {
+      Serial.println("[ESP-NOW] Send callback stalled; restarting station");
+      ESP.restart();
     }
   }
 }
@@ -183,12 +192,12 @@ void EspNowGateway::handle(const EspNowRxEvent& event) {
       if (now.tv_sec >= 1577836800) ack.payload.stationEpochMs = uint64_t(now.tv_sec)*1000 + now.tv_usec/1000;
       lil::protocol::finalize(ack, lil::recording::kAckMessage, request.header.sequence);
     }
-    if (sendPending_.load(std::memory_order_acquire)) ulTaskNotifyTake(pdTRUE, kResponseCompletionWait);
-    if (sendPending_.load(std::memory_order_acquire) || !ensurePeer(event.sourceMac)) return;
-    ulTaskNotifyTake(pdTRUE, 0); sendPending_.store(true, std::memory_order_release);
+    if (sendGuard_.pending()) ulTaskNotifyTake(pdTRUE, kResponseCompletionWait);
+    if (sendGuard_.pending() || !ensurePeer(event.sourceMac)) return;
+    ulTaskNotifyTake(pdTRUE, 0); sendGuard_.start(millis());
     if (esp_now_send(event.sourceMac, reinterpret_cast<const uint8_t*>(&ack), sizeof(ack)) == ESP_OK)
       ulTaskNotifyTake(pdTRUE, kResponseCompletionWait);
-    else sendPending_.store(false, std::memory_order_release);
+    else sendGuard_.complete();
     return;
   }
   if (event.length == sizeof(lil::ota::Packet)) {
@@ -197,16 +206,16 @@ void EspNowGateway::handle(const EspNowRxEvent& event) {
     SensorConfig config{};
     if (!lil::protocol::validate(request, event.length, lil::ota::kMessageType) ||
         !registry_->findConfig(event.sourceMac, config) || !config.provisioned) return;
-    if (sendPending_.load(std::memory_order_acquire)) {
+    if (sendGuard_.pending()) {
       ulTaskNotifyTake(pdTRUE, kResponseCompletionWait);
-      if (sendPending_.load(std::memory_order_acquire)) return;
+      if (sendGuard_.pending()) return;
     }
     if (otaService.respond(event.sourceMac, request, response) && ensurePeer(event.sourceMac)) {
       ulTaskNotifyTake(pdTRUE, 0);
-      sendPending_.store(true, std::memory_order_release);
+      sendGuard_.start(millis());
       if (esp_now_send(event.sourceMac, reinterpret_cast<const uint8_t*>(&response), sizeof(response)) == ESP_OK)
         ulTaskNotifyTake(pdTRUE, kResponseCompletionWait);
-      else sendPending_.store(false, std::memory_order_release);
+      else sendGuard_.complete();
     }
     return;
   }
@@ -233,9 +242,9 @@ void EspNowGateway::handle(const EspNowRxEvent& event) {
     return;
   }
 
-  if (sendPending_.load(std::memory_order_acquire)) {
+  if (sendGuard_.pending()) {
     ulTaskNotifyTake(pdTRUE, kResponseCompletionWait);
-    if (sendPending_.load(std::memory_order_acquire)) {
+    if (sendGuard_.pending()) {
       droppedPackets_.fetch_add(1, std::memory_order_relaxed);
       return;
     }
@@ -280,12 +289,12 @@ void EspNowGateway::handle(const EspNowRxEvent& event) {
     // the Wi-Fi task has completed the response, so filesystem latency can no
     // longer consume the sensor's application-ack window.
     ulTaskNotifyTake(pdTRUE, 0);
-    sendPending_.store(true, std::memory_order_release);
+    sendGuard_.start(millis());
     if (esp_now_send(event.sourceMac, reinterpret_cast<uint8_t*>(&response),
                      sizeof(response)) == ESP_OK) {
       ulTaskNotifyTake(pdTRUE, kResponseCompletionWait);
     } else {
-      sendPending_.store(false, std::memory_order_release);
+      sendGuard_.complete();
       peerFailures_.fetch_add(1, std::memory_order_relaxed);
     }
   }

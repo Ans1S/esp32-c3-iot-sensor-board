@@ -39,24 +39,36 @@ bool Journal::begin(Flash& flash, uint64_t sessionFilter) {
     if (state.generation > generation_) generation_ = state.generation;
     const uint8_t slots = (kPageBytes - kHeaderBytes) / state.width;
     bool belongs = false;
-    for (uint8_t slot = 0; slot < slots; ++slot) {
-      Record record{};
-      if (!flash.read(page * kPageBytes + kHeaderBytes + slot * state.width, &record, state.width)) return false;
-      if (erased(&record, state.width)) {
-        if (!bit(header.committed, slot)) { fault_ = true; state.usable = false; }
-        continue;
-      }
-      state.next = slot + 1; // Torn writes burn a slot, never overwrite it.
-      if (sessionFilter && record.session != sessionFilter) continue;
-      belongs = true;
-      if (valid(record) && record.sampleMs > lastSampleMs_) lastSampleMs_ = record.sampleMs;
-      if (bit(header.committed, slot) && size(record.type) == state.width && valid(record)) {
-        if (!clearBit(page, offsetof(Header, committed), slot)) return false;
-        header.committed[slot / 8] &= ~(1U << (slot % 8));
-      }
-      if (!bit(header.committed, slot) && bit(header.acknowledged, slot)) {
-        ++state.pending; ++pending_;
-        if (size(record.type) != state.width || !valid(record)) fault_ = true;
+    // Read consecutive records together to avoid a flash transaction for
+    // every slot during startup and explicit session replacement. Each slot
+    // is still validated separately before its commit/ACK state is considered.
+    constexpr size_t kBatchSlots = 4;
+    alignas(uint32_t) uint8_t batch[kBatchSlots * sizeof(Record)];
+    for (size_t first = 0; first < slots; first += kBatchSlots) {
+      const size_t batchSlots = slots - first < kBatchSlots ? slots - first : kBatchSlots;
+      if (!flash.read(page * kPageBytes + kHeaderBytes + first * state.width,
+                      batch, batchSlots * state.width)) return false;
+      for (size_t index = 0; index < batchSlots; ++index) {
+        const uint8_t slot = static_cast<uint8_t>(first + index);
+        Record record{};
+        memcpy(&record, batch + index * state.width, state.width);
+        if (erased(&record, state.width)) {
+          if (!bit(header.committed, slot)) { fault_ = true; state.usable = false; }
+          continue;
+        }
+        state.next = slot + 1; // Torn writes burn a slot, never overwrite it.
+        if (sessionFilter && record.session != sessionFilter) continue;
+        belongs = true;
+        const bool recordValid = valid(record);
+        if (recordValid && record.sampleMs > lastSampleMs_) lastSampleMs_ = record.sampleMs;
+        if (bit(header.committed, slot) && size(record.type) == state.width && recordValid) {
+          if (!clearBit(page, offsetof(Header, committed), slot)) return false;
+          header.committed[slot / 8] &= ~(1U << (slot % 8));
+        }
+        if (!bit(header.committed, slot) && bit(header.acknowledged, slot)) {
+          ++state.pending; ++pending_;
+          if (size(record.type) != state.width || !recordValid) fault_ = true;
+        }
       }
     }
     // A new user-started session logically replaces the old one. Erase pages
@@ -133,11 +145,17 @@ bool Journal::peek(Record& record) {
   return true;
 }
 bool Journal::acknowledge(const Record& record) {
-  Record oldest{};
-  if (!peek(oldest) || record.session != oldest.session || record.sampleMs != oldest.sampleMs ||
-      checksum(record) != checksum(oldest)) return false;
   size_t page; uint8_t slot;
-  if (!locate(page, slot) || !clearBit(page, offsetof(Header, acknowledged), slot)) return false;
+  if (!locate(page, slot)) return false;
+  Record oldest{};
+  if (!flash_->read(page * kPageBytes + kHeaderBytes + slot * pages_[page].width,
+                    &oldest, pages_[page].width) ||
+      size(oldest.type) != pages_[page].width || !valid(oldest)) {
+    fault_ = true; return false;
+  }
+  if (record.session != oldest.session || record.sampleMs != oldest.sampleMs ||
+      checksum(record) != checksum(oldest) ||
+      !clearBit(page, offsetof(Header, acknowledged), slot)) return false;
   --pages_[page].pending; --pending_; return true;
 }
 }  // namespace lil::recording

@@ -15,6 +15,7 @@ inline bool configPersistenceSucceeded = true;
 inline bool iaqClearSucceeded = true;
 inline bool sensorStartSucceeded = true;
 inline bool sensorReadSucceeded = true;
+inline bool acquisitionStuck = false;
 inline int iaqClears = 0;
 inline std::vector<lil::protocol::TelemetryPacket> sentPackets;
 inline uint32_t esp_random() { return 123; }
@@ -133,7 +134,7 @@ struct LiveCapture { EnvironmentalReading reading; uint64_t capturedMs; bool rec
 class LiveAcquisition {
  public:
   bool begin(EnvironmentalSensor& s, PowerController&, lil::protocol::EnvironmentalSensorType, float) { s.end(); return true; }
-  bool active() { return false; }
+  bool active() { return acquisitionStuck; }
   bool take(LiveCapture&) { return false; }
   unsigned presses() { return 0; }
   unsigned dropped() { return 0; }
@@ -148,7 +149,11 @@ inline void beginOtaBootGuard() {}
 inline void finishOtaBootGuard() {}
 inline bool otaBootPending() { return false; }
 inline bool confirmOtaBootAfterContact() { return true; }
-inline void checkOta(EspNowTransport&, const SensorRuntimeConfig&, AdcReader&, uint16_t) { ++otaChecks; }
+inline bool otaReplacesBattery = false;
+inline BatteryReading otaBattery{};
+inline void checkOta(EspNowTransport&, const SensorRuntimeConfig&, AdcReader&, BatteryReading& battery) {
+  ++otaChecks; if (otaReplacesBattery) battery = otaBattery;
+}
 inline void beginDiagnosticLogging() {}
 inline uint64_t logicalTimeMs() { return testMillis; }
 inline void lowPowerSensorWaitUs(uint32_t us) { testMillis += us / 1000; }

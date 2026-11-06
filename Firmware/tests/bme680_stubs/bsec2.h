@@ -12,7 +12,7 @@ struct bsecOutputs {
 };
 struct BsecScript {
   bool beginOk = true, stateOk = true, emit = true, failRun = false;
-  bool includeIaq = true;
+  bool includeIaq = true, invalidOutputCount = false;
   float iaq = 42, temperature = 25, humidity = 50, pressure = 1000;
   uint8_t accuracy = 0;
   unsigned runs = 0, restores = 0;
@@ -63,6 +63,7 @@ class Bsec2 {
     add(BSEC_OUTPUT_RAW_PRESSURE, testBsec.pressure);
     if (testBsec.includeIaq) add(BSEC_OUTPUT_STATIC_IAQ, testBsec.iaq, testBsec.accuracy);
     add(BSEC_OUTPUT_RAW_GAS, 100000);
+    if (testBsec.invalidOutputCount) outputs_.nOutputs = BSEC_NUMBER_OUTPUTS + 1;
     return true;
   }
  private:

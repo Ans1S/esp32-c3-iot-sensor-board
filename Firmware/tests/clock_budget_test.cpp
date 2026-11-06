@@ -7,12 +7,22 @@
 #include "logical_clock.h"
 #include "measurement_budget.h"
 #include "precision_cadence.h"
+#include "radio_send_guard.h"
 
 int64_t testTimeUs = 0;
 namespace sensor {
 void lowPowerSensorWaitUs(uint32_t period) { testTimeUs += period; }
 }
 int main() {
+  station::RadioSendGuard radio;
+  assert(!radio.stalled(999999, 10000));
+  radio.start(UINT32_MAX - 4999);
+  assert(radio.pending() && !radio.stalled(4999, 10000));
+  assert(radio.stalled(5000, 10000));
+  radio.complete();
+  assert(!radio.pending() && !radio.stalled(5001, 10000));
+  radio.start(5001); radio.complete();
+  assert(!radio.stalled(15001, 10000));
   lil::timing::RetryBackoff retry;
   assert(retry.ready(0));
   assert(retry.ready(0x80000001UL)); // First recording after 24.9 days idle.
@@ -25,6 +35,10 @@ int main() {
   assert(retry.ready(0x80001000UL)); // A long outage is already past the retry.
   retry.wait(0, 1000); retry.clear();
   assert(retry.ready(1));
+  // A restart scheduled exactly 2500 ms before millis wraps still fires.
+  retry.wait(UINT32_MAX - 2499, 2500);
+  assert(!retry.ready(UINT32_MAX));
+  assert(retry.ready(0));
   testTimeUs = 12000;
   sensor::beginMeasurementBudget(100);
   sensor::measurementWaitUs(20000);

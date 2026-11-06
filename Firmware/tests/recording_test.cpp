@@ -8,10 +8,13 @@
 struct MemoryFlash : lil::recording::Flash {
   std::vector<uint8_t> data;
   int writeBudget = -1;
+  size_t reads = 0;
+  size_t failReadAt = SIZE_MAX;
   explicit MemoryFlash(size_t bytes) : data(bytes, 0xff) {}
   size_t bytes() const override { return data.size(); }
   bool read(size_t offset, void* out, size_t length) override {
-    if (offset + length > data.size()) return false;
+    ++reads;
+    if (offset + length > data.size() || (failReadAt >= offset && failReadAt - offset < length)) return false;
     memcpy(out, data.data() + offset, length); return true;
   }
   bool write(size_t offset, const void* input, size_t length) override {
@@ -46,6 +49,17 @@ int main() {
     assert(decoded.motion.sampleCount == 65535 && decoded.motion.fifoOverrun == 1);
     assert(decoded.motion.accelerationG[2] == payload.motion.accelerationG[2]);
   }
+  // The ACK path still re-reads and validates the oldest record before writing
+  // the durable bitmap, without locating the same slot a second time.
+  {
+    protocol::TelemetryPayload sample{}; sample.sensorType = protocol::EnvironmentalSensorType::kTmp117;
+    MemoryFlash flash(4096); recording::Journal journal; assert(journal.begin(flash));
+    auto record=recording::encode(9,123,sample); assert(journal.append(record));
+    recording::Record pending{}; assert(journal.peek(pending));
+    const size_t before=flash.reads;
+    assert(journal.acknowledge(pending));
+    assert(flash.reads-before == 4); // header, record, bitmap word and readback
+  }
   recording::Button button;
   button.begin(true, 0); // A held boot strap is not a recording request.
   assert(!button.poll(true, 100));
@@ -79,7 +93,19 @@ int main() {
     for (size_t i = 0; i < count; ++i) assert(journal.append(recording::encode(1,i,payload)));
     assert(!journal.append(record)); // Full never overwrites unacknowledged records.
     assert(journal.pending() == count);
+    const size_t readsBeforeReboot = flash.reads;
     recording::Journal reboot; assert(reboot.begin(flash) && reboot.pending() == count);
+    const size_t recoveryReads = flash.reads - readsBeforeReboot;
+    assert(recoveryReads == 2 + 2 * ((count / 2 + 3) / 4));
+    printf("Journal recovery: %zu flash reads for %zu-byte rows across two full pages\n",
+           recoveryReads, recording::size(type));
+    // Failure in the second batch fails recovery instead of accepting a prefix.
+    flash.failReadAt = 64 + 5 * recording::size(type);
+    recording::Journal unreadable; assert(!unreadable.begin(flash));
+    // The final batch can contain fewer than four slots.
+    flash.failReadAt = 64 + (count / 2 - 1) * recording::size(type);
+    recording::Journal unreadableTail; assert(!unreadableTail.begin(flash));
+    flash.failReadAt = SIZE_MAX;
     for (size_t i = 0; i < count; ++i) {
       recording::Record next{}; assert(reboot.peek(next) && next.sampleMs == i);
       assert(!reboot.acknowledge(record)); // Wrong session / record is not an ACK.
@@ -87,6 +113,19 @@ int main() {
     }
     assert(reboot.pending() == 0 && reboot.append(record));
     recording::Journal afterAck; assert(afterAck.begin(flash) && afterAck.pending() == 1);
+  }
+  // Corrupt committed data inside a batch must block replay at that slot.
+  {
+    protocol::TelemetryPayload sample{}; sample.sensorType = protocol::EnvironmentalSensorType::kLsm6dsox;
+    MemoryFlash flash(4096); recording::Journal original; assert(original.begin(flash));
+    for (uint32_t i = 0; i < 10; ++i) assert(original.append(recording::encode(7, i, sample)));
+    flash.data[64 + 4 * recording::size(sample.sensorType)] ^= 1;
+    recording::Journal reboot; assert(reboot.begin(flash) && reboot.fault() && reboot.pending() == 10);
+    recording::Record next{};
+    for (uint32_t i = 0; i < 4; ++i) {
+      assert(reboot.peek(next) && next.sampleMs == i && reboot.acknowledge(next));
+    }
+    assert(!reboot.peek(next) && reboot.pending() == 6);
   }
   // Every possible interruption during a record write and its commit bitmap.
   protocol::TelemetryPayload payload{}; payload.sensorType = protocol::EnvironmentalSensorType::kLsm6dsox;

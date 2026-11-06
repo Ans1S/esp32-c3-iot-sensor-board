@@ -28,6 +28,7 @@ const assert = require('node:assert/strict');
     stored:510,expected:525,complete:false,durationMs:525000,availableMs:510000};
   const archived = Array.from({length:1800},(_,i)=>({sampleMs:(i+1)*50,
     t:(i+1)*50,estimateT:(i+1)*50,ax:Math.sin(i/10),ay:.2,az:1,gx:2,gy:3,gz:4,wave:[]}));
+  const pageSize=Number(process.env.RECORDING_PAGE_SIZE||128);
   let statusCalls=0,recordingCalls=0,slowNextRecording=false,failedNextRecording=false,invalidNextRecording=false;
   const browser = await chromium.launch({headless:true,
     ...(process.env.PLAYWRIGHT_CHANNEL?{channel:process.env.PLAYWRIGHT_CHANNEL}:{})});
@@ -53,6 +54,7 @@ const assert = require('node:assert/strict');
         } else body={bucketSeconds:900,points:[{t:Date.now()-300000,temperature:22.5}]};
       } else if(url.pathname==='/api/recordings')body={freeBytes:100000,sessions:url.searchParams.get('mac')===mac?[saved,partial]:url.searchParams.get('mac')===temperature.mac?[temperatureSession]:[]};
       else if(url.pathname==='/api/recording') {
+        assert.equal(url.searchParams.get('limit'),'512');
         recordingCalls++;
         if(slowNextRecording){slowNextRecording=false;await new Promise(resolve=>setTimeout(resolve,4500))}
         if(failedNextRecording){failedNextRecording=false;body={success:false,message:'Recording read unavailable'}}
@@ -61,7 +63,7 @@ const assert = require('node:assert/strict');
           if(url.searchParams.has('fromMs'))offset=archived.findIndex(p=>p.sampleMs>=Number(url.searchParams.get('fromMs')));
           if(offset<0)offset=archived.length;
           const info=url.searchParams.get('session')===temperatureSession.session?temperatureSession:url.searchParams.get('session')===partial.session?partial:saved;
-          const points=info.sensorType===4?Array.from({length:Math.min(128,info.stored-offset)},(_,i)=>({t:(offset+i+1)*1000,sampleMs:(offset+i+1)*1000,temperature:23.383+i/1000})):archived.slice(offset,Math.min(offset+128,info.stored));
+          const points=info.sensorType===4?Array.from({length:Math.min(pageSize,info.stored-offset)},(_,i)=>({t:(offset+i+1)*1000,sampleMs:(offset+i+1)*1000,temperature:23.383+i/1000})):archived.slice(offset,Math.min(offset+pageSize,info.stored));
           body={...info,
             nextOffset:offset+points.length,points};
           if(invalidNextRecording){invalidNextRecording=false;body.nextOffset++}
@@ -158,7 +160,7 @@ const assert = require('node:assert/strict');
     await page.evaluate(()=>loadRecordings(statusData.sensors[0].mac,true));
     await page.waitForFunction(()=>document.querySelector('.recordingCharts svg.liveSvg')&&!recordingViews[statusData.sensors[0].mac].busy);
     assert.equal(await page.evaluate(()=>recordingViews[statusData.sensors[0].mac].points.length),400);
-    assert.equal(recordingCalls,callsBeforeComplete+4,'A completed transfer triggers exactly one full paginated load');
+    assert.equal(recordingCalls,callsBeforeComplete+Math.ceil(temperatureSession.stored/pageSize),'A completed transfer triggers exactly one full paginated load');
 
     slowNextRecording=true;
     await selector.selectOption(saved.session);

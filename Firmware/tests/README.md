@@ -76,6 +76,16 @@ switching during acquisition, partially synchronized sessions and cancelled
 or failed reads. The fixtures exercise the real embedded dashboard; no sensor
 or station is flashed.
 
+Set `RECORDING_PAGE_SIZE=512` to exercise larger recording pages. Run
+`node Firmware/tests/test_dashboard_performance.cjs` for a controlled browser
+comparison with 19 simulated sensors and 4,400 history points. The simulated
+API delays and page size do not measure an actual station, radio or filesystem.
+
+Run `node Firmware/tests/test_history_priority.cjs` to check that a complete
+selected window appears before older history finishes, and that failed older
+pages preserve the window while navigation and full CSV export remain gated
+until a successful retry restores the complete snapshot.
+
 Run `node Firmware/tests/test_chart_readability.cjs` to verify single-point
 history charts, time-window switching, browsing retained history, exact cursor
 values, gap-safe visual smoothing, unchanged CSV samples and mobile layouts.
@@ -86,9 +96,17 @@ follows the rendered SVG width without enlarging the stored data.
 
 Long-uptime regressions exercise normal precision acquisition after a simulated
 2^31 ms uptime, inactive/expired retries, millis wrap, 64-bit login cooldowns
-and stale motion-reference rejection after a complete millis cycle. These are
-accelerated deterministic checks, not a multi-week physical soak test. The
-status API exposes internal-heap minimum/free/largest-block and PSRAM
+and stale motion-reference rejection after a complete millis cycle. Additional
+checks cover restart scheduling at the exact millis wrap, archive-reserve expiry
+after a full wrap, exhausted recording timestamps, malformed MAC addresses and
+unterminated OTA identities. The radio send guard is checked with missing,
+delayed and completed callbacks
+across a 32-bit timer wrap. Battery tests exercise low and invalid OTA voltage
+results in both ordinary and live V4 operation; BSEC checks reject invalid
+output counts and extreme scheduling values. A stuck acquisition during battery
+protection is tested with a simulated restart. These are accelerated deterministic
+checks, not a multi-week physical soak test. The status API exposes internal-heap
+minimum/free/largest-block and PSRAM
 free/largest-block bytes for the remaining device load checks. See
 [the resource and usability review](../RESOURCE_AND_UX_REVIEW.md).
 
@@ -125,6 +143,13 @@ button debounce, adaptive cadence boundary, sensor lifecycle/clock recovery,
 and station filesystem append/deduplication/paging. `test_motion_dashboard.cjs`
 loads a 30-minute saved recording and checks minute navigation and full CSV
 export. Hardware acceptance is described in [RECORDINGS.md](../RECORDINGS.md).
+
+The journal recovery suite counts flash reads for two full pages of each record
+width and checks failed reads and corrupt committed data across batch boundaries.
+The archive and normal-history suites count file positioning calls for a
+sequential page and still check CRC failures, offsets and snapshot boundaries.
+These host call counts are not measurements of device latency or power. See
+[the storage performance review](../PERFORMANCE_REVIEW.md).
 
 Quick-feedback tests cover raw-rate motion estimation, unchanged compact record
 capacity, stable/drifting/stale temperatures, pulse recovery coverage and the

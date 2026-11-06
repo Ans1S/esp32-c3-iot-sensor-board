@@ -81,6 +81,11 @@ int main() {
   assert(reading.valid && !(reading.capabilities & lil::protocol::kIaq) && reading.iaqAccuracy == 0);
   assert(reading.iaqCalibrationPhase == Phase::kStabilizing && Preferences::stateWrites == 0);
 
+  // A corrupt output count cannot read beyond the fixed BSEC output array.
+  reset(); testBsec.invalidOutputCount = true;
+  assert(driver.begin(0x76,0)); reading = driver.read();
+  assert(reading.valid && reading.bme680RawFallback && rawStarts == 1);
+
   // Repeated initialization past the first 32-bit clock wrap must not add a
   // second wrap to Bosch timestamps, even within the same physical boot.
   reset(); testLogicalMs = 0x100000000ULL + 100;
@@ -95,6 +100,11 @@ int main() {
   assert(driver.begin(0x76,0)); const uint32_t started = millis(); reading = driver.read();
   assert(reading.valid && reading.bme680RawFallback && millis() - started == 180);
   assert(testBsec.runs == 1 && rawStarts == 1 && driver.recommendedSleepSeconds(300) == 300);
+
+  // A corrupt extreme schedule cannot overflow while rounding nanoseconds.
+  reset(); testBsec.emit = false; testBsec.nextCallNs = INT64_MAX;
+  assert(driver.begin(0x76,0)); reading = driver.read();
+  assert(reading.valid && reading.bme680RawFallback && testBsec.runs == 1);
 
   // Repeated stale output is never relabeled as a fresh BSEC measurement.
   reset(); testBsec.forcedTimestampNs = 100000000;

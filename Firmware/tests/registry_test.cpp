@@ -74,6 +74,21 @@ bool ConfigStore::deleteLatestTelemetry(size_t) { onStorage(); return true; }
 }
 
 int main() {
+  {
+    uint8_t parsed[6] = {9,9,9,9,9,9};
+    assert(station::SensorRegistry::parseMac("a:BC:03:04:05:ff", parsed));
+    assert(parsed[0] == 10 && parsed[1] == 188 && parsed[5] == 255);
+    const uint8_t unchanged[6] = {10,188,3,4,5,255};
+    for (const char* invalid : {"FFFFFFFFFFFFFFFFFFFFFFFF:02:03:04:05:06",
+         "100:02:03:04:05:06", "01:02:03:04:05:06x", "01:02:03:04:05:",
+         "-1:02:03:04:05:06", " 1:02:03:04:05:06"}) {
+      assert(!station::SensorRegistry::parseMac(invalid, parsed));
+      assert(!memcmp(parsed, unchanged, sizeof(parsed)));
+    }
+    assert(!station::SensorRegistry::parseMac(String(std::string("01:02:03:04:05:06\0x",19)), parsed));
+    assert(!memcmp(parsed, unchanged, sizeof(parsed)));
+    assert(!station::SensorRegistry::parseMac("01:02:03:04:05:06", nullptr));
+  }
   station::ConfigStore store;
   station::SensorRegistry registry;
   assert(registry.begin(store, 600));

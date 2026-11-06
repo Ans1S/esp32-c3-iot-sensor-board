@@ -7,6 +7,7 @@
 #include <LittleFS.h>
 #include <esp_partition.h>
 
+int64_t testTimeUs = 0;
 int main() {
   station::ConfigStore clean;
   assert(clean.begin() && clean.storageAvailable() && LittleFS.formats == 0);

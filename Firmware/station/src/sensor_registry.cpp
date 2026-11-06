@@ -1339,19 +1339,26 @@ String SensorRegistry::formatMac(const uint8_t mac[6]) {
 }
 
 bool SensorRegistry::parseMac(const String& text, uint8_t output[6]) {
-  unsigned int values[6];
-  int consumed = 0;
-  if (sscanf(text.c_str(), "%x:%x:%x:%x:%x:%x%n", &values[0], &values[1],
-             &values[2], &values[3], &values[4], &values[5], &consumed) != 6 ||
-      consumed != static_cast<int>(text.length())) {
-    return false;
-  }
+  if (!output) return false;
+  uint8_t parsed[6]{};
+  const char* cursor = text.c_str();
   for (size_t i = 0; i < 6; ++i) {
-    if (values[i] > 0xFF) {
-      return false;
+    unsigned value = 0, digits = 0;
+    while (digits < 2) {
+      const char c = *cursor;
+      const int digit = c >= '0' && c <= '9' ? c - '0' :
+                        c >= 'a' && c <= 'f' ? c - 'a' + 10 :
+                        c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+      if (digit < 0) break;
+      value = value * 16 + static_cast<unsigned>(digit);
+      ++digits; ++cursor;
     }
-    output[i] = static_cast<uint8_t>(values[i]);
+    if (!digits || (i < 5 ? *cursor != ':' : *cursor != '\0')) return false;
+    parsed[i] = static_cast<uint8_t>(value);
+    if (i < 5) ++cursor;
   }
+  if (static_cast<size_t>(cursor - text.c_str()) != text.length()) return false;
+  memcpy(output, parsed, sizeof(parsed));
   return true;
 }
 
