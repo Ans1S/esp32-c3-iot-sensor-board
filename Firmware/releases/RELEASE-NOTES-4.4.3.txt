@@ -1,0 +1,36 @@
+W-Charger 4.4.3 / 40403 - 2026-11-06
+
+Full station and PCB V3/V4 release; ESP-NOW protocol V5. This includes the
+previous local 4.4.2 changes and the station and sensor changes in 4.4.3.
+
+PERFORMANCE AND RELIABILITY
+
+- Read consecutive saved recording and normal-history rows sequentially on the
+  station. Recover sensor recording journals with batched flash reads; retain
+  per-record checks and durable acknowledgement behavior.
+- Display the selected normal-history window first while older pages load.
+  Navigation and full export wait for a complete snapshot; a failed older page
+  preserves the selected window and can be retried.
+- Support requested pages of up to 512 rows when PSRAM permits, with a
+  128-row internal-memory fallback and the 128-row default for older clients.
+- Restart a sensor when acquisition fails to release the rail and restart the
+  station after a missing ESP-NOW completion callback. A restart can lose
+  uncommitted queued data.
+- Propagate low or invalid OTA battery readings to V4's existing protection
+  path. Harden BSEC output counts, timing boundaries and identity parsing.
+- Preserve selected recording graphs and cursors across dashboard updates;
+  reject inconsistent archive pages and provide overview navigation.
+
+PRESERVED OPERATION
+
+Partition layouts, NVS schemas, protocol V5 and the existing OTA signing
+identity remain unchanged. BME280 forced measurements, five-minute BME680
+BSEC ULP maintenance, configured report intervals, precision normal windows,
+SW2-only recordings and V4 low-voltage hysteresis remain in place.
+
+INSTALLATION AND VALIDATION
+
+Read INSTALL-4.4.3.txt. The station BIN is an application-only USB image at
+0x10000 on a compatible installation. The sensor OTA files match their PCB
+revisions and the existing installation signing identity. Builds and software
+regression checks passed. No board was flashed or physically measured.

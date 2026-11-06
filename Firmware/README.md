@@ -29,17 +29,17 @@ verify a target without writing to a connected device.
 - [Architecture](ARCHITECTURE.md)
 - [Hardware test plan](HARDWARE_TESTPLAN.md)
 
-Current full station and sensor release: **4.4.1 / 40401**, protocol V5.
-The newer sensor-only update is **4.4.3 / 40403**.
-It adds a compact configurable dashboard, touch inspection, adaptive persistent
-normal history and long-uptime corrections. See [release packages](releases/README.md).
+Current station and sensor release: **4.4.3 / 40403**, protocol V5.
+It improves storage reads, selected-window loading and fault recovery while
+retaining the compact dashboard and adaptive normal history. See
+[release packages](releases/README.md).
 For an installed station, `python Firmware/upload.py station --application-only`
 updates only its application and preserves Wi-Fi, sensors, settings and files.
 Initialize the installation signing key as described
 in the OTA guide before the first build. Never replace an existing signing key.
 
 - [Signed OTA updates](OTA.md)
-- [Latest local packages](releases/README.md)
+- [Release packages](releases/README.md)
 - [LSM6DSOX motion acquisition](LSM6DSOX.md)
 - [Power management](POWER_MANAGEMENT.md)
 - [Regression checks](tests/README.md)
@@ -62,7 +62,7 @@ stable snapshots; full-session CSV retains the original samples. See [operation,
 
 ## Full release and publication checks
 
-Firmware **4.4.1 / 40401** includes bounded sensor reinitialization, long-uptime
+Firmware **4.4.3 / 40403** includes bounded sensor reinitialization, long-uptime
 corrections, adaptive normal history and the compact configurable dashboard.
 See [the complete change inventory](CHANGELOG.md),
 [release artifacts](releases/README.md) and
