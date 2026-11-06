@@ -398,17 +398,30 @@ void runLiveMode(sensor::BatteryReading battery) {
           !recordings.append(capture.capturedMs, latest.payload)) acquisition.stop();
     }
   };
+  auto waitForAcquisitionRelease = [&](bool collectPending) {
+    const uint32_t started = millis();
+    while (acquisition.active()) {
+      if (collectPending) collect();
+      if (uint32_t(millis() - started) >= 10000) {
+        // Do not cut power while a stuck task may still own I2C. Restart so
+        // startup can release the rail and recheck battery protection.
+        SENSOR_LOG_PRINTLN("[LIVE] Acquisition did not release; restarting");
+        esp_restart();
+      }
+      delay(1);
+    }
+  };
   for (;;) {
     if (handledPresses != acquisition.presses()) {
       ++handledPresses;
       if (recordings.recording()) {
         acquisition.stop();
-        while (acquisition.active()) { collect(); delay(1); }
+        waitForAcquisitionRelease(true);
         collect(); recordings.stop();
         acquisition.normal(runtimeConfig.sleepSeconds);
       } else {
         acquisition.stop();
-        while (acquisition.active()) delay(1);
+        waitForAcquisitionRelease(false);
         sensor::LiveCapture discarded{};
         while (acquisition.take(discarded)) {}
         if (recordings.start()) acquisition.start();
@@ -427,7 +440,10 @@ void runLiveMode(sensor::BatteryReading battery) {
       batteryPending = false; lastBattery = now;
       if constexpr (SENSOR_LOW_BATTERY_PAUSE_MV > 0) {
         if (batteryProtectionRequired(battery)) {
-          acquisition.stop(); while (acquisition.active()) { collect(); delay(1); }
+          // Preserve hysteresis across a watchdog restart while waiting for
+          // the acquisition task to release the rail.
+          rtcState.batteryPaused = true;
+          acquisition.stop(); waitForAcquisitionRelease(true);
           collect(); if (recordings.recording()) recordings.stop();
           if (radioReady) { espNowTransport.end(); radioReady = false; }
           reportBatteryAndSleep(battery);
@@ -481,7 +497,7 @@ void runLiveMode(sensor::BatteryReading battery) {
             runtimeConfig.temperatureOffsetC != previousOffset ||
             (runtimeConfig.environmentalSensorType != lil::protocol::EnvironmentalSensorType::kAutoDetect &&
              runtimeConfig.environmentalSensorType != activeType)) {
-          acquisition.stop(); while (acquisition.active()) { collect(); delay(1); }
+          acquisition.stop(); waitForAcquisitionRelease(true);
           collect(); if (recordings.recording()) recordings.stop();
           esp_restart();
         }
@@ -489,8 +505,14 @@ void runLiveMode(sensor::BatteryReading battery) {
             (sensor::otaBootPending() || now - lastOta >= 30000)) {
           lastOta = now;
           acquisition.pauseNormal(true);
-          while (acquisition.active()) { collect(); delay(1); }
-          sensor::checkOta(espNowTransport, runtimeConfig, adcReader, battery.millivolts);
+          waitForAcquisitionRelease(true);
+          sensor::checkOta(espNowTransport, runtimeConfig, adcReader, battery);
+          if constexpr (SENSOR_LOW_BATTERY_PAUSE_MV > 0) {
+            if (batteryProtectionRequired(battery)) {
+              espNowTransport.end(); radioReady = false;
+              reportBatteryAndSleep(battery);
+            }
+          }
           acquisition.pauseNormal(false);
         }
         radioBackoff.clear();
@@ -509,6 +531,7 @@ void runLiveMode(sensor::BatteryReading battery) {
         recordings.anchor(ack.stationEpochMs, status.payload.elapsedMs, millis() - started);
       lastStatus = millis();
     }
+    bool synchronizedRecord = false;
     if (radioReady && !recordings.recording() && syncBackoff.ready(now)) {
       lil::recording::UploadPacket upload{};
       if (recordings.next(upload.payload)) {
@@ -516,7 +539,7 @@ void runLiveMode(sensor::BatteryReading battery) {
         lil::recording::Ack ack{}; const auto& record = upload.payload.record;
         if (espNowTransport.recordingExchange(runtimeConfig, &upload, sizeof(upload),
             record.session, record.sampleMs, lil::recording::checksum(record), ack) && ack.stored &&
-            recordings.acknowledge(record)) syncBackoff.clear();
+            recordings.acknowledge(record)) { syncBackoff.clear(); synchronizedRecord = true; }
         else syncBackoff.wait(millis(), 1000);
       }
     }
@@ -528,7 +551,7 @@ void runLiveMode(sensor::BatteryReading battery) {
       // Publish the pause before sleep so a due normal window cannot start
       // I2C between the inactive check and light-sleep entry.
       acquisition.pauseNormal(true);
-      while (acquisition.active()) { collect(); delay(1); }
+      waitForAcquisitionRelease(true);
       // GPIO9 can wake from light sleep, but not from C3 deep sleep. This path
       // exists only for manual live sensors; BME deep-sleep cadence is unchanged.
       gpio_wakeup_enable(GPIO_NUM_9, GPIO_INTR_LOW_LEVEL);
@@ -539,7 +562,8 @@ void runLiveMode(sensor::BatteryReading battery) {
       gpio_wakeup_disable(GPIO_NUM_9);
       acquisition.pauseNormal(false);
     }
-    delay(5);
+    // Yield between successful transfers while avoiding a fixed 5 ms per record.
+    delay(synchronizedRecord ? 1 : 5);
   }
 }
 
@@ -713,7 +737,13 @@ void setup() {
       otaConfig.provisioned = true;
       otaConfig.stationKnown = true;
       memcpy(otaConfig.stationMac, exchange.config.stationMac, 6);
-      sensor::checkOta(espNowTransport, otaConfig, adcReader, battery.millivolts);
+      sensor::checkOta(espNowTransport, otaConfig, adcReader, battery);
+      if constexpr (SENSOR_LOW_BATTERY_PAUSE_MV > 0) {
+        if (batteryProtectionRequired(battery)) {
+          espNowTransport.end();
+          reportBatteryAndSleep(battery);
+        }
+      }
     }
     espNowTransport.end();
     if (exchange.delivered && !exchange.configReceived) {

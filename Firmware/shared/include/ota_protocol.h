@@ -4,8 +4,8 @@
 
 namespace lil::ota {
 constexpr uint32_t kPackageMagic = 0x3141544f; // OTA1
-constexpr uint32_t kRelease = 40401;
-#define WCH_FIRMWARE_VERSION "4.4.1"
+constexpr uint32_t kRelease = 40403;
+#define WCH_FIRMWARE_VERSION "4.4.3"
 constexpr char kVersion[] = WCH_FIRMWARE_VERSION;
 constexpr size_t kBlockSize = 192;
 // Both sensor revisions reserve the rest of flash for the recording journal.
@@ -56,6 +56,11 @@ using Packet = protocol::Packet<Payload>;
 constexpr auto kMessageType = static_cast<protocol::MessageType>(16);
 static_assert(sizeof(Manifest) == 160);
 static_assert(sizeof(Packet) <= protocol::kMaxPacketSize);
+inline bool validIdentity(const Identity& identity) {
+  return (identity.pcb == 3 || identity.pcb == 4) &&
+      identity.protocol == protocol::kVersion &&
+      memchr(identity.version, 0, sizeof(identity.version));
+}
 inline bool validManifest(const Manifest& m) {
   return m.magic == kPackageMagic && m.format == 1 &&
     (m.pcb == 3 || m.pcb == 4) && m.protocol == protocol::kVersion &&

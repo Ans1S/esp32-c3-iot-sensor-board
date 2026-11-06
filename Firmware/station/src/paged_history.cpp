@@ -287,8 +287,9 @@ size_t PagedHistory::read(const uint8_t mac[6],uint32_t after,uint32_t until,uin
   size_t copied=0;uint8_t bytes[128];NormalHistoryPoint p{};
   for(size_t i=0;i<pageCount_&&copied<capacity;++i){const auto& page=pages_[i];if(memcmp(page.mac,mac,6)||page.last<=after||page.first>until)continue;
     char path[384];pathFor(page.mac,page.generation,path,sizeof(path));FILE* file=fopen(path,"rb");if(!file){error=true;break;}
+    if(fseek(file,kHeaderBytes,SEEK_SET)){fclose(file);error=true;break;}
     for(size_t row=0;row<page.count&&copied<capacity;++row){
-      if(fseek(file,kHeaderBytes+row*page.width,SEEK_SET)||fread(bytes,1,page.width,file)!=page.width||!decode(bytes,page.kind,p)){error=true;break;}
+      if(fread(bytes,1,page.width,file)!=page.width||!decode(bytes,page.kind,p)){error=true;break;}
       if(p.timestamp>after&&p.timestamp<=until)output[copied++]=p;
     }fclose(file);if(error)break;
   }

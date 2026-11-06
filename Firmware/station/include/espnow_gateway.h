@@ -8,6 +8,7 @@
 #include <freertos/task.h>
 
 #include "lil_protocol.h"
+#include "radio_send_guard.h"
 #include "sensor_registry.h"
 #include "thingspeak_service.h"
 #include "wifi_service.h"
@@ -76,7 +77,7 @@ class EspNowGateway {
   TaskHandle_t archiveTask_ = nullptr;
   TaskHandle_t task_ = nullptr;
   TaskHandle_t persistenceTask_ = nullptr;
-  std::atomic<bool> sendPending_{false};
+  RadioSendGuard sendGuard_{};
   std::atomic<uint32_t> persistenceDrops_{0};
   std::atomic<uint32_t> peerFailures_{0};
   std::atomic<uint32_t> receivedPackets_{0};

@@ -6,9 +6,11 @@ void resetBoot(bool cold = true) {
   sensorStarts = batteryReads = otaChecks = configWrites = 0;
   radioStarts = normalExchanges = lowPowerExchanges = 0;
   radioAvailable = true; stationReplies = false; powerOff = true;
+  sensor::otaReplacesBattery = false; sensor::otaBattery = {};
   configPersistenceSucceeded = iaqClearSucceeded = true; iaqClears = 0;
   sensorStartSucceeded = true;
   sensorReadSucceeded = true;
+  acquisitionStuck = false;
   sentPackets.clear(); sensor::batteries.clear();
   sensor::configurationReplies.clear();
   if (cold) { rtcState = {}; sensor::savedConfig = {}; testMillis = 100; }
@@ -182,9 +184,31 @@ int main() {
   assert(boot() == 86400); assertProtected(); // Commands and OTA cannot bypass it.
   resetBoot(); sensor::savedConfig.provisioned = false; sensor::batteries.push_back({true,2700});
   assert(boot() == 86400 && radioStarts == 0 && sensorStarts == 0); // No discovery scan.
+  // A fresh voltage measured during OTA must take precedence immediately,
+  // including an invalid ADC reading, rather than wait for the next wake.
+  for (auto type : {lil::protocol::EnvironmentalSensorType::kBme280,
+                    lil::protocol::EnvironmentalSensorType::kTmp117})
+  for (auto low : {sensor::BatteryReading{true,2799}, sensor::BatteryReading{false,3500}}) {
+    resetBoot(); sensor::batteries.push_back({true,3500});
+    sensor::savedConfig.environmentalSensorType = type;
+    sensor::otaReplacesBattery = true; sensor::otaBattery = low;
+    sensor::ExchangeResult otaReply{}; otaReply.configReceived = true; otaReply.config.provisioned = 1;
+    sensor::configurationReplies.push_back(otaReply);
+    assert(boot() == 86400 && otaChecks == 1 && powerOff && rtcState.batteryPaused);
+    assert(sentPackets.back().payload.flags & lil::protocol::kBatteryProtectionActive);
+    if (!low.valid) assert(sentPackets.back().payload.flags & lil::protocol::kBatteryReadFailed);
+  }
   resetBoot(); sensor::savedConfig.environmentalSensorType = lil::protocol::EnvironmentalSensorType::kTmp117;
   sensor::batteries.push_back({true,3500}); sensor::batteries.push_back({true,2790});
   assert(boot() == 86400 && sensorStarts == 1 && batteryReads == 2 && powerOff);
   assert(sentPackets.back().payload.flags & lil::protocol::kBatteryProtectionActive);
+  // A stuck acquisition task must not trap battery protection forever.
+  resetBoot(); sensor::savedConfig.environmentalSensorType = lil::protocol::EnvironmentalSensorType::kTmp117;
+  sensor::batteries.push_back({true,3500}); sensor::batteries.push_back({true,2790});
+  acquisitionStuck = true; restarted = false;
+  try { setup(); } catch (const Restarted&) { restarted = true; }
+  assert(restarted && batteryReads == 2 && testMillis >= 20000 && rtcState.batteryPaused);
+  resetBoot(false); sensor::batteries.push_back({true,2900});
+  assert(boot() == 86400); assertProtected();
   puts("V4 production boot flow: threshold, RTC hysteresis, invalid ADC, offline/unpaired station, command deferral, battery-only packet and live shutdown passed");
 }

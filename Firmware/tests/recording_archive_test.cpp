@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <limits>
 
+int64_t testTimeUs = 0;
 void testRadioTick() { ++testMillis; }
 int main() {
   using namespace lil;
@@ -27,6 +28,15 @@ int main() {
   auto sessions = archive.list(mac);
   assert(sessions.size() == 1 && sessions[0].stored == 100 && sessions[0].expected == 100);
   assert(sessions[0].availableMs == 9900);
+  // Measure a complete sequential page independently of timestamp searches.
+  recording::Record page[100]{}; station::RecordingInfo pageInfo{};
+  uint32_t pageOffset = 0;
+  testFileSeekCount = 0;
+  assert(archive.read(mac, 1, pageOffset, page, 100, pageInfo) == 100);
+  const size_t pageSeeks = testFileSeekCount;
+  assert(pageOffset == 100 && page[0].sampleMs == 0 && page[99].sampleMs == 9900);
+  assert(pageSeeks <= 4); // Header, end, tail validation and one page seek.
+  printf("Archive page: %zu file seeks for 100 rows\n", pageSeeks);
   recording::Record points[16]{}; station::RecordingInfo info{};
   uint32_t offset = 0;
   assert(archive.read(mac, 1, offset, points, 16, info, 5050) == 16);

@@ -9,6 +9,7 @@
 #include "thingspeak_service.h"
 #include "wifi_service.h"
 #include "login_throttle.h"
+#include "precision_cadence.h"
 
 namespace station {
 
@@ -81,7 +82,8 @@ class WebPortal {
   SensorRegistry* registry_ = nullptr;
   ThingSpeakService* thingSpeak_ = nullptr;
   EspNowGateway* gateway_ = nullptr;
-  uint32_t restartAtMs_ = 0;
+  lil::timing::RetryBackoff restartDelay_{};
+  bool restartPending_ = false;
   AuthSession authSessions_[4]{};
   LoginThrottle loginThrottle_{};
   char csrfToken_[33]{};

@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+- Read contiguous normal-history and saved-recording rows sequentially on the
+  station. Keep the same snapshot bounds, per-row CRC checks, corrupt-record
+  offsets and durable archive acknowledgement behavior.
+- Display the complete selected normal-history window before fetching older
+  pages in the background. Keep navigation and full CSV export unavailable
+  until the retained snapshot is complete; preserve the selected window and
+  offer retry if an older page fails.
+
+## 4.4.3 / 40403 — sensor update, 2026-11-06
+
+- Recover V3/V4 recording journals in batches of four consecutive flash
+  records. Each record and its commit/acknowledgement state is still checked
+  independently; unreadable batches fail recovery without acknowledging data.
+## 4.4.2 / 40402 — local update, 2026-11-06
+
+- Restart a sensor if its acquisition task does not release I2C/rail ownership
+  within ten seconds. Startup rechecks battery protection before sensor use.
+- Restart the station if an accepted ESP-NOW send never receives its driver
+  completion callback. The gateway continues to serialize sends and waits ten
+  seconds before recovery; unsaved queued data can be lost on restart.
+- Propagate the latest OTA battery measurement to the sensor's protection
+  flow. V4 immediately enters its existing 24-hour protection sleep on a low
+  or invalid reading during an update, including in live mode.
+- Reject out-of-range BSEC output counts before reading its fixed array and
+  avoid signed overflow when rounding an extreme BSEC schedule timestamp.
+- Parse MAC addresses with bounded hexadecimal fields and reject malformed
+  values without partially changing the output. Validate restored OTA identity
+  strings before displaying or using them.
+- Keep the archive workspace timeout on the 64-bit monotonic clock and make a
+  scheduled restart safe when the 32-bit millisecond counter wraps to zero.
+- Stop an exceptionally long recording when its 32-bit timestamp range is
+  exhausted, preserving the committed prefix and saturating its duration.
+- Request the initial dashboard status while configuration is loading. Serve up
+  to 512 history or recording rows per request when PSRAM is available, with a
+  128-row internal-memory fallback. Older clients retain the 128-row default;
+  complete snapshots, cursor validation and full CSV exports remain unchanged.
+- Reduce the sensor's yield between successfully acknowledged recording rows
+  and avoid a redundant journal lookup. Each row is still confirmed only after
+  durable station storage and a verified sensor acknowledgement bitmap write.
 - Restore saved recording charts after opening a measurement tile. Explicit
   archive selection takes priority over the previous normal-history view.
   Cache complete chart markup so rebuilding a parent cannot insert an empty
