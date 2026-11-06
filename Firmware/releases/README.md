@@ -1,23 +1,27 @@
 # Firmware packages
 
-## Sensor update 4.4.3
+## Current full release 4.4.3
 
-These signed PCB V3/V4 packages use release **40403**, protocol V5. They
-include the sensor changes through 4.4.2 and the recording-journal
-recovery improvements in 4.4.3. They are a sensor update, not a new
-full station release.
+Station and PCB V3/V4 use **4.4.3 / 40403**, protocol V5. This full release
+includes the 4.4.2 recovery improvements, faster storage reads, prioritized
+history loading and recording-journal recovery. It retains existing partition
+layouts, settings and the installation signing identity.
 
 | File | Target | Installation |
 | --- | --- | --- |
+| [Complete update bundle](w-charger-4.4.3.zip) | All three targets | Firmware, instructions, release notes and SHA-256 checksums |
 | [sensor-v3-4.4.3.ota](sensor-v3-4.4.3.ota) | Sensor PCB V3 | Signed OTA through the station |
 | [sensor-v4-4.4.3.ota](sensor-v4-4.4.3.ota) | Sensor PCB V4 | Signed OTA through the station |
-| [SHA256SUMS-4.4.3.txt](SHA256SUMS-4.4.3.txt) | Both packages | SHA-256 checksums |
+| [station-4.4.3.bin](station-4.4.3.bin) | ESP32-S3 station | Application-only USB at `0x10000`, without full erasure |
+| [Installation instructions](INSTALL-4.4.3.txt) | Compatible existing layouts | Station first, then the matching sensor OTA |
+| [Release notes](RELEASE-NOTES-4.4.3.txt) | All three targets | Changes and validation limits |
+| [SHA256SUMS-4.4.3.txt](SHA256SUMS-4.4.3.txt) | Release downloads | SHA-256 checksums |
 
-Both builds and OTA package tests passed. The signatures were verified against
-the existing trusted public header and the payloads match the final builds.
-No hardware was flashed or physically measured.
+All three builds and OTA package tests passed. The sensor signatures were
+verified against the existing trusted public header and the payloads match the
+final builds. No hardware was flashed or physically measured.
 
-## Current full release 4.4.1
+## Previous full release 4.4.1
 
 Station and PCB V3/V4 use **4.4.1 / 40401**, protocol V5. This full release
 contained the firmware changes available at its release, including the 4.4.0 dashboard,
@@ -166,9 +170,9 @@ On an existing compatible layout, write it at `0x10000` without erasing flash.
 Only the explicit factory-reset environment intentionally erases the device.
 
 Upload the matching V3/V4 `.ota` on the station's **Firmware updates** page.
-Existing 4.3.1/4.3.2/4.3.3 installations with this trusted signing identity and
-recording layout can use it. Same-version OTA is rejected; rebuilding 4.3.4
-with sanitized compiler paths does not change its release integer. Older
+Existing installations with this trusted signing identity and compatible
+recording layout can use the matching newer package. Same-version OTA is rejected.
+Older
 layouts still need the [one-time USB migration](../RECORDINGS.md#one-time-usb-migration).
 The recording partition layout and low-power policies remain unchanged.
 
@@ -194,7 +198,7 @@ Historical 4.3.1 behavior and validation are documented in
 
 ## Validation and licenses
 
-All three PlatformIO targets, 24 production C++ suites, eight embedded browser
+All three PlatformIO targets, 24 production C++ suites, ten embedded browser
 suites, six cryptographic OTA package tests, four upload tests, three pinned
 library-patch checks and publication regressions pass. Eight station script
 blocks parse. No hardware was flashed or measured. Accuracy, RF/power-loss,
