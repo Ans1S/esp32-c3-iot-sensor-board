@@ -1,6 +1,6 @@
 # W-Charger Sensor Firmware
 
-Firmware 4.4.1 / 40401 supports LSM6DSOX, TMP117 and MAX30102 acquisition on PCB V3/V4.
+Firmware 4.4.3 / 40403 supports LSM6DSOX, TMP117 and MAX30102 acquisition on PCB V3/V4.
 See [precision sensor operation and timing](../PRECISION_SENSORS.md).
 
 One shared firmware codebase supports PCB V3 and V4. The only differences are
@@ -258,8 +258,8 @@ the normal interval and starts durable replay. See
 
 ## Current release and publication checks
 
-Firmware **4.3.4 / 40307** includes bounded sensor reinitialization, durable
-settings/history corrections and the updated recording/dashboard behavior.
+Firmware **4.4.3 / 40403** includes bounded sensor reinitialization, durable
+recording recovery and the latest sensor reliability and storage improvements.
 See [the complete change inventory](../CHANGELOG.md),
 [release artifacts](../releases/README.md) and
 [publication review](../PUBLICATION_REVIEW.md). Build diagnostics use relative

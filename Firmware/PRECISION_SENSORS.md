@@ -160,7 +160,7 @@ references: [MAX30102 datasheet, register map, supply rails and Table 17](https:
 
 Install the station and matching V3/V4 sensor base images using the migration
 procedure in [RECORDINGS.md](RECORDINGS.md). The current internal release is
-40304. Subsequent application updates use the matching signed `.ota` package.
+40403. Subsequent application updates use the matching signed `.ota` package.
 The station still accepts older V5 environmental/motion/precision lengths;
 recordings use separate message types and storage acknowledgements.
 

@@ -2,7 +2,7 @@
 
 This review compares the local working tree immediately before and after the
 changes below, including any earlier unpublished work already present in that
-tree. It does not describe a new release or an installed device.
+tree. These results do not describe an installed device.
 
 ## Measured software effects
 

@@ -1,6 +1,6 @@
 # Firmware change inventory
 
-## Unreleased
+## 4.4.3 / 40403 — station and sensor release, 2026-11-06
 
 - Read contiguous normal-history and saved-recording rows sequentially on the
   station. Keep the same snapshot bounds, per-row CRC checks, corrupt-record
@@ -10,11 +10,11 @@
   until the retained snapshot is complete; preserve the selected window and
   offer retry if an older page fails.
 
-## 4.4.3 / 40403 — sensor update, 2026-11-06
-
 - Recover V3/V4 recording journals in batches of four consecutive flash
   records. Each record and its commit/acknowledgement state is still checked
   independently; unreadable batches fail recovery without acknowledging data.
+
+This full release also includes the previously local 4.4.2 changes below.
 ## 4.4.2 / 40402 — local update, 2026-11-06
 
 - Restart a sensor if its acquisition task does not release I2C/rail ownership
