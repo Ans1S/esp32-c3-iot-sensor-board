@@ -10,6 +10,7 @@
 #include <esp_heap_caps.h>
 #include "paged_history.h"
 #include "sensor_registry.h"
+#include "filesystem_guard.h"
 
 int64_t testTimeUs = 0;
 void testRadioTick() { ++testMillis; }
@@ -50,6 +51,14 @@ std::vector<station::NormalHistoryPoint> read(station::PagedHistory& store, size
 }
 int main() {
   using namespace lil::protocol;
+  // A long-idle archive reserve must not revive when 32-bit millis wraps.
+  testTimeUs = 100000;
+  station::noteArchiveWork();
+  assert(station::historyWorkspaceReserve() == 320U * 1024U);
+  testTimeUs += 60000LL * 1000;
+  assert(station::historyWorkspaceReserve() == 256U * 1024U);
+  testTimeUs += (uint64_t(UINT32_MAX) + 1) * 1000;
+  assert(station::historyWorkspaceReserve() == 256U * 1024U);
   clearFiles(); configure(1);
   station::PagedHistory history;
   assert(history.begin(true)); history.configure(configs, station::kMaxSensors);
@@ -68,6 +77,16 @@ int main() {
   assert(history.flush(configs[0].mac));
   assert(read(history, 0, epoch + 100).size() == 101);
   assert(read(history, 0).size() == 202);
+  // A selected page must retain every row while avoiding per-row seeks.
+  station::NormalHistoryPoint measuredPage[80];
+  bool pageStale, pageError;
+  testFileSeekCount = 0;
+  assert(history.read(configs[0].mac, 0, epoch + 79, epoch,
+                      measuredPage, 80, pageStale, pageError) == 80);
+  const size_t pageSeeks = testFileSeekCount;
+  assert(!pageStale && !pageError && measuredPage[79].timestamp == epoch + 79);
+  assert(pageSeeks == 1);
+  printf("History page: %zu file seeks for 80 rows\n", pageSeeks);
   assert(history.append(configs[0].mac, epoch, value, 1));
   assert(history.info(configs[0].mac).points == 202); // Duplicate radio delivery.
   station::PagedHistory reboot;

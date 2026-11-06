@@ -27,8 +27,16 @@ bool OtaService::begin() {
   partition_ = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
       static_cast<esp_partition_subtype_t>(0x40), "ota_store");
   if (!mutex_ || !preferences_.begin("ota_station", false)) return false;
-  if (preferences_.getBytesLength("nodes") == sizeof(nodes_))
-    preferences_.getBytes("nodes", nodes_, sizeof(nodes_));
+  if (preferences_.getBytesLength("nodes") == sizeof(nodes_)) {
+    if (preferences_.getBytes("nodes", nodes_, sizeof(nodes_)) != sizeof(nodes_)) {
+      for (auto& node : nodes_) node = Node{};
+    } else {
+      // Persisted bytes may be corrupt even when their length is correct.
+      // Never pass an unterminated stored version to JSON or String.
+      for (auto& node : nodes_)
+        if (node.identity.release && !lil::ota::validIdentity(node.identity)) node = Node{};
+    }
+  }
   if (preferences_.getBytesLength("job") == sizeof(job_))
     preferences_.getBytes("job", &job_, sizeof(job_));
   if (job_.magic != kJobMagic || !lil::ota::verifyManifest(job_.manifest)) job_ = Job{};
@@ -167,8 +175,7 @@ bool OtaService::respond(const uint8_t mac[6], const lil::ota::Packet& request,
   if (q.op == Op::Hello && q.size == sizeof(Identity)) {
     Identity identity{};
     memcpy(&identity, q.data, sizeof(identity));
-    if (!memchr(identity.version, 0, sizeof(identity.version)) ||
-        (identity.pcb != 3 && identity.pcb != 4) || identity.protocol != lil::protocol::kVersion) return false;
+    if (!validIdentity(identity)) return false;
     Node* slot = nullptr;
     for (auto& n : nodes_) {
       if (!memcmp(n.mac, mac, 6)) { slot = &n; break; }

@@ -54,12 +54,15 @@ bool load(FILE* file, Header& header, uint32_t& count) {
 void infoFrom(const Header& h, uint32_t count, RecordingInfo& info) {
   info = {h.session,h.epochMs,h.expected,count,h.durationMs,h.type};
 }
-bool readAt(FILE* file, const Header& h, uint32_t index, lil::recording::Record& record) {
+bool readNext(FILE* file, const Header& h, lil::recording::Record& record) {
   record = {};
-  return !fseek(file, sizeof(Header) + size_t(index)*h.width, SEEK_SET) &&
-      fread(&record, 1, h.width, file) == h.width && lil::recording::valid(record) &&
+  return fread(&record, 1, h.width, file) == h.width && lil::recording::valid(record) &&
       record.session == h.session && record.type == h.type &&
       lil::protocol::validTelemetryValues(lil::recording::decode(record));
+}
+bool readAt(FILE* file, const Header& h, uint32_t index, lil::recording::Record& record) {
+  return !fseek(file, sizeof(Header) + size_t(index)*h.width, SEEK_SET) &&
+      readNext(file, h, record);
 }
 uint32_t readableTail(FILE* file, const Header& header, uint32_t count, lil::recording::Record& last) {
   // Do not advertise torn, unacknowledged tail records as synchronized data.
@@ -172,8 +175,12 @@ size_t RecordingArchive::read(const uint8_t mac[6], uint64_t session, uint32_t& 
     offset = low;
   }
   size_t copied = 0;
+  if (offset < count && capacity &&
+      fseek(file, sizeof(Header) + size_t(offset)*header.width, SEEK_SET)) {
+    info.readError = true; fclose(file); return 0;
+  }
   while (offset < count && copied < capacity) {
-    if (!readAt(file, header, offset, output[copied])) { info.readError = true; break; }
+    if (!readNext(file, header, output[copied])) { info.readError = true; break; }
     ++copied; ++offset;
   }
   fclose(file); return copied;

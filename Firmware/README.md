@@ -29,7 +29,8 @@ verify a target without writing to a connected device.
 - [Architecture](ARCHITECTURE.md)
 - [Hardware test plan](HARDWARE_TESTPLAN.md)
 
-Current station and PCB V3/V4 release: **4.4.1 / 40401**, protocol V5.
+Current full station and sensor release: **4.4.1 / 40401**, protocol V5.
+The newer sensor-only update is **4.4.3 / 40403**.
 It adds a compact configurable dashboard, touch inspection, adaptive persistent
 normal history and long-uptime corrections. See [release packages](releases/README.md).
 For an installed station, `python Firmware/upload.py station --application-only`
@@ -45,6 +46,8 @@ in the OTA guide before the first build. Never replace an existing signing key.
 - [Manual recordings and USB migration](RECORDINGS.md)
 - [Sensor accuracy review and V4 battery protection](SENSOR_REVIEW.md)
 - [Station and sensor V3/V4 reliability review](RELIABILITY_REVIEW.md)
+- [Real-time and long-uptime review](REALTIME_REVIEW.md)
+- [Storage performance review](PERFORMANCE_REVIEW.md)
 - [Mobile usability, long-uptime fixes and storage capacity](RESOURCE_AND_UX_REVIEW.md)
 
 ## Live precision sensors

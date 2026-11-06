@@ -326,7 +326,8 @@ EnvironmentalReading Bme680Driver::readBsec() {
     if (nextCallNs > 0) {
       scheduleUpdated_ = true;
       rtcBsecState.nextBsecCallLogicalMs =
-          static_cast<uint64_t>((nextCallNs + 999999LL) / 1000000LL);
+          static_cast<uint64_t>(nextCallNs / 1000000LL) +
+          (nextCallNs % 1000000LL != 0);
     }
     if (bsec_.status > BSEC_OK || bsec_.sensor.status > BME68X_OK) {
       SENSOR_LOG_PRINTF("[BME680] BSEC warning %d, sensor warning %d\n",
@@ -337,6 +338,9 @@ EnvironmentalReading Bme680Driver::readBsec() {
     outputs = bsec_.getOutputs();
     newestTimestampNs = INT64_MIN;
     if (outputs != nullptr) {
+      // Reject a corrupt library result before indexing its fixed array. A
+      // partial output cannot establish a coherent environmental reading.
+      if (outputs->nOutputs > ARRAY_LEN(outputs->output)) return reading;
       for (uint8_t index = 0; index < outputs->nOutputs; ++index) {
         newestTimestampNs =
             max(newestTimestampNs, outputs->output[index].time_stamp);
@@ -361,9 +365,11 @@ EnvironmentalReading Bme680Driver::readBsec() {
     // output.  Poll for a bounded time while the rail is still powered.
     uint32_t waitMs = kBsecOutputPollMs;
     const int64_t nowMs = bsec_.getTimeMs();
-    if (nextCallNs > nowMs * 1000000LL) {
-      const uint64_t untilNextMs = static_cast<uint64_t>(
-          (nextCallNs - nowMs * 1000000LL + 999999LL) / 1000000LL);
+    if (nowMs >= 0 && nowMs <= INT64_MAX / 1000000LL &&
+        nextCallNs > nowMs * 1000000LL) {
+      const int64_t remainingNs = nextCallNs - nowMs * 1000000LL;
+      const uint64_t untilNextMs = static_cast<uint64_t>(remainingNs / 1000000LL) +
+          (remainingNs % 1000000LL != 0);
       if (untilNextMs > kBsecOutputTimeoutMs - elapsedMs) {
         // Do not burn energy waiting for a future ULP slot. The absolute
         // next_call is retained so the caller can power the rail down and

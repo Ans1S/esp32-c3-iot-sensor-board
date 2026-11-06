@@ -1,6 +1,7 @@
 #include "ota_client.h"
 #include "espnow_transport.h"
 #include "hardware_profile.h"
+#include "power_options.h"
 #include <Preferences.h>
 #include <esp_app_desc.h>
 #include <esp_ota_ops.h>
@@ -72,7 +73,7 @@ bool confirmOtaBootAfterContact() {
   return true;
 }
 void checkOta(EspNowTransport& radio, const SensorRuntimeConfig& config,
-              AdcReader& adc, uint16_t batteryMv) {
+              AdcReader& adc, BatteryReading& battery) {
   using namespace lil::ota;
   // Board-specific inclusive OTA limits, in millivolts.
   const uint16_t minimumUpdateMv = kHardware.pcbVersion == 4 ? 2800 : 3350;
@@ -102,7 +103,7 @@ void checkOta(EspNowTransport& radio, const SensorRuntimeConfig& config,
   };
   Identity identity{};
   identity.release = firmwareIdentity.release; identity.pcb = firmwareIdentity.pcb;
-  identity.protocol = lil::protocol::kVersion; identity.batteryMv = batteryMv;
+  identity.protocol = lil::protocol::kVersion; identity.batteryMv = battery.millivolts;
   memcpy(identity.version, kVersion, sizeof(kVersion));
   memcpy(identity.build, esp_app_get_description()->app_elf_sha256, sizeof(identity.build));
   q.payload.op = Op::Hello; q.payload.state = bootState; q.payload.size = sizeof(identity);
@@ -121,7 +122,7 @@ void checkOta(EspNowTransport& radio, const SensorRuntimeConfig& config,
       ESP.getFlashChipSize() < target->address + target->size) {
     status(State::Rejected, 0, Failure::SlotUnavailable); return;
   }
-  if (batteryMv < minimumUpdateMv) { status(State::LowBattery, 0, Failure::LowBattery); return; }
+  if (!battery.valid || battery.millivolts < minimumUpdateMv) { status(State::LowBattery, 0, Failure::LowBattery); return; }
   Checkpoint checkpoint{};
   if (prefs.getBytesLength("checkpoint") == sizeof(checkpoint)) prefs.getBytes("checkpoint", &checkpoint, sizeof(checkpoint));
   bool resume = checkpoint.magic == kCheckpointMagic &&
@@ -200,7 +201,7 @@ void checkOta(EspNowTransport& radio, const SensorRuntimeConfig& config,
     }
     if (!ok) break;
     if (offset % 65536 < kBlockSize) {
-      const auto battery = adc.readBattery(config.batteryCalibrationFactor);
+      battery = adc.readBattery(config.batteryCalibrationFactor);
       if (!battery.valid || battery.millivolts < minimumUpdateMv) {
         interruption = State::LowBattery; ok = false; break;
       }
@@ -210,6 +211,11 @@ void checkOta(EspNowTransport& radio, const SensorRuntimeConfig& config,
     if (ok && offset != manifest.imageSize) interruptionFailure = Failure::SessionTimeout;
     if (interruption == State::LowBattery) interruptionFailure = Failure::LowBattery;
     esp_ota_abort(handle); mbedtls_sha256_free(&hash);
+#if SENSOR_LOW_BATTERY_PAUSE_MV > 0
+    // Let the caller shut down and enter protection sleep without spending
+    // another multi-retry radio window at an unsafe or invalid voltage.
+    if (!battery.valid || battery.millivolts < SENSOR_LOW_BATTERY_PAUSE_MV) return;
+#endif
     status(interruption, offset, interruptionFailure); return;
   }
   status(State::Verifying, offset);

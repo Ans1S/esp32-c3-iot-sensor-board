@@ -55,14 +55,23 @@ bool RecordingStore::start() {
 }
 void RecordingStore::stop(bool full) {
   if (!available_ || !recording()) return;
-  if (sameBoot_) durationMs_ = (esp_timer_get_time() / 1000) - startedMs_;
+  if (sameBoot_) {
+    const uint64_t now = static_cast<uint64_t>(esp_timer_get_time()) / 1000;
+    const uint64_t elapsed = now >= startedMs_ ? now - startedMs_ : 0;
+    durationMs_ = static_cast<uint32_t>(min(uint64_t(UINT32_MAX), elapsed));
+  }
   total_ = journal_.pending();
   state_ = full ? State::Full : total_ ? State::Pending : State::Ready;
   if (prefs_.putUInt("duration", durationMs_) != 4 || prefs_.putUInt("total", total_) != 4 ||
       prefs_.putUChar("state", static_cast<uint8_t>(state_)) != 1) state_ = State::Fault;
 }
 bool RecordingStore::append(uint64_t capturedMs, const lil::protocol::TelemetryPayload& payload) {
-  if (!recording() || capturedMs < startedMs_ || capturedMs - startedMs_ > UINT32_MAX) return false;
+  if (!recording()) return false;
+  if (capturedMs < startedMs_ || capturedMs - startedMs_ > UINT32_MAX) {
+    // Stop and preserve the committed prefix when the timestamp cannot be
+    // represented in the recording format; never wrap and keep recording.
+    stop(); return false;
+  }
   const auto record = lil::recording::encode(session_, capturedMs - startedMs_, payload);
   if (journal_.append(record)) return true;
   stop(!journal_.fault());
@@ -103,8 +112,10 @@ lil::recording::Status RecordingStore::status(uint32_t dropped) const {
   lil::recording::Status status{};
   status.session = session_; status.state = state_; status.type = type_;
   status.pending = journal_.pending(); status.capacity = journal_.capacity(type_); status.dropped = dropped;
+  const uint64_t now = static_cast<uint64_t>(esp_timer_get_time()) / 1000;
+  const uint64_t elapsed = now >= startedMs_ ? now - startedMs_ : 0;
   status.elapsedMs = sameBoot_ && recording() ?
-      uint32_t((esp_timer_get_time() / 1000) - startedMs_) : durationMs_;
+      static_cast<uint32_t>(min(uint64_t(UINT32_MAX), elapsed)) : durationMs_;
   return status;
 }
 }  // namespace sensor
