@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "recording_store.h"
 #include <cassert>
+#include <esp_timer.h>
 void testRadioTick() { ++testMillis; }
 int main() {
   using Type = lil::protocol::EnvironmentalSensorType;
@@ -48,5 +49,14 @@ int main() {
   testMillis=0; sensor::RecordingStore interrupted;
   assert(interrupted.begin(Type::kTmp117) && !interrupted.recording());
   assert(interrupted.next(upload) && upload.totalRecords == 1 && upload.durationMs >= 1000);
+  // A stalled, exceptionally long session must not wrap its 32-bit duration
+  // or remain in recording mode after the timestamp format is exhausted.
+  assert(interrupted.start()); testMillis += 1000; assert(interrupted.append(testMillis,payload));
+  recordingClockExtraMs = uint64_t(UINT32_MAX) + 1000;
+  assert(interrupted.status(0).elapsedMs == UINT32_MAX);
+  assert(!interrupted.append(uint64_t(testMillis)+recordingClockExtraMs,payload));
+  assert(!interrupted.recording() && interrupted.next(upload));
+  assert(upload.durationMs == UINT32_MAX && upload.totalRecords == 1);
+  recordingClockExtraMs = 0;
   puts("Recording lifecycle: manual start, stop-only sync, reboot recovery, UTC uncertainty, replacement and ACK reclamation passed");
 }

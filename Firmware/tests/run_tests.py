@@ -91,6 +91,8 @@ def main():
             if name == "ota_client":
                 includes.insert(0, ROOT / "tests/ota_stubs")
             compile_command = command + ["-std=c++17", "-O2", "-UNDEBUG", "-Wall", "-Wextra"]
+            if name in {"recording_archive", "paged_history"}:
+                compile_command += ["-include", str(ROOT / "tests/file_seek_counter.h")]
             if name == "environmental_sensor":
                 compile_command += ["-DPCB_VERSION=4"]
             if name == "recording_archive":

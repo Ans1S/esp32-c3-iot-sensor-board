@@ -1,9 +1,26 @@
 # Firmware packages
 
+## Sensor update 4.4.3
+
+These signed PCB V3/V4 packages use release **40403**, protocol V5. They
+include the sensor changes through 4.4.2 and the recording-journal
+recovery improvements in 4.4.3. They are a sensor update, not a new
+full station release.
+
+| File | Target | Installation |
+| --- | --- | --- |
+| [sensor-v3-4.4.3.ota](sensor-v3-4.4.3.ota) | Sensor PCB V3 | Signed OTA through the station |
+| [sensor-v4-4.4.3.ota](sensor-v4-4.4.3.ota) | Sensor PCB V4 | Signed OTA through the station |
+| [SHA256SUMS-4.4.3.txt](SHA256SUMS-4.4.3.txt) | Both packages | SHA-256 checksums |
+
+Both builds and OTA package tests passed. The signatures were verified against
+the existing trusted public header and the payloads match the final builds.
+No hardware was flashed or physically measured.
+
 ## Current full release 4.4.1
 
 Station and PCB V3/V4 use **4.4.1 / 40401**, protocol V5. This full release
-contains every current firmware change, including the complete 4.4.0 dashboard,
+contained the firmware changes available at its release, including the 4.4.0 dashboard,
 normal-history and long-uptime work, earlier sensor recovery fixes, and the
 latest audited interaction/reliability corrections. Existing partition layouts,
 settings schemas and the installation signing identity are preserved.

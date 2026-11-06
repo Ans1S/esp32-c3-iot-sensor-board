@@ -70,6 +70,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
       return identity.left>name.right&&Math.abs(identity.top-name.top)<20&&Math.abs(actions.right-top.getBoundingClientRect().right)<2;
     }),'Identity follows the name and header actions align with the right edge');
     assert.equal(await page.getByLabel('History metric').inputValue(),'battery');
+    await page.waitForFunction(()=>!historyLoadController);
     assert(historyCalls.length>1&&historyCalls.every(m=>m===mac),'Only the opened sensor is paged');
     await page.getByLabel('Chart time window').selectOption('all');
     const svg=page.locator('.historySvg');

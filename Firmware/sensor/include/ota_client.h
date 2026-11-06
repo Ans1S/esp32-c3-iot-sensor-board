@@ -11,5 +11,5 @@ void beginOtaBootGuard();
 bool otaBootPending();
 void finishOtaBootGuard();
 void checkOta(EspNowTransport& radio, const SensorRuntimeConfig& config,
-              AdcReader& adc, uint16_t batteryMv);
+              AdcReader& adc, BatteryReading& battery);
 }

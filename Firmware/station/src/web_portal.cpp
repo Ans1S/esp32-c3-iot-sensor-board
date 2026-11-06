@@ -655,7 +655,7 @@ bool WebPortal::verifyCsrf() {
 
 void WebPortal::loop() {
   server_.handleClient();
-  if (restartAtMs_ != 0 && static_cast<int32_t>(millis() - restartAtMs_) >= 0) {
+  if (restartPending_ && restartDelay_.ready(millis())) {
     ESP.restart();
   }
 }
@@ -884,17 +884,30 @@ void WebPortal::sendRecording() {
   if (!session || !SensorRegistry::parseMac(server_.arg("mac"), mac) || !registry_->findConfig(mac, config)) {
     sendJsonResult(false, "Invalid recording"); return;
   }
-  std::unique_ptr<lil::recording::Record[]> records(new (std::nothrow) lil::recording::Record[128]);
+  uint32_t requestedCapacity = 128;
+  if (!readUnsignedArgument(server_, "limit", requestedCapacity, 1, 512, true)) {
+    sendJsonResult(false, "Invalid recording page size"); return;
+  }
+  size_t capacity = requestedCapacity;
+  auto* records = static_cast<lil::recording::Record*>(heap_caps_calloc(
+      capacity, sizeof(lil::recording::Record), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!records) {
+    capacity = min(capacity, size_t(128));
+    if (heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) >
+        capacity * sizeof(lil::recording::Record) + 96U * 1024U)
+      records = static_cast<lil::recording::Record*>(heap_caps_calloc(
+          capacity, sizeof(lil::recording::Record), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+  }
   if (!records) { sendJsonResult(false, "Recording buffer unavailable"); return; }
   uint32_t offset = 0, fromMs = UINT32_MAX;
   if (!readUnsignedArgument(server_, "offset", offset, 0, UINT32_MAX, true) ||
       !readUnsignedArgument(server_, "fromMs", fromMs, 0, UINT32_MAX, true)) {
-    sendJsonResult(false, "Invalid recording cursor"); return;
+    heap_caps_free(records); sendJsonResult(false, "Invalid recording cursor"); return;
   }
   RecordingInfo info{};
-  const size_t count = recordingArchive.read(mac, session, offset, records.get(), 128, info, fromMs);
-  if (!info.session) { sendJsonResult(false, "Recording not found"); return; }
-  if (info.readError) { sendJsonResult(false, "Stored recording failed CRC validation. Synchronize again before exporting."); return; }
+  const size_t count = recordingArchive.read(mac, session, offset, records, capacity, info, fromMs);
+  if (!info.session) { heap_caps_free(records); sendJsonResult(false, "Recording not found"); return; }
+  if (info.readError) { heap_caps_free(records); sendJsonResult(false, "Stored recording failed CRC validation. Synchronize again before exporting."); return; }
   JsonDocument metadata; recordingInfoJson(metadata.to<JsonObject>(), info);
   metadata["nextOffset"] = offset;
   String opening; serializeJson(metadata, opening); opening.remove(opening.length()-1);
@@ -908,6 +921,7 @@ void WebPortal::sendRecording() {
     appendRecordingJson(point, chunk);
     if (chunk.length() >= 4096) { server_.sendContent(chunk); chunk = ""; }
   }
+  heap_caps_free(records);
   chunk += "]}";
   server_.sendContent(chunk); server_.sendContent("");
 }
@@ -1112,20 +1126,22 @@ void WebPortal::sendJsonHistory() {
 }
 
 void WebPortal::sendPagedHistory(const uint8_t mac[6]) {
-  uint32_t after=0,until=0,oldest=0;
+  uint32_t after=0,until=0,oldest=0,requestedCapacity=128;
   if(!readUnsignedArgument(server_,"after",after,0,UINT32_MAX,true)||
      !readUnsignedArgument(server_,"until",until,0,UINT32_MAX,true)||
-     !readUnsignedArgument(server_,"oldest",oldest,0,UINT32_MAX,true)){
+     !readUnsignedArgument(server_,"oldest",oldest,0,UINT32_MAX,true)||
+     !readUnsignedArgument(server_,"limit",requestedCapacity,1,512,true)){
     sendJsonResult(false,"Invalid history page");return;
   }
   auto* history=registry_->normalHistory();const auto info=history->info(mac);
   if(!info.available){sendJsonResult(false,"History storage is unavailable; existing files were preserved.");return;}
   if(!until)until=info.newest;
   if(!oldest)oldest=info.oldest;
-  constexpr size_t capacity=128;
+  size_t capacity=requestedCapacity;
   auto* points=static_cast<NormalHistoryPoint*>(heap_caps_calloc(capacity,sizeof(NormalHistoryPoint),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
-  if(!points&&heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT)>capacity*sizeof(NormalHistoryPoint)+96U*1024U)
-    points=static_cast<NormalHistoryPoint*>(heap_caps_calloc(capacity,sizeof(NormalHistoryPoint),MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
+  if(!points){capacity=min(capacity,size_t(128));
+    if(heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT)>capacity*sizeof(NormalHistoryPoint)+96U*1024U)
+      points=static_cast<NormalHistoryPoint*>(heap_caps_calloc(capacity,sizeof(NormalHistoryPoint),MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));}
   if(!points){sendJsonResult(false,"History memory is temporarily unavailable");return;}
   bool stale=false,error=false;const size_t count=history->read(mac,after,until,oldest,points,capacity,stale,error);
   if(stale||error){heap_caps_free(points);sendJsonResult(false,stale?"History changed while loading. Retry the selected window.":"History page failed CRC validation.");return;}
@@ -2037,7 +2053,8 @@ void WebPortal::sendJsonResult(bool success, const String& message,
 }
 
 void WebPortal::scheduleRestart() {
-  restartAtMs_ = millis() + 2500;
+  restartDelay_.wait(millis(), 2500);
+  restartPending_ = true;
 }
 
 }  // namespace station

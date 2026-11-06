@@ -127,7 +127,9 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
     await page.getByText('History request timed out.',{exact:false}).waitFor({timeout:18000});
     assert.equal(await page.evaluate(()=>stationHistory[statusData.sensors[0].mac].length),386);
     historyMode='ok';releaseHistory();releaseHistory=null;
-    await page.getByRole('button',{name:'Retry',exact:true}).click();
+    // Status polling may already have recovered and removed the error before
+    // Playwright can click. If it remains, trigger its retry in the same turn.
+    await page.evaluate(()=>document.querySelector('.historyError button')?.click());
     await page.waitForFunction(()=>!historyLoadController&&!historyLoadErrors[statusData.sensors[0].mac]);
 
     // A station reboot with unchanged revisions replaces the browser cache.
