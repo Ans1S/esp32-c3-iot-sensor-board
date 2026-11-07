@@ -1,8 +1,10 @@
 # Firmware regression checks
 
-The [2026-10-07 reliability review](../RELIABILITY_REVIEW.md) documents the
-current fixes, energy behavior and remaining hardware acceptance. The runner
-now includes 30 production C++ suites.
+The current release is **4.4.4 / 40404**, protocol V5. The runner includes
+30 production C++ suites and there are ten embedded-page browser programs.
+See the [release evidence](../audit/2026-11-07-release/README.md) for checks
+repeated during release preparation and the [reliability review](../RELIABILITY_REVIEW.md)
+for earlier fixes and remaining hardware acceptance.
 
 Run from the repository root after resolving/building the sensor dependencies:
 
@@ -308,7 +310,7 @@ durable settings across failed/interleaved writes and invalidate stale cloud
 jobs by generation and current settings.
 
 Run `node Firmware/tests/test_ui_reliability.cjs` with the same Playwright
-configuration as the other five browser suites. It checks preserved setup
+configuration as the other browser programs. It checks preserved setup
 drafts/focus, serialized discovery, missing values, storage warnings, startup
 retry, duplicate saves and delayed responses after reopening forms. The
 recording suite additionally checks export progress/cancellation, complete
@@ -373,9 +375,9 @@ suite checks the independent dashboard NVS key and CRC fallback.
 a 4,400-point, multi-week fixture. It checks entire-card and entire-voltage-tile
 touch navigation, selected-node-only paging, retained raw points, bounded SVG
 geometry, long periods, station-backed order/visibility/columns, mobile width,
-reachable settings/firmware and absent startup notices. Together with the
-existing six browser suites and the interaction stress suite, there are eight
-embedded-page browser checks.
+reachable settings/firmware and absent startup notices. There are ten
+embedded-page browser programs in total, including the later readability and
+selected-window history-priority checks.
 
 The upload tests verify inherited erasure removal and the application-only
 target. These software tests never flash a board. Power-cut recovery under

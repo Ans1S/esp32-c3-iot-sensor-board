@@ -1,5 +1,9 @@
 # Main, radio and OTA audit evidence
 
+This directory is a historical pre-release 4.4.3 audit snapshot. Current
+4.4.4 package/build identities are recorded in the [release evidence](../2026-11-07-release/README.md).
+Do not overwrite these retained measurements when rerunning tools.
+
 Read [the report](../../FLOW_TRANSFER_REVIEW.md) for conclusions, costs and
 physical limits. Before means the preserved previous local MCU audit result,
 including its uncommitted changes. It is not clean HEAD. The local archive and

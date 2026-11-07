@@ -265,3 +265,8 @@ See [the complete change inventory](../CHANGELOG.md),
 [publication review](../PUBLICATION_REVIEW.md). Build diagnostics use relative
 paths; installation keys and device data must stay local. Software tests do not
 replace physical accuracy, rail-voltage and sleep-current acceptance.
+
+For the 4.4.4 processing, radio and OTA changes, see the
+[main/radio/OTA review](../FLOW_TRANSFER_REVIEW.md) and its earlier audit links.
+The [release evidence](../audit/2026-11-07-release/README.md) identifies the final
+builds separately from pre-release measurement snapshots.

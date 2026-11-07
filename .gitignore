@@ -136,6 +136,15 @@ tmp/
 *.tmp
 *.temp
 __pycache__/
+.pytest_cache/
+.mypy_cache/
+
+# Auxiliary compiler and browser-test reports
+*.su
+*.profraw
+*.profdata
+playwright-report/
+test-results/
 *.py[cod]
 
 # OS generated files

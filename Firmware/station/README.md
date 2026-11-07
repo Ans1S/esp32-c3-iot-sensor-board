@@ -255,3 +255,8 @@ sensor identities, partition table, bootloader and filesystem outside the write.
 The settings schema is unchanged; dashboard preferences use a separate key.
 For a bare/new board use the normal installation target to install the layout.
 Only the explicitly named factory-reset target erases all flash.
+
+For the 4.4.4 processing, radio and OTA changes, see the
+[main/radio/OTA review](../FLOW_TRANSFER_REVIEW.md) and its earlier audit links.
+The [release evidence](../audit/2026-11-07-release/README.md) identifies the final
+builds separately from pre-release measurement snapshots.
