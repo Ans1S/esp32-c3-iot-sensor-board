@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include <cassert>
 #include "lsm6dsox_driver.h"
+#include "protocol_counter.h"
 void testRadioTick() { ++testMillis; }
 int main() {
   sensor::Lsm6dsoxDriver driver;
@@ -62,5 +63,21 @@ int main() {
   for (unsigned i = 0; i < 513; ++i) Wire.sample(2, 0, 0, 8197);
   r = driver.read();
   assert(!r.valid && r.motion.fifoOverrun && Wire.fifo.empty());
+  assert(driver.begin(0x6A));
+  Wire.sample(2, 10000, 0, 0); Wire.sample(1, 10000, 0, 0);
+  assert(driver.poll()); Wire.readRequests = 0;
+#if FLOW_OPTIMIZED
+  r = driver.read(false);
+#else
+  r = driver.read();
+#endif
+  assert(r.valid && fabs(r.motion.accelerationG[0] - 1.22F) < .0001F && r.motion.angularRateDps[0] == 175);
+  assert(Wire.readRequests == (FLOW_OPTIMIZED ? 0 : 1));
+  printf("IMU checked snapshot: %u additional I2C read requests after poll\n", Wire.readRequests);
+#if FLOW_OPTIMIZED
+  Wire.sample(2, 10000, 0, 0); Wire.sample(1, 10000, 0, 0);
+  assert(driver.poll()); testMillis += 201; Wire.readRequests = 0;
+  assert(!driver.read(false).valid && Wire.readRequests == 0);
+#endif
   puts("LSM6DSOX identity, reset timeout, FIFO, signed scale, peaks, overflow and stale/error checks passed");
 }

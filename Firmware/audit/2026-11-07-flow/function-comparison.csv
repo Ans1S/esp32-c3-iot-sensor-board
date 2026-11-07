@@ -1,0 +1,58 @@
+phase,target,name,bytes,instructions,software_arithmetic_sites,division_remainder_sites,frame_bytes,elf_frame_bytes
+before,sensor_pcb_v3,sensor::EspNowTransport::begin(),208,70,0,0,,16
+before,sensor_pcb_v3,sensor::EnvironmentalSensor::read(),286,96,0,0,,224
+before,sensor_pcb_v3,"sensor::EspNowTransport::receiveCallback(esp_now_recv_info const*, unsigned char const*, int)",378,121,0,0,,320
+before,sensor_pcb_v3,"sensor::EspNowTransport::recordingExchange(sensor::SensorRuntimeConfig const&, void const*, unsigned int, unsigned long long, unsigned long, unsigned long, lil::recording::Ack&)",400,145,0,0,,96
+before,sensor_pcb_v3,"sensor::EspNowTransport::otaExchange(unsigned char const*, lil::protocol::Packet<lil::ota::Payload> const&, lil::protocol::Packet<lil::ota::Payload>&)",448,146,0,0,,288
+before,sensor_pcb_v3,sensor::Lsm6dsoxDriver::read(),560,175,4,2,,48
+before,sensor_pcb_v3,"(anonymous namespace)::makeTelemetryPacket(sensor::EnvironmentalReading const&, sensor::BatteryReading const&, lil::protocol::SensorOperatingMode) [clone .isra.0]",700,211,0,0,,48
+before,sensor_pcb_v3,"sensor::EspNowTransport::tryChannel(unsigned char, unsigned char const*, lil::protocol::Packet<lil::protocol::TelemetryPayload> const&, sensor::ExchangeResult&, signed char, unsigned char, bool)",952,320,0,2,,304
+before,sensor_pcb_v3,sensor::LiveAcquisition::loop(),1158,368,2,0,,512
+before,sensor_pcb_v3,"sensor::checkOta(sensor::EspNowTransport&, sensor::SensorRuntimeConfig const&, sensor::AdcReader&, sensor::BatteryReading&)",1910,613,0,0,,2304
+before,sensor_pcb_v3,sensor::PrecisionSensors::read(),2072,653,47,1,,1104
+before,sensor_pcb_v3,setup(),4192,1285,3,2,,1600
+after,sensor_pcb_v3,sensor::EspNowTransport::begin(),154,52,0,0,,16
+after,sensor_pcb_v3,sensor::EnvironmentalSensor::read(bool),286,96,0,0,,224
+after,sensor_pcb_v3,"sensor::EspNowTransport::receiveCallback(esp_now_recv_info const*, unsigned char const*, int)",376,119,0,0,,320
+after,sensor_pcb_v3,"sensor::EspNowTransport::recordingExchange(sensor::SensorRuntimeConfig const&, void const*, unsigned int, unsigned long long, unsigned long, unsigned long, lil::recording::Ack&)",420,150,0,0,,112
+after,sensor_pcb_v3,"sensor::EspNowTransport::otaExchange(unsigned char const*, lil::protocol::Packet<lil::ota::Payload> const&, lil::protocol::Packet<lil::ota::Payload>&)",510,162,0,0,,304
+after,sensor_pcb_v3,sensor::Lsm6dsoxDriver::read(bool),562,176,4,2,,48
+after,sensor_pcb_v3,"(anonymous namespace)::makeTelemetryPacket(sensor::EnvironmentalReading const&, sensor::BatteryReading const&, lil::protocol::SensorOperatingMode) [clone .isra.0]",710,213,0,0,,48
+after,sensor_pcb_v3,"sensor::EspNowTransport::tryChannel(unsigned char, unsigned char const*, lil::protocol::Packet<lil::protocol::TelemetryPayload> const&, sensor::ExchangeResult&, signed char, unsigned char, bool)",890,292,0,2,,336
+after,sensor_pcb_v3,sensor::LiveAcquisition::loop(),1160,369,2,0,,512
+after,sensor_pcb_v3,"sensor::checkOta(sensor::EspNowTransport&, sensor::SensorRuntimeConfig const&, sensor::AdcReader&, sensor::BatteryReading&)",1800,591,0,0,,1280
+after,sensor_pcb_v3,sensor::PrecisionSensors::read(bool),2074,654,47,1,,1104
+after,sensor_pcb_v3,setup(),4144,1271,3,2,,1600
+before,sensor_pcb_v4,sensor::EspNowTransport::begin(),208,70,0,0,16,16
+before,sensor_pcb_v4,sensor::EnvironmentalSensor::read(),286,96,0,0,224,224
+before,sensor_pcb_v4,"sensor::EspNowTransport::receiveCallback(esp_now_recv_info const*, unsigned char const*, int)",378,121,0,0,320,320
+before,sensor_pcb_v4,"sensor::EspNowTransport::recordingExchange(sensor::SensorRuntimeConfig const&, void const*, unsigned int, unsigned long long, unsigned long, unsigned long, lil::recording::Ack&)",400,145,0,0,96,96
+before,sensor_pcb_v4,"sensor::EspNowTransport::otaExchange(unsigned char const*, lil::protocol::Packet<lil::ota::Payload> const&, lil::protocol::Packet<lil::ota::Payload>&)",448,146,0,0,288,288
+before,sensor_pcb_v4,sensor::Lsm6dsoxDriver::read(),560,175,4,2,48,48
+before,sensor_pcb_v4,"(anonymous namespace)::makeTelemetryPacket(sensor::EnvironmentalReading const&, sensor::BatteryReading const&, lil::protocol::SensorOperatingMode) [clone .isra.0]",696,210,0,0,48,48
+before,sensor_pcb_v4,"sensor::EspNowTransport::tryChannel(unsigned char, unsigned char const*, lil::protocol::Packet<lil::protocol::TelemetryPayload> const&, sensor::ExchangeResult&, signed char, unsigned char, bool)",952,320,0,2,304,304
+before,sensor_pcb_v4,sensor::LiveAcquisition::loop(),1158,368,2,0,512,512
+before,sensor_pcb_v4,"sensor::checkOta(sensor::EspNowTransport&, sensor::SensorRuntimeConfig const&, sensor::AdcReader&, sensor::BatteryReading&)",1934,621,0,0,2304,2304
+before,sensor_pcb_v4,sensor::PrecisionSensors::read(),2072,653,47,1,1104,1104
+before,sensor_pcb_v4,setup(),4480,1372,3,2,1600,1600
+after,sensor_pcb_v4,sensor::EspNowTransport::begin(),154,52,0,0,16,16
+after,sensor_pcb_v4,sensor::EnvironmentalSensor::read(bool),286,96,0,0,224,224
+after,sensor_pcb_v4,"sensor::EspNowTransport::receiveCallback(esp_now_recv_info const*, unsigned char const*, int)",376,119,0,0,320,320
+after,sensor_pcb_v4,"sensor::EspNowTransport::recordingExchange(sensor::SensorRuntimeConfig const&, void const*, unsigned int, unsigned long long, unsigned long, unsigned long, lil::recording::Ack&)",420,150,0,0,112,112
+after,sensor_pcb_v4,"sensor::EspNowTransport::otaExchange(unsigned char const*, lil::protocol::Packet<lil::ota::Payload> const&, lil::protocol::Packet<lil::ota::Payload>&)",510,162,0,0,304,304
+after,sensor_pcb_v4,sensor::Lsm6dsoxDriver::read(bool),562,176,4,2,48,48
+after,sensor_pcb_v4,"(anonymous namespace)::makeTelemetryPacket(sensor::EnvironmentalReading const&, sensor::BatteryReading const&, lil::protocol::SensorOperatingMode) [clone .isra.0]",714,214,0,0,48,48
+after,sensor_pcb_v4,"sensor::EspNowTransport::tryChannel(unsigned char, unsigned char const*, lil::protocol::Packet<lil::protocol::TelemetryPayload> const&, sensor::ExchangeResult&, signed char, unsigned char, bool)",890,292,0,2,336,336
+after,sensor_pcb_v4,sensor::LiveAcquisition::loop(),1160,369,2,0,512,512
+after,sensor_pcb_v4,"sensor::checkOta(sensor::EspNowTransport&, sensor::SensorRuntimeConfig const&, sensor::AdcReader&, sensor::BatteryReading&)",1824,599,0,0,1280,1280
+after,sensor_pcb_v4,sensor::PrecisionSensors::read(bool),2074,654,47,1,1104,1104
+after,sensor_pcb_v4,setup(),4412,1355,3,2,1600,1600
+before,station_s3,setup(),687,249,0,1,1072,1072
+before,station_s3,"station::OtaService::respond(unsigned char const*, lil::protocol::Packet<lil::ota::Payload> const&, lil::protocol::Packet<lil::ota::Payload>&)",1086,389,0,0,144,144
+before,station_s3,station::OtaService::finishUpload(String&),1234,444,0,0,1232,1232
+before,station_s3,"station::SensorRegistry::registerTelemetry(unsigned char const*, unsigned long, lil::protocol::TelemetryPayload const&, signed char, station::SensorConfig&, signed char&, bool&, unsigned long&)",1532,572,0,1,464,464
+after,station_s3,"station::OtaService::readImage(unsigned long, unsigned char*, unsigned int)",161,59,0,0,32,32
+after,station_s3,setup(),687,249,0,1,1072,1072
+after,station_s3,"station::OtaService::respond(unsigned char const*, lil::protocol::Packet<lil::ota::Payload> const&, lil::protocol::Packet<lil::ota::Payload>&)",1114,397,0,0,144,144
+after,station_s3,station::OtaService::finishUpload(String&),1238,445,0,0,1232,1232
+after,station_s3,"station::SensorRegistry::registerTelemetry(unsigned char const*, unsigned long, lil::protocol::TelemetryPayload const&, signed char, station::SensorConfig&, signed char&, bool&, unsigned long&)",1496,565,0,1,288,288

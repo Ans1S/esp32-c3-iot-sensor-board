@@ -2,6 +2,7 @@
 #include <cassert>
 #include <string>
 #include <vector>
+#include <new>
 
 void testRadioTick() { ++testMillis; }
 int main() {
@@ -33,7 +34,15 @@ int main() {
           payload.live.optical[1] = {123457, 234568, 0};
         }
         const auto record = recording::encode(info.session, i*1000, payload);
-        JsonDocument point; station::recordingPointJson(point, record);
+        JsonDocument point;
+        // A packed record is valid at any byte address. Exercise all scalar
+        // alignments against the actual ArduinoJson reference-taking API.
+        alignas(4) unsigned char storage[sizeof(record) + 3];
+        for (size_t offset = 0; offset < 4; ++offset) {
+          const auto* packed = new (storage + offset) recording::Record(record);
+          station::recordingPointJson(point, *packed);
+          assert(point["sampleMs"].as<unsigned>() == i * 1000);
+        }
         if (i) chunk += ',';
         station::appendRecordingJson(point, chunk);
         if (chunk.size() >= 4096) { response += chunk; chunk.clear(); ++flushes; }

@@ -105,7 +105,12 @@ class EspNowTransport {
     const auto response = configurationReplies.front(); configurationReplies.pop_front(); return response;
   }
   ExchangeResult exchangeLpChannel(const lil::protocol::TelemetryPacket& p, const SensorRuntimeConfig&, uint8_t, bool = false) {
-    ++lowPowerExchanges; sentPackets.push_back(p);
+    ++lowPowerExchanges;
+    // The real radio finalizes its wire copy after the caller has set all
+    // payload fields. Wire-size/retry details are tested with real transport.
+    auto wire = p;
+    lil::protocol::finalize(wire, lil::protocol::MessageType::kTelemetry, p.header.sequence);
+    sentPackets.push_back(wire);
     ExchangeResult r; r.configReceived = stationReplies;
     // Even a factory-reset command must not shorten the protection sleep.
     r.config.flags = lil::protocol::kFactoryReset; return r;

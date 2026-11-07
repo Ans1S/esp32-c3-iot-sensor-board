@@ -23,6 +23,8 @@ struct ExchangeResult {
 class EspNowTransport {
  public:
   bool begin();
+  // Callers provide payload and header.sequence. Each actual send constructs
+  // its final compatible wire header/CRC after refreshing relative ages.
   ExchangeResult exchange(const lil::protocol::TelemetryPacket& packet,
                           const SensorRuntimeConfig& config,
                           bool trialBoot = false);
@@ -58,9 +60,10 @@ class EspNowTransport {
                        TickType_t waitTicks);
   QueueHandle_t responses_ = nullptr;
   struct OtaEvent { uint8_t mac[6]; lil::ota::Packet packet; };
-  QueueHandle_t otaResponses_ = nullptr;
+  // Publish lazy queues only after initialization; Wi-Fi callbacks acquire them.
+  std::atomic<QueueHandle_t> otaResponses_{nullptr};
   struct RecordingEvent { uint8_t mac[6]; lil::recording::AckPacket packet; };
-  QueueHandle_t recordingResponses_ = nullptr;
+  std::atomic<QueueHandle_t> recordingResponses_{nullptr};
   // Release/acquire publishes completion without racing the Wi-Fi task.
   std::atomic<uint8_t> sendState_{0};  // idle, pending, success, failure
   uint32_t expectedSequence_ = 0;

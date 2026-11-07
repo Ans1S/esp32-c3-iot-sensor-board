@@ -319,8 +319,9 @@ lil::protocol::TelemetryPacket makeTelemetryPacket(
       environment.sensorType != runtimeConfig.environmentalSensorType) {
     packet.payload.flags |= lil::protocol::kSensorTypeMismatch;
   }
-  lil::protocol::finalize(packet, lil::protocol::MessageType::kTelemetry,
-                          rtcState.sequence);
+  // Payload preparation is separate from wire serialization. The transport
+  // chooses the compatible length, refreshes ages and finalizes each send.
+  packet.header.sequence = rtcState.sequence;
   return packet;
 }
 
@@ -345,8 +346,6 @@ bool batteryProtectionRequired(const sensor::BatteryReading& battery) {
   auto packet = makeTelemetryPacket(suppressed, battery,
       lil::protocol::SensorOperatingMode::kBatteryProtection);
   packet.payload.flags |= lil::protocol::kBatteryProtectionActive;
-  lil::protocol::finalize(packet, lil::protocol::MessageType::kTelemetry,
-                         rtcState.sequence);
   if (operatingMode(runtimeConfig) == OperatingMode::kEnergySaving &&
       espNowTransport.begin()) {
     // One bounded reporting window on the saved channel, even if the station
@@ -477,7 +476,7 @@ void runLiveMode(sensor::BatteryReading battery) {
           lil::protocol::SensorOperatingMode::kEnergySaving;
       updatePacketBattery(outgoing, battery);
       outgoing.payload.appliedConfigRevision = runtimeConfig.revision;
-      lil::protocol::finalize(outgoing, lil::protocol::MessageType::kTelemetry, ++rtcState.sequence);
+      outgoing.header.sequence = ++rtcState.sequence;
       haveLatest = false; lastTelemetry = now;
       sensor::ExchangeResult exchange{};
       if (radioReady) exchange = espNowTransport.exchange(outgoing, runtimeConfig, sensor::otaBootPending());
@@ -682,11 +681,6 @@ void setup() {
   const bool bme680Active =
       environment.sensorType ==
       lil::protocol::EnvironmentalSensorType::kBme680;
-  auto packet = makeTelemetryPacket(
-      environment, battery,
-      discoveryMode ? lil::protocol::SensorOperatingMode::kDiscovery
-                    : lil::protocol::SensorOperatingMode::kEnergySaving);
-
   sensor::ExchangeResult exchange{};
   // BME680 still wakes internally every five minutes to maintain BSEC/IAQ,
   // but once provisioned it must transmit strictly at the configured report
@@ -695,6 +689,10 @@ void setup() {
     sensor::lowPowerSensorWaitUs((esp_random() % 121U) * 1000U);
   }
   if (reportDue && espNowTransport.begin()) {
+    auto packet = makeTelemetryPacket(
+        environment, battery,
+        discoveryMode ? lil::protocol::SensorOperatingMode::kDiscovery
+                      : lil::protocol::SensorOperatingMode::kEnergySaving);
     exchange = espNowTransport.exchange(packet, runtimeConfig, sensor::otaBootPending());
     // A successful unicast MAC acknowledgement proves that the station was on
     // the configured channel. If only the application response was lost, a
@@ -703,9 +701,6 @@ void setup() {
       auto recoveryPacket = packet;
       recoveryPacket.payload.operatingMode =
           lil::protocol::SensorOperatingMode::kChannelRecovery;
-      lil::protocol::finalize(
-          recoveryPacket, lil::protocol::MessageType::kTelemetry,
-          rtcState.sequence);
       const uint8_t recoveryChannelCount =
           rtcState.fullChannelRecoveryPending
               ? 12

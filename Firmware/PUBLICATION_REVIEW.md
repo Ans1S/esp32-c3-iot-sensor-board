@@ -1,5 +1,19 @@
 # Publication and privacy review — 2026-10-25
 
+## Firmware 4.4.4 preparation - 2026-11-07
+
+Prepared from verified main `1c6a4ba` after merged PR #36. All maintained local
+audit work, English documentation and new versioned packages are included.
+Previous packages remain byte-identical. The existing signing identity matches
+the trusted public header and prior sensor packages; new payloads match final
+builds. ZIP members, slot bounds and all manifests are verified.
+
+Worktree, staged blobs and final commit are scanned before push, including
+firmware and archive contents. Keys, device data, agent files, dependency/build
+caches and raw diagnostic logs remain ignored. The audit evidence uses relative
+paths. Existing historical findings below remain separate; no history rewrite
+or credential rotation is performed. No board is flashed or physically measured.
+
 ## Firmware 4.4.1 publication
 
 The publication baseline is `c9bf109`, the merge of

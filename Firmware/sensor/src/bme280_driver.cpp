@@ -124,23 +124,27 @@ EnvironmentalReading Bme280Driver::read() {
 
   // Bosch double-precision compensation, datasheet appendix 8.1. A single
   // burst supplies all channels and the same t_fine compensates P and H.
-  double v1 = (adcT / 16384.0 - t1_ / 1024.0) * t2_;
-  double v2 = adcT / 131072.0 - t1_ / 8192.0;
+  // These input subtractions and trim scales are exact signed integers.
+  // Perform them before conversion to avoid C3 software-double operations;
+  // retain Bosch's double arithmetic and rounding for the compensation itself.
+  const int32_t temperatureDelta = int32_t(adcT) - int32_t(t1_) * 16;
+  double v1 = double(temperatureDelta) * t2_ / 16384.0;
+  double v2 = double(temperatureDelta) / 131072.0;
   v2 = v2 * v2 * t3_;
   const double fine = v1 + v2;
   reading.temperatureC = fine / 5120.0;
   v1 = fine / 2.0 - 64000.0;
   v2 = v1 * v1 * p_[4] / 32768.0 + v1 * p_[3] * 2.0;
-  v2 = v2 / 4.0 + p_[2] * 65536.0;
+  v2 = v2 / 4.0 + double(int32_t(p_[2]) * 65536);
   v1 = (p_[1] * v1 * v1 / 524288.0 + p_[0] * v1) / 524288.0;
   v1 = (1.0 + v1 / 32768.0) * p1_;
   if (v1 == 0) return reading;
-  double pressure = (1048576.0 - adcP - v2 / 4096.0) * 6250.0 / v1;
+  double pressure = (double(1048576U - adcP) - v2 / 4096.0) * 6250.0 / v1;
   v1 = p_[7] * pressure * pressure / 2147483648.0;
   v2 = pressure * p_[6] / 32768.0;
   reading.pressureHpa = (pressure + (v1 + v2 + p_[5]) / 16.0) / 100.0;
   double h = fine - 76800.0;
-  h = (adcH - (h4_ * 64.0 + h5_ * h / 16384.0)) *
+  h = (adcH - (double(int32_t(h4_) * 64) + h5_ * h / 16384.0)) *
       (h2_ / 65536.0 * (1.0 + h6_ * h / 67108864.0 * (1.0 + h3_ * h / 67108864.0)));
   h *= 1.0 - h1_ * h / 524288.0;
   if (!isfinite(h)) return reading;

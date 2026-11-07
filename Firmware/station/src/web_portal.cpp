@@ -775,22 +775,23 @@ void WebPortal::sendJsonStatus() {
     item["timingKnown"] = (timing.flags & lil::protocol::kLiveTimingKnown) != 0;
     item["acquisitionAgeMs"] = timing.acquisitionAgeMs == UINT16_MAX ? -1 : int64_t(timing.acquisitionAgeMs) + ageMs;
     item["estimateAgeMs"] = timing.estimateAgeMs == UINT16_MAX ? -1 : int64_t(timing.estimateAgeMs) + ageMs;
-    item["measurementWindowMs"] = timing.windowMs;
-    item["warmupMs"] = timing.warmupMs;
-    item["processingMs"] = timing.processingMs;
+    // Materialize packed wire fields before ArduinoJson binds its argument.
+    item["measurementWindowMs"] = uint16_t(timing.windowMs);
+    item["warmupMs"] = uint16_t(timing.warmupMs);
+    item["processingMs"] = uint16_t(timing.processingMs);
     item["receivedIntervalMs"] = view.runtime.receivedIntervalMs;
     if (view.runtime.hasRecordingStatus && !batteryProtection) {
       const auto& recording = view.runtime.recording;
       auto r = item["recording"].to<JsonObject>();
       r["state"] = static_cast<uint8_t>(recording.state);
-      r["pending"] = recording.pending; r["capacity"] = recording.capacity;
-      r["elapsedMs"] = recording.elapsedMs; r["dropped"] = recording.dropped;
+      r["pending"] = uint32_t(recording.pending); r["capacity"] = uint32_t(recording.capacity);
+      r["elapsedMs"] = uint32_t(recording.elapsedMs); r["dropped"] = uint32_t(recording.dropped);
       char session[17]; snprintf(session, sizeof(session), "%016llx", static_cast<unsigned long long>(recording.session));
       r["session"] = session;
     }
     const auto& pulse = view.runtime.telemetry.pulse;
     item["heartRate"] = (view.runtime.telemetry.capabilities & lil::protocol::kHeartRate) ? pulse.beatsPerMinute : 0;
-    item["red"] = pulse.red; item["infrared"] = pulse.infrared;
+    item["red"] = uint32_t(pulse.red); item["infrared"] = uint32_t(pulse.infrared);
     item["pulseQuality"] = pulse.quality; item["pulseStatus"] = pulse.status;
     item["live"] = !batteryProtection && lil::protocol::isLiveSensor(view.runtime.telemetry.sensorType);
     item["batteryProtection"] = batteryProtection;
@@ -806,39 +807,39 @@ void WebPortal::sendJsonStatus() {
     const char* accelerationKeys[] = {"ax", "ay", "az"};
     const char* angularKeys[] = {"gx", "gy", "gz"};
     for (size_t axis = 0; axis < 3; ++axis) {
-      item[accelerationKeys[axis]] = motion.accelerationG[axis];
-      item[angularKeys[axis]] = motion.angularRateDps[axis];
+      item[accelerationKeys[axis]] = float(motion.accelerationG[axis]);
+      item[angularKeys[axis]] = float(motion.angularRateDps[axis]);
       reference[accelerationKeys[axis]] = view.motionReference.accelerationG[axis];
       reference[angularKeys[axis]] = view.motionReference.angularRateDps[axis];
     }
-    item["peakAcceleration"] = motion.peakAccelerationG;
-    item["peakAngularRate"] = motion.peakAngularRateDps;
-    item["motionSamples"] = motion.sampleCount;
+    item["peakAcceleration"] = float(motion.peakAccelerationG);
+    item["peakAngularRate"] = float(motion.peakAngularRateDps);
+    item["motionSamples"] = uint16_t(motion.sampleCount);
     item["motionOverrun"] = motion.fifoOverrun != 0;
-    item["temperature"] = view.runtime.telemetry.temperatureC;
-    item["humidity"] = view.runtime.telemetry.humidityPercent;
-    item["pressure"] = view.runtime.telemetry.pressureHpa;
-    item["iaq"] = view.runtime.telemetry.iaq;
+    item["temperature"] = float(view.runtime.telemetry.temperatureC);
+    item["humidity"] = float(view.runtime.telemetry.humidityPercent);
+    item["pressure"] = float(view.runtime.telemetry.pressureHpa);
+    item["iaq"] = float(view.runtime.telemetry.iaq);
     item["iaqAccuracy"] = view.runtime.telemetry.iaqAccuracy;
     item["iaqCalibrationPhase"] = static_cast<uint8_t>(
         view.runtime.telemetry.iaqCalibrationPhase);
     item["iaqCalibrationElapsedMinutes"] =
-        view.runtime.telemetry.iaqCalibrationElapsedMinutes;
+        uint16_t(view.runtime.telemetry.iaqCalibrationElapsedMinutes);
     item["iaqCalibrationRemainingMinutes"] =
-        view.runtime.telemetry.iaqCalibrationRemainingMinutes;
+        uint16_t(view.runtime.telemetry.iaqCalibrationRemainingMinutes);
     item["bme680QuickStartComplete"] =
         view.config.bme680QuickStartComplete;
     item["gasResistanceOhms"] =
-        view.runtime.telemetry.gasResistanceOhms;
-    item["capabilities"] = view.runtime.telemetry.capabilities;
-    item["telemetryFlags"] = view.runtime.telemetry.flags;
-    item["batteryMv"] = view.runtime.telemetry.batteryMillivolts;
+        float(view.runtime.telemetry.gasResistanceOhms);
+    item["capabilities"] = uint16_t(view.runtime.telemetry.capabilities);
+    item["telemetryFlags"] = uint16_t(view.runtime.telemetry.flags);
+    item["batteryMv"] = uint16_t(view.runtime.telemetry.batteryMillivolts);
     item["pcbVersion"] = view.runtime.telemetry.pcbVersion;
     item["operatingMode"] = static_cast<uint8_t>(
         (view.runtime.hasTelemetry || view.runtime.hasPersistedTelemetry)
             ? view.runtime.telemetry.operatingMode
             : lil::protocol::SensorOperatingMode::kUnknown);
-    item["appliedRevision"] = view.runtime.telemetry.appliedConfigRevision;
+    item["appliedRevision"] = uint32_t(view.runtime.telemetry.appliedConfigRevision);
     item["historyRevision"] = registry_->historyRevision(view.config.mac);
     if (view.config.provisioned) {
       ++provisionedCount;
@@ -990,7 +991,7 @@ void WebPortal::sendJsonHistory() {
       doc["ageMs"] = uint32_t(now - sample.receivedMs);
       const bool timed = t.live.flags & lil::protocol::kLiveTimingKnown;
       doc["measurementAgeMs"] = uint32_t(now - sample.receivedMs) + (timed && t.live.acquisitionAgeMs != UINT16_MAX ? t.live.acquisitionAgeMs : 0);
-      doc["windowMs"] = t.live.windowMs;
+      doc["windowMs"] = uint16_t(t.live.windowMs);
       doc["estimateAgeMs"] = uint32_t(now - sample.receivedMs) + (timed && t.live.estimateAgeMs != UINT16_MAX ? t.live.estimateAgeMs : 0);
       doc["gap"] = t.motion.fifoOverrun || (t.live.flags & lil::protocol::kLiveGap);
       if (timed && t.live.count <= lil::protocol::kOpticalBatchSize) {
@@ -998,26 +999,26 @@ void WebPortal::sendJsonHistory() {
         for (uint8_t j = 0; j < t.live.count; ++j) {
           JsonObject frame = wave.add<JsonObject>();
           frame["ageMs"] = uint32_t(now - sample.receivedMs) + t.live.optical[j].ageMs;
-          frame["red"] = t.live.optical[j].red; frame["infrared"] = t.live.optical[j].infrared;
+          frame["red"] = uint32_t(t.live.optical[j].red); frame["infrared"] = uint32_t(t.live.optical[j].infrared);
         }
       }
       if (!(t.flags & lil::protocol::kSensorReadFailed)) {
-        if ((t.capabilities & lil::protocol::kTemperature) && (!timed || (t.live.flags & lil::protocol::kLiveSampleFresh))) doc["temperature"] = t.temperatureC;
+        if ((t.capabilities & lil::protocol::kTemperature) && (!timed || (t.live.flags & lil::protocol::kLiveSampleFresh))) doc["temperature"] = float(t.temperatureC);
         if ((t.capabilities & lil::protocol::kMotion) && !t.motion.fifoOverrun) {
           const char* keys[] = {"ax", "ay", "az", "gx", "gy", "gz"};
-          for (int axis = 0; axis < 6; ++axis) doc[keys[axis]] = axis < 3 ? t.motion.accelerationG[axis] : t.motion.angularRateDps[axis-3];
-          doc["peakAcceleration"] = t.motion.peakAccelerationG;
-          doc["peakAngularRate"] = t.motion.peakAngularRateDps;
+          for (int axis = 0; axis < 6; ++axis) doc[keys[axis]] = float(axis < 3 ? t.motion.accelerationG[axis] : t.motion.angularRateDps[axis-3]);
+          doc["peakAcceleration"] = float(t.motion.peakAccelerationG);
+          doc["peakAngularRate"] = float(t.motion.peakAngularRateDps);
         }
-        if (t.capabilities & lil::protocol::kOptical) { doc["red"] = t.pulse.red; doc["infrared"] = t.pulse.infrared; }
-        if ((t.capabilities & lil::protocol::kHeartRate) && (!timed || (t.live.flags & lil::protocol::kLiveEstimateFresh))) doc["heartRate"] = t.pulse.beatsPerMinute;
+        if (t.capabilities & lil::protocol::kOptical) { doc["red"] = uint32_t(t.pulse.red); doc["infrared"] = uint32_t(t.pulse.infrared); }
+        if ((t.capabilities & lil::protocol::kHeartRate) && (!timed || (t.live.flags & lil::protocol::kLiveEstimateFresh))) doc["heartRate"] = float(t.pulse.beatsPerMinute);
       }
       doc["motionOverrun"] = t.motion.fifoOverrun;
       doc["pulseStatus"] = t.pulse.status;
       doc["quality"] = t.pulse.quality;
       if (t.live.flags & lil::protocol::kMotionFeedbackPresent) {
-        doc["steps"] = t.motionFeedback.steps;
-        doc["activeSeconds"] = t.motionFeedback.activeSeconds;
+        doc["steps"] = uint16_t(t.motionFeedback.steps);
+        doc["activeSeconds"] = uint16_t(t.motionFeedback.activeSeconds);
       }
       if (t.capabilities & lil::protocol::kBattery) doc["battery"] = t.batteryMillivolts / 1000.0F;
       String point; serializeJson(doc, point);
@@ -1157,15 +1158,15 @@ void WebPortal::sendPagedHistory(const uint8_t mac[6]) {
     row["t"]=uint64_t(p.timestamp)*1000;row["sensorType"]=static_cast<uint8_t>(t.sensorType);
     if(t.pcbVersion)row["pcbVersion"]=t.pcbVersion;
     row["iaqAccuracy"]=t.iaqAccuracy;row["gap"]=bool(t.live.flags&lil::protocol::kLiveGap)||t.motion.fifoOverrun;
-    if(t.capabilities&lil::protocol::kTemperature)row["temperature"]=t.temperatureC;
-    if(t.capabilities&lil::protocol::kHumidity)row["humidity"]=t.humidityPercent;
-    if(t.capabilities&lil::protocol::kPressure)row["pressure"]=t.pressureHpa;
-    if((t.capabilities&lil::protocol::kIaq)&&t.iaqAccuracy)row["iaq"]=t.iaq;
+    if(t.capabilities&lil::protocol::kTemperature)row["temperature"]=float(t.temperatureC);
+    if(t.capabilities&lil::protocol::kHumidity)row["humidity"]=float(t.humidityPercent);
+    if(t.capabilities&lil::protocol::kPressure)row["pressure"]=float(t.pressureHpa);
+    if((t.capabilities&lil::protocol::kIaq)&&t.iaqAccuracy)row["iaq"]=float(t.iaq);
     if(t.capabilities&lil::protocol::kGasResistance)row["gas"]=t.gasResistanceOhms/1000.0F;
     if(t.capabilities&lil::protocol::kBattery)row["battery"]=t.batteryMillivolts/1000.0F;
     if(t.capabilities&lil::protocol::kMotion){const char* keys[]={"ax","ay","az","gx","gy","gz"};
-      for(size_t axis=0;axis<6;++axis)row[keys[axis]]=axis<3?t.motion.accelerationG[axis]:t.motion.angularRateDps[axis-3];
-      row["peakAcceleration"]=t.motion.peakAccelerationG;row["peakAngularRate"]=t.motion.peakAngularRateDps;}
+      for(size_t axis=0;axis<6;++axis)row[keys[axis]]=float(axis<3?t.motion.accelerationG[axis]:t.motion.angularRateDps[axis-3]);
+      row["peakAcceleration"]=float(t.motion.peakAccelerationG);row["peakAngularRate"]=float(t.motion.peakAngularRateDps);}
     String json;serializeJson(row,json);if(i)chunk+=',';chunk+=json;
     if(chunk.length()>=3072){server_.sendContent(chunk);chunk="";}
   }

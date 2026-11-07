@@ -10,6 +10,8 @@ class EnvironmentalSensor {
   std::vector<uint32_t> starts;
   uint32_t conversionStarted = 0, consumed = 0;
   int resets = 0, ends = 0;
+  unsigned polls = 0, reads = 0;
+  std::vector<uint32_t> pollTimes;
   bool powered = false;
   bool beginFails = false, readingFails = false;
   lil::protocol::EnvironmentalSensorType type{};
@@ -21,12 +23,14 @@ class EnvironmentalSensor {
   }
   void end() { powered = false; ++ends; }
   void resetMotionFeedback() { ++resets; }
-  bool pollLive() { assert(powered); return true; }
+  bool pollLive() { assert(powered); ++polls; pollTimes.push_back(millis()); return true; }
   bool freshTemperature() const {
     return powered && millis() - conversionStarted >= 124 + consumed * 1000;
   }
-  EnvironmentalReading read() {
+  EnvironmentalReading read(bool pollFirst = true) {
     assert(powered);
+    if (pollFirst) pollLive();
+    ++reads; // Both real precision read paths support a checked snapshot.
     EnvironmentalReading reading{}; reading.sensorType = type;
     reading.live.flags = lil::protocol::kLiveTimingKnown | lil::protocol::kLiveSampleFresh |
         lil::protocol::kMotionFeedbackPresent;

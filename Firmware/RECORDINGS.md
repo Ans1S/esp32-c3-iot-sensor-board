@@ -1,6 +1,6 @@
 # Manual recordings, synchronization and USB migration
 
-Firmware **4.4.3**, internal release **40403**.
+Firmware **4.4.4**, internal release **40404**.
 
 ## Button operation on PCB V3 and V4
 

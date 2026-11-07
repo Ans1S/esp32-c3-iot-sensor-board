@@ -1,0 +1,36 @@
+W-Charger 4.4.4 / 40404 - 2026-11-07
+
+Full station and PCB V3/V4 update, protocol V5.
+
+CHANGES
+
+- Exact sliding optical means and BME280 compensation preterms reduce repeated
+  work; gyro peak square roots occur at readout. FIFO reads use bounded complete
+  bursts. Preserve sample values, validity and acquisition/recording cadence.
+- Prepare telemetry only when needed. Finalize CRC once per actual send and
+  copy only the compatible wire prefix. Allocate optional response queues on
+  demand with atomic publication. Reuse checked acquisition snapshots.
+- Reuse the sensor OTA sector buffer for resume hashing. Cache eight station
+  OTA blocks with direct-read fallback. Wire packet sizes, full image/signature
+  checks, durable checkpoints, battery guards and rollback remain unchanged.
+- Remove a station registration payload temporary, bulk-copy live rings and
+  verify history flushes sequentially while retaining durable readback/CRC checks.
+- Bound legacy gas conversion and materialize packed JSON scalars safely.
+
+PRESERVED OPERATION AND INSTALLATION
+
+Existing installation signing identity, partitions, settings/history, BME280
+forced/off operation, five-minute BSEC maintenance, normal rail-off windows,
+SW2-only optical recording and V4 2800/2950 mV protection remain unchanged.
+Read INSTALL-4.4.4.txt. Station USB application: 0x10000, no full erasure.
+Select the matching PCB sensor OTA; same-version packages are rejected.
+
+VALIDATION AND LIMITS
+
+All three final targets build. Thirty host C++ suites pass with sanitizers;
+browser, cryptographic package, upload, library-patch and publication checks
+pass. The three audit reports retain before/after numerical, operation-count
+and native assembly evidence with code/stack/heap tradeoffs.
+API count reductions are not measured MCU timing, OTA throughput or energy.
+No board was flashed or physically measured. RF, current, real FIFO arrival,
+power-cut recovery and task watermarks require hardware acceptance.

@@ -6,7 +6,11 @@
 void testRadioTick();
 struct TestQueue { size_t capacity, itemSize; std::deque<std::vector<uint8_t>> data; };
 using QueueHandle_t = TestQueue*;
+inline size_t testQueueCreates = 0, testQueueCreateFailAt = 0;
+inline size_t testQueueDataBytes = 0;
 inline QueueHandle_t xQueueCreate(size_t capacity, size_t itemSize) {
+  if (++testQueueCreates == testQueueCreateFailAt) return nullptr;
+  testQueueDataBytes += capacity * itemSize;
   return new TestQueue{capacity, itemSize, {}};
 }
 inline bool xQueueSend(QueueHandle_t queue, const void* item, TickType_t) {

@@ -5,6 +5,7 @@
 #include <cassert>
 #include <functional>
 #include <vector>
+#include "protocol_counter.h"
 
 struct Finished {};
 sensor::LiveAcquisition* current = nullptr;
@@ -25,6 +26,20 @@ void run(sensor::LiveAcquisition& acquisition, uint32_t until) {
 }
 int main() {
   using Type = lil::protocol::EnvironmentalSensorType;
+  {
+    testMillis = 100; testButtonLow = false; captures.clear(); steer = {};
+    sensor::EnvironmentalSensor sensor; sensor::PowerController power;
+    sensor::LiveAcquisition acquisition;
+    assert(acquisition.begin(sensor, power, Type::kLsm6dsox, 0)); acquisition.start();
+    run(acquisition, 1200);
+    size_t duplicatePolls = 0;
+    for (size_t i = 1; i < sensor.pollTimes.size(); ++i)
+      if (sensor.pollTimes[i] == sensor.pollTimes[i-1]) ++duplicatePolls;
+    assert(sensor.reads == captures.size() && sensor.reads > 10);
+    assert(duplicatePolls == (FLOW_OPTIMIZED ? 0 : sensor.reads));
+    printf("Acquisition flow: %u driver polls, %u captures, %zu duplicate same-tick polls\n",
+           sensor.polls, sensor.reads, duplicatePolls);
+  }
   assert(lil::timing::normalPrecisionIntervalMs(0) == 1000);
   assert(lil::timing::normalPrecisionIntervalMs(100000) == 86400000);
   lil::timing::PrecisionCadence wrap;

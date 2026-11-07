@@ -1,0 +1,193 @@
+{
+  "phase": "after",
+  "target": "station_s3",
+  "elf_sha256": "355fae4d3aa4457d5e70560616f5a036193b0ed5b8579570a6a9ab0562c8dd96",
+  "project_symbols": 291,
+  "sections": [
+    {
+      "name": ".rtc.text",
+      "size": 0,
+      "address": 1611653120
+    },
+    {
+      "name": ".rtc.force_fast",
+      "size": 0,
+      "address": 1611653120
+    },
+    {
+      "name": ".rtc_noinit",
+      "size": 0,
+      "address": 1342177792
+    },
+    {
+      "name": ".rtc.force_slow",
+      "size": 32,
+      "address": 1342177792
+    },
+    {
+      "name": ".rtc_reserved",
+      "size": 40,
+      "address": 1611661272
+    },
+    {
+      "name": ".iram0.vectors",
+      "size": 1028,
+      "address": 1077362688
+    },
+    {
+      "name": ".iram0.text",
+      "size": 75779,
+      "address": 1077363716
+    },
+    {
+      "name": ".dram0.dummy",
+      "size": 60672,
+      "address": 1070104576
+    },
+    {
+      "name": ".dram0.data",
+      "size": 77643,
+      "address": 1070165248
+    },
+    {
+      "name": ".noinit",
+      "size": 1,
+      "address": 1070242891
+    },
+    {
+      "name": ".dram0.bss",
+      "size": 30640,
+      "address": 1070242896
+    },
+    {
+      "name": ".flash.text",
+      "size": 1009236,
+      "address": 1107296288
+    },
+    {
+      "name": ".flash_rodata_dummy",
+      "size": 1048576,
+      "address": 1006632992
+    },
+    {
+      "name": ".flash.appdesc",
+      "size": 256,
+      "address": 1007681568
+    },
+    {
+      "name": ".flash.rodata",
+      "size": 427220,
+      "address": 1007681824
+    },
+    {
+      "name": ".eh_frame",
+      "size": 27052,
+      "address": 1008109044
+    },
+    {
+      "name": ".flash.rodata_noload",
+      "size": 24811,
+      "address": 1008136096
+    },
+    {
+      "name": ".ext_ram.dummy",
+      "size": 1507296,
+      "address": 1006632992
+    },
+    {
+      "name": ".iram0.text_end",
+      "size": 249,
+      "address": 1077439495
+    },
+    {
+      "name": ".iram0.data",
+      "size": 0,
+      "address": 1077439744
+    },
+    {
+      "name": ".iram0.bss",
+      "size": 0,
+      "address": 1077439744
+    },
+    {
+      "name": ".dram0.heap_start",
+      "size": 0,
+      "address": 1070273536
+    },
+    {
+      "name": ".debug_aranges",
+      "size": 90320,
+      "address": 0
+    },
+    {
+      "name": ".debug_info",
+      "size": 7774280,
+      "address": 0
+    },
+    {
+      "name": ".debug_abbrev",
+      "size": 747277,
+      "address": 0
+    },
+    {
+      "name": ".debug_line",
+      "size": 4135497,
+      "address": 0
+    },
+    {
+      "name": ".debug_frame",
+      "size": 233444,
+      "address": 0
+    },
+    {
+      "name": ".debug_str",
+      "size": 1222773,
+      "address": 0
+    },
+    {
+      "name": ".debug_loc",
+      "size": 1928901,
+      "address": 0
+    },
+    {
+      "name": ".debug_ranges",
+      "size": 267696,
+      "address": 0
+    },
+    {
+      "name": ".debug_line_str",
+      "size": 17071,
+      "address": 0
+    },
+    {
+      "name": ".debug_loclists",
+      "size": 142170,
+      "address": 0
+    },
+    {
+      "name": ".debug_rnglists",
+      "size": 13505,
+      "address": 0
+    },
+    {
+      "name": ".comment",
+      "size": 181,
+      "address": 0
+    },
+    {
+      "name": ".xtensa.info",
+      "size": 56,
+      "address": 0
+    },
+    {
+      "name": ".xt.prop",
+      "size": 20088,
+      "address": 0
+    },
+    {
+      "name": ".xt.lit",
+      "size": 488,
+      "address": 0
+    }
+  ]
+}

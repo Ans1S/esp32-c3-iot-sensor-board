@@ -37,29 +37,31 @@ inline void recordingInfoJson(JsonObject object, const RecordingInfo& info) {
 
 inline void recordingPointJson(JsonDocument& point, const lil::recording::Record& record) {
   const auto t = lil::recording::decode(record);
-  point["sampleMs"] = record.sampleMs;
+  // ArduinoJson binds scalar arguments by reference. Materialize packed wire
+  // fields as values so the library never receives an unaligned scalar reference.
+  point["sampleMs"] = uint32_t(record.sampleMs);
   point["t"] = int64_t(record.sampleMs) - (record.ageMs == UINT16_MAX ? 0 : record.ageMs);
   point["estimateT"] = int64_t(record.sampleMs) - (t.live.estimateAgeMs == UINT16_MAX ? 0 : t.live.estimateAgeMs);
-  point["windowMs"] = record.windowMs;
+  point["windowMs"] = uint16_t(record.windowMs);
   point["gap"] = bool(record.flags & lil::protocol::kLiveGap) || t.motion.fifoOverrun;
-  if ((t.capabilities & lil::protocol::kTemperature) && (t.live.flags & lil::protocol::kLiveSampleFresh)) point["temperature"] = t.temperatureC;
+  if ((t.capabilities & lil::protocol::kTemperature) && (t.live.flags & lil::protocol::kLiveSampleFresh)) point["temperature"] = float(t.temperatureC);
   if (t.capabilities & lil::protocol::kMotion) {
     const char* keys[] = {"ax","ay","az","gx","gy","gz"};
-    for (int axis = 0; axis < 6; ++axis) point[keys[axis]] = axis < 3 ? t.motion.accelerationG[axis] : t.motion.angularRateDps[axis-3];
-    point["peakAcceleration"] = t.motion.peakAccelerationG; point["peakAngularRate"] = t.motion.peakAngularRateDps;
-    point["sampleCount"] = t.motion.sampleCount;
+    for (int axis = 0; axis < 6; ++axis) point[keys[axis]] = float(axis < 3 ? t.motion.accelerationG[axis] : t.motion.angularRateDps[axis-3]);
+    point["peakAcceleration"] = float(t.motion.peakAccelerationG); point["peakAngularRate"] = float(t.motion.peakAngularRateDps);
+    point["sampleCount"] = uint16_t(t.motion.sampleCount);
     if (t.live.flags & lil::protocol::kMotionFeedbackPresent) {
-      point["steps"] = t.motionFeedback.steps;
-      point["activeSeconds"] = t.motionFeedback.activeSeconds;
+      point["steps"] = uint16_t(t.motionFeedback.steps);
+      point["activeSeconds"] = uint16_t(t.motionFeedback.activeSeconds);
     }
   }
-  if ((t.capabilities & lil::protocol::kHeartRate) && (t.live.flags & lil::protocol::kLiveEstimateFresh)) point["heartRate"] = t.pulse.beatsPerMinute;
-  point["pulseStatus"] = t.pulse.status; point["quality"] = t.pulse.quality;
+  if ((t.capabilities & lil::protocol::kHeartRate) && (t.live.flags & lil::protocol::kLiveEstimateFresh)) point["heartRate"] = float(t.pulse.beatsPerMinute);
+  point["pulseStatus"] = uint8_t(t.pulse.status); point["quality"] = uint8_t(t.pulse.quality);
   point["battery"] = record.batteryMv / 1000.0F;
   auto wave = point["wave"].to<JsonArray>();
   for (uint8_t j = 0; j < t.live.count; ++j) {
     auto frame = wave.add<JsonObject>(); frame["t"] = int64_t(record.sampleMs) - t.live.optical[j].ageMs;
-    frame["red"] = t.live.optical[j].red; frame["infrared"] = t.live.optical[j].infrared;
+    frame["red"] = uint32_t(t.live.optical[j].red); frame["infrared"] = uint32_t(t.live.optical[j].infrared);
   }
 }
 }  // namespace station

@@ -241,7 +241,10 @@ bool PagedHistory::flushNode(Node& n){
     bool ok=!ftruncate(fileno(file),position)&&!fseek(file,position,SEEK_SET)&&
       fwrite(n.buffer,n.width,count,file)==count&&!fflush(file)&&!fsync(fileno(file));
     uint8_t check[128];NormalHistoryPoint point{};
-    for(size_t i=0;ok&&i<count;++i)ok=!fseek(file,position+i*n.width,SEEK_SET)&&fread(check,1,n.width,file)==n.width&&
+    // Read back the contiguous batch sequentially after the durable flush.
+    // Every row still requires exact bytes and successful CRC/value checks.
+    if(ok)ok=!fseek(file,position,SEEK_SET);
+    for(size_t i=0;ok&&i<count;++i)ok=fread(check,1,n.width,file)==n.width&&
       !memcmp(check,n.buffer+i*n.width,n.width)&&decode(check,n.kind,point);
     const bool closed=fclose(file)==0;if(!ok||!closed){n.writeFailed=true;return false;}
     NormalHistoryPoint first{};decode(n.buffer,n.kind,first);if(!page.count)page.first=first.timestamp;

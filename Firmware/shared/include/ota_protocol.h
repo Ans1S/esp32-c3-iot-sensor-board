@@ -4,8 +4,8 @@
 
 namespace lil::ota {
 constexpr uint32_t kPackageMagic = 0x3141544f; // OTA1
-constexpr uint32_t kRelease = 40403;
-#define WCH_FIRMWARE_VERSION "4.4.3"
+constexpr uint32_t kRelease = 40404;
+#define WCH_FIRMWARE_VERSION "4.4.4"
 constexpr char kVersion[] = WCH_FIRMWARE_VERSION;
 constexpr size_t kBlockSize = 192;
 // Both sensor revisions reserve the rest of flash for the recording journal.

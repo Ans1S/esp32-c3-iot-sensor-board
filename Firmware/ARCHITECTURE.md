@@ -108,8 +108,10 @@ GPIO6-controlled battery divider and an active-low GPIO10 PMOS sensor rail with
 a nominal divider factor of 1.667. Its 100 kOhm ADC series resistor and 100 nF
 filter capacitor produce an approximately 16 ms charging time constant with the
 divider, so the firmware waits 100 ms after enabling the path before sampling.
-That settling period starts before the environmental conversion and is skipped
-entirely on BME680 maintenance wakes where no report is due.
+With default V4 battery protection, that settling/read completes before any
+external sensor is enabled, including maintenance-only BME680 wakes. The
+result is reused for a due report. Without the protection preflight, settling
+can overlap acquisition and is skipped when no report is due.
 
 Unprovisioned sensors advertise every ten seconds for the first ten minutes and
 scan all 13 channels during each discovery wake. Afterwards, they wake every

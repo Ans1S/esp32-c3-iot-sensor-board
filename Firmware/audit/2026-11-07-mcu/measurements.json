@@ -1,0 +1,516 @@
+{
+  "date": "2026-11-07",
+  "baseline": "preserved previous local audit result, not clean HEAD",
+  "hardware_accessed": false,
+  "new_optimizations": 5,
+  "domains": {
+    "target_build": "actual GCC ELF/binaries; static instructions are not executed counts",
+    "host": "Windows x86_64, Zig 0.15.2 / Clang 20.1.2, C++17 -O2 -UNDEBUG",
+    "not_measured": [
+      "MCU cycles/timing",
+      "current/energy",
+      "PSRAM latency/fragmentation",
+      "physical I2C/RF",
+      "flash endurance"
+    ]
+  },
+  "bme280": {
+    "compared_complete_readings": 1064960,
+    "output_float_bits_and_validity": "identical",
+    "c3_function_bytes": [
+      2484,
+      2264
+    ],
+    "c3_static_instructions": [
+      769,
+      702
+    ],
+    "c3_software_arithmetic_call_sites": [
+      103,
+      95
+    ],
+    "local_frame_bytes": [
+      432,
+      384
+    ],
+    "evidence": [
+      {
+        "local_log": ".tools/firmware-mcu-20261107/host-before.log",
+        "sha256": "0b9603c5ded116bed0d3e2690761f3eebf83db617d1ccf6cc42384978f146775"
+      },
+      {
+        "local_log": ".tools/firmware-mcu-20261107/host-final-sanitized.log",
+        "sha256": "4816ba9f23429aae94b58404f4e59fdf27662d08c80982fc9ceb54d421648c98"
+      }
+    ]
+  },
+  "imu": {
+    "compared_gyro_vectors": 130566,
+    "windows": 1024,
+    "gyro_peak_bits": "identical",
+    "balanced_104_plus_104_sqrt_calls": [
+      208,
+      105
+    ],
+    "gyro_heavy_104_plus_1_sqrt_calls": [
+      105,
+      2
+    ],
+    "new_accumulator_bytes_per_imu_object": 4,
+    "evidence": [
+      {
+        "local_log": ".tools/firmware-mcu-20261107/imu-before.log",
+        "sha256": "3e218746a95142bef202526e9ebd08c51a3df2d5b5995f7ed5863bb8e614d7c9"
+      },
+      {
+        "local_log": ".tools/firmware-mcu-20261107/imu-after.log",
+        "sha256": "95aceda55c0756721ffca6b20ef0d95e5d7a020de0aa2c4cc51e657bed4c7fe2"
+      }
+    ]
+  },
+  "station_ring": {
+    "experiments": [
+      {
+        "name": "A",
+        "order": "before then after",
+        "observations": [
+          {
+            "phase": "before",
+            "sensor_type": 3,
+            "rows": 1201,
+            "runs": 9,
+            "iterations_per_run": 1000,
+            "median_us": 4.2882,
+            "range_us": [
+              4.2549,
+              4.7673
+            ],
+            "checksum": 10809000
+          },
+          {
+            "phase": "before",
+            "sensor_type": 4,
+            "rows": 61,
+            "runs": 9,
+            "iterations_per_run": 1000,
+            "median_us": 0.1702,
+            "range_us": [
+              0.1702,
+              0.174
+            ],
+            "checksum": 549000
+          },
+          {
+            "phase": "before",
+            "sensor_type": 5,
+            "rows": 301,
+            "runs": 9,
+            "iterations_per_run": 1000,
+            "median_us": 1.0539,
+            "range_us": [
+              1.0462,
+              1.1013
+            ],
+            "checksum": 2709000
+          },
+          {
+            "phase": "after",
+            "sensor_type": 3,
+            "rows": 1201,
+            "runs": 9,
+            "iterations_per_run": 1000,
+            "median_us": 4.1769,
+            "range_us": [
+              4.1492,
+              4.221
+            ],
+            "checksum": 10809000
+          },
+          {
+            "phase": "after",
+            "sensor_type": 4,
+            "rows": 61,
+            "runs": 9,
+            "iterations_per_run": 1000,
+            "median_us": 0.1283,
+            "range_us": [
+              0.1282,
+              0.1284
+            ],
+            "checksum": 549000
+          },
+          {
+            "phase": "after",
+            "sensor_type": 5,
+            "rows": 301,
+            "runs": 9,
+            "iterations_per_run": 1000,
+            "median_us": 1.0084,
+            "range_us": [
+              1.0038,
+              1.033
+            ],
+            "checksum": 2709000
+          }
+        ],
+        "evidence": [
+          {
+            "local_log": ".tools/firmware-mcu-20261107/host-before.log",
+            "sha256": "0b9603c5ded116bed0d3e2690761f3eebf83db617d1ccf6cc42384978f146775"
+          },
+          {
+            "local_log": ".tools/firmware-mcu-20261107/host-after.log",
+            "sha256": "7919242756a9a9301b451be4f821d54e6ae673cc2dc180ff1f5ca713c78ce0bb"
+          }
+        ]
+      },
+      {
+        "name": "B",
+        "order": "after then before",
+        "observations": [
+          {
+            "phase": "before",
+            "sensor_type": 3,
+            "rows": 1201,
+            "runs": 9,
+            "iterations_per_run": 1000,
+            "median_us": 4.3348,
+            "range_us": [
+              4.3051,
+              4.4083
+            ],
+            "checksum": 10809000
+          },
+          {
+            "phase": "before",
+            "sensor_type": 4,
+            "rows": 61,
+            "runs": 9,
+            "iterations_per_run": 1000,
+            "median_us": 0.1694,
+            "range_us": [
+              0.1693,
+              0.1765
+            ],
+            "checksum": 549000
+          },
+          {
+            "phase": "before",
+            "sensor_type": 5,
+            "rows": 301,
+            "runs": 9,
+            "iterations_per_run": 1000,
+            "median_us": 1.0406,
+            "range_us": [
+              1.0385,
+              1.0422
+            ],
+            "checksum": 2709000
+          },
+          {
+            "phase": "after",
+            "sensor_type": 3,
+            "rows": 1201,
+            "runs": 9,
+            "iterations_per_run": 1000,
+            "median_us": 4.2717,
+            "range_us": [
+              4.2461,
+              4.3608
+            ],
+            "checksum": 10809000
+          },
+          {
+            "phase": "after",
+            "sensor_type": 4,
+            "rows": 61,
+            "runs": 9,
+            "iterations_per_run": 1000,
+            "median_us": 0.1295,
+            "range_us": [
+              0.1295,
+              0.1328
+            ],
+            "checksum": 549000
+          },
+          {
+            "phase": "after",
+            "sensor_type": 5,
+            "rows": 301,
+            "runs": 9,
+            "iterations_per_run": 1000,
+            "median_us": 1.012,
+            "range_us": [
+              1.0083,
+              1.036
+            ],
+            "checksum": 2709000
+          }
+        ],
+        "evidence": [
+          {
+            "local_log": ".tools/firmware-mcu-20261107/ring-before-repeat.log",
+            "sha256": "1b097797453c2e95484d13a8effc9f3862ee84c8c7993afc83b597339ed57492"
+          },
+          {
+            "local_log": ".tools/firmware-mcu-20261107/ring-after-repeat.log",
+            "sha256": "2301d9a3896c74e8151e5233ca1447717266258e83f99f34f1b1d49f887b2233"
+          }
+        ]
+      }
+    ],
+    "reader_division_sites": [
+      1,
+      0
+    ],
+    "registration_division_sites": [
+      2,
+      1
+    ],
+    "full_fresh_1201_row_copy_batches": [
+      1201,
+      2
+    ],
+    "copy_count_domain": "inferred bound from target loops; not a runtime trace",
+    "local_reader_frame_bytes": [
+      64,
+      80
+    ]
+  },
+  "protocol": {
+    "valid_length_alignment_cases": 940,
+    "corruption_cases": 125020,
+    "c3_validation_frame_bytes": [
+      272,
+      32
+    ],
+    "s3_validation_frame_bytes": [
+      288,
+      48
+    ],
+    "maximum_packet_copy_bytes": [
+      250,
+      16
+    ],
+    "crc_rom_calls_per_valid_packet": [
+      1,
+      2
+    ],
+    "evidence": [
+      {
+        "local_log": ".tools/firmware-mcu-20261107/host-before.log",
+        "sha256": "0b9603c5ded116bed0d3e2690761f3eebf83db617d1ccf6cc42384978f146775"
+      },
+      {
+        "local_log": ".tools/firmware-mcu-20261107/host-final-sanitized.log",
+        "sha256": "4816ba9f23429aae94b58404f4e59fdf27662d08c80982fc9ceb54d421648c98"
+      }
+    ]
+  },
+  "optical_fifo": {
+    "observations": [
+      {
+        "phase": "before",
+        "queued_frames": 5,
+        "read_transactions": 5,
+        "payload_bytes": 30,
+        "calculated_clock_bits": 405
+      },
+      {
+        "phase": "before",
+        "queued_frames": 8,
+        "read_transactions": 8,
+        "payload_bytes": 48,
+        "calculated_clock_bits": 648
+      },
+      {
+        "phase": "before",
+        "queued_frames": 31,
+        "read_transactions": 31,
+        "payload_bytes": 186,
+        "calculated_clock_bits": 2511
+      },
+      {
+        "phase": "after",
+        "queued_frames": 5,
+        "read_transactions": 1,
+        "payload_bytes": 30,
+        "calculated_clock_bits": 297
+      },
+      {
+        "phase": "after",
+        "queued_frames": 8,
+        "read_transactions": 1,
+        "payload_bytes": 48,
+        "calculated_clock_bits": 459
+      },
+      {
+        "phase": "after",
+        "queued_frames": 31,
+        "read_transactions": 4,
+        "payload_bytes": 186,
+        "calculated_clock_bits": 1782
+      }
+    ],
+    "snapshots_tested": "every 0..31 frame count",
+    "short_read_positions": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "burst_limit_frames": 8,
+    "clock_count_domain": "calculated from observed requests; includes 9 clocks per address/register/data byte, not physical timing",
+    "single_frame_gain": "none",
+    "c3_local_poll_frame_bytes": [
+      64,
+      144
+    ],
+    "evidence": [
+      {
+        "local_log": ".tools/firmware-mcu-20261107/optical-before.log",
+        "sha256": "cc3a1e8096e17fa16f2ea9149bbdef6f6a1f6a25d60eef88db6a751bebf7feb6"
+      },
+      {
+        "local_log": ".tools/firmware-mcu-20261107/optical-after.log",
+        "sha256": "8bb64023f39952ce7ae8f4f699d22ee1a123cced16c137a0d85f46d7072a822d"
+      }
+    ]
+  },
+  "build_metrics_before_after": {
+    "sensor_pcb_v3": {
+      "flash_bytes": [
+        1076741,
+        1076617
+      ],
+      "static_ram_bytes": [
+        45908,
+        45908
+      ],
+      "iram0_text_bytes": [
+        64186,
+        64186
+      ]
+    },
+    "sensor_pcb_v4": {
+      "flash_bytes": [
+        1077669,
+        1077545
+      ],
+      "static_ram_bytes": [
+        45908,
+        45908
+      ],
+      "iram0_text_bytes": [
+        64186,
+        64186
+      ]
+    },
+    "station_s3": {
+      "flash_bytes": [
+        1590490,
+        1590566
+      ],
+      "static_ram_bytes": [
+        108268,
+        108268
+      ],
+      "iram0_text_bytes": [
+        75779,
+        75779
+      ]
+    }
+  },
+  "validation": {
+    "normal_target_builds": "all three passed",
+    "normal_cpp_suites": 29,
+    "sanitized_cpp_suites": 29,
+    "host_evidence": [
+      {
+        "local_log": ".tools/firmware-mcu-20261107/host-final.log",
+        "sha256": "10934d3ad88bb9d845258db2be09dd76a0a48c3e29c923f0b6f160782827d0f7"
+      },
+      {
+        "local_log": ".tools/firmware-mcu-20261107/host-final-sanitized.log",
+        "sha256": "4816ba9f23429aae94b58404f4e59fdf27662d08c80982fc9ceb54d421648c98"
+      },
+      {
+        "local_log": ".tools/firmware-mcu-20261107/imu-after.log",
+        "sha256": "95aceda55c0756721ffca6b20ef0d95e5d7a020de0aa2c4cc51e657bed4c7fe2"
+      }
+    ],
+    "browser_programs_passed": [
+      "chart_readability",
+      "compact_dashboard",
+      "dashboard_performance",
+      "history_priority",
+      "interaction_stress",
+      "motion_dashboard",
+      "ota_status_page",
+      "recording_dashboard",
+      "sensor_settings_dashboard",
+      "ui_reliability"
+    ],
+    "browser_evidence": [
+      {
+        "local_log": ".tools/firmware-mcu-20261107/browser-chart_readability.log",
+        "sha256": "fafbe4d7dadb84f886cdfb7c09d9f59df601d285af5d2944b014ac47901a5766"
+      },
+      {
+        "local_log": ".tools/firmware-mcu-20261107/browser-compact_dashboard.log",
+        "sha256": "95ad8cd06b944cf0b22d4a444fbb96be8553819c7c89bdb03ea9485cffc33dd3"
+      },
+      {
+        "local_log": ".tools/firmware-mcu-20261107/browser-dashboard_performance.log",
+        "sha256": "368c6ffdc037a3faad6b0f7a32a4d3dc6f13dde0ca6718e89044b3ca754f7679"
+      },
+      {
+        "local_log": ".tools/firmware-mcu-20261107/browser-history_priority.log",
+        "sha256": "dba913386b13e23bcf3cd7b66f291a06c699e214ade775aa2127130a2cf8cd40"
+      },
+      {
+        "local_log": ".tools/firmware-mcu-20261107/browser-interaction_stress.log",
+        "sha256": "4e9f5921093e02cdec49d4a226c548b160cf56cc8f70ffac94c15bf900c98a23"
+      },
+      {
+        "local_log": ".tools/firmware-mcu-20261107/browser-motion_dashboard.log",
+        "sha256": "f9715e597da8c885d7d67e4f40aa4e60ba83f2fb6016ff51b7543fad7554a250"
+      },
+      {
+        "local_log": ".tools/firmware-mcu-20261107/browser-ota_status_page.log",
+        "sha256": "dc56154ddb70179c193c6a7ce25e45bc3fa17d2fb6120d818bdf50f1d0fce247"
+      },
+      {
+        "local_log": ".tools/firmware-mcu-20261107/browser-recording_dashboard.log",
+        "sha256": "4cd6da05bc4ee601884d307ced80e25833f0e673d9fd413871c54f1feea4a439"
+      },
+      {
+        "local_log": ".tools/firmware-mcu-20261107/browser-sensor_settings_dashboard.log",
+        "sha256": "8d0ba0cfc4ae36932b2effbc47de0b270b0efe5ed1fd537dca9beadb6d5752e9"
+      },
+      {
+        "local_log": ".tools/firmware-mcu-20261107/browser-ui_reliability.log",
+        "sha256": "fe168a138eb42ce67b1d68c19ba39dc830562360616fa9eb31cc5f77fa1704ee"
+      }
+    ],
+    "gcc_probe_translation_units_per_phase": 36,
+    "selected_elf_prologues_match_gcc_frames": true,
+    "assembly_evidence": {
+      "local_log": ".tools/firmware-mcu-20261107/assembly-verification.log",
+      "sha256": "3950fe68465de2890613cbf83f5d0947afdeb59ee8bff25ef4c2073162a67e91"
+    },
+    "documented_before_after_reproducer": {
+      "status": "passed",
+      "evidence": {
+        "local_log": ".tools/firmware-mcu-20261107/reproduction-final.log",
+        "sha256": "26289e2a8840948538f067c87f8133574c01fb7571056378f6a2e577d4bea6c4"
+      }
+    },
+    "publication": {
+      "files_scanned": 435,
+      "archive_members_scanned": 78,
+      "findings": []
+    },
+    "commit_push_merge_release": "not performed"
+  }
+}

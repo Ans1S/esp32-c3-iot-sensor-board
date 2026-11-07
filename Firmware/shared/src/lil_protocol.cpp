@@ -8,11 +8,12 @@
 namespace lil {
 namespace protocol {
 
-uint32_t crc32(const uint8_t* data, size_t length) {
+namespace {
+uint32_t continueCrc32(uint32_t seed, const uint8_t* data, size_t length) {
 #if defined(ESP_PLATFORM)
-  return esp_rom_crc32_le(0, data, length);
+  return esp_rom_crc32_le(seed, data, length);
 #else
-  uint32_t crc = 0xFFFFFFFFUL;
+  uint32_t crc = ~seed;
   for (size_t i = 0; i < length; ++i) {
     crc ^= data[i];
     for (uint8_t bit = 0; bit < 8; ++bit) {
@@ -22,6 +23,11 @@ uint32_t crc32(const uint8_t* data, size_t length) {
   }
   return ~crc;
 #endif
+}
+}
+
+uint32_t crc32(const uint8_t* data, size_t length) {
+  return continueCrc32(0, data, length);
 }
 
 void finalizePacket(void* packet, size_t packetSize, MessageType type,
@@ -53,15 +59,18 @@ bool validatePacket(const void* packet, size_t packetSize,
     return false;
   }
 
-  uint8_t copy[kMaxPacketSize];
-  if (packetSize > sizeof(copy)) {
+  if (packetSize > kMaxPacketSize) {
     return false;
   }
-  memcpy(copy, packet, packetSize);
-  auto* copiedHeader = reinterpret_cast<PacketHeader*>(copy);
-  const uint32_t receivedCrc = copiedHeader->crc32;
-  copiedHeader->crc32 = 0;
-  return receivedCrc == crc32(copy, packetSize);
+  PacketHeader copiedHeader;
+  memcpy(&copiedHeader, packet, sizeof(copiedHeader));
+  const uint32_t receivedCrc = copiedHeader.crc32;
+  copiedHeader.crc32 = 0;
+  // Chaining the same CRC over header and original payload avoids copying a
+  // complete radio frame to the stack. The caller's packet remains immutable.
+  const uint32_t headerCrc = continueCrc32(0, reinterpret_cast<const uint8_t*>(&copiedHeader), sizeof(copiedHeader));
+  return receivedCrc == continueCrc32(headerCrc,
+      static_cast<const uint8_t*>(packet) + sizeof(copiedHeader), packetSize - sizeof(copiedHeader));
 }
 
 }  // namespace protocol
