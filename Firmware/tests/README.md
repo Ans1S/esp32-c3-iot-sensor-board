@@ -2,7 +2,7 @@
 
 The [2026-10-07 reliability review](../RELIABILITY_REVIEW.md) documents the
 current fixes, energy behavior and remaining hardware acceptance. The runner
-now includes 24 production C++ suites.
+now includes 30 production C++ suites.
 
 Run from the repository root after resolving/building the sensor dependencies:
 
@@ -11,6 +11,94 @@ python Firmware/tests/run_tests.py --cxx /path/to/clang++
 python Firmware/tests/test_ota_package.py
 python Firmware/tests/test_library_patches.py
 ```
+
+Add `--sanitize` to the C++ runner for undefined-behavior, alignment and
+float-to-integer overflow checks. `--suite NAME` selects a suite and can be
+repeated; omitting it runs all 30 suites. `--benchmark` additionally runs the
+optional host benchmarks in selected `pulse_signal` and `registry` suites.
+For example:
+
+```sh
+python Firmware/tests/run_tests.py --cxx /path/to/zig --sanitize
+python Firmware/tests/run_tests.py --cxx /path/to/clang++ --suite pulse_signal --suite history_flush
+python Firmware/tests/run_tests.py --cxx /path/to/clang++ --suite registry --benchmark
+```
+
+## Efficiency audit regressions (2026-11-07)
+
+`pulse_signal_test.cpp` compares the production centered-mean helper with the
+original loop over 19,200 windows: every ring head, 18-bit endpoints, impulses,
+drift, periodic and deterministic random inputs. Float residuals and double
+energy sums must match bit for bit. An accessor counts 4,576 versus 551 logical
+sample reads. These counts are not physical memory/bus transactions. Existing
+precision tests retain pulse decisions across nine synthetic rates and faults.
+
+To repeat the optional host-only benchmark with the same compiler/options:
+
+```sh
+c++ -std=c++17 -O2 -UNDEBUG -I Firmware/shared/include -I Firmware/sensor/include Firmware/tests/pulse_signal_test.cpp -o pulse_signal
+./pulse_signal --benchmark
+```
+
+The benchmark alternates original/optimized order in nine runs of 20,000
+windows, verifies checksums and reports median/range in microseconds per
+window. It does not measure a complete estimator or an ESP32.
+
+`history_flush_test.cpp` measures full 91/126/63-row environmental/TMP117/IMU
+pages using production persistence and real temporary files. Every row must
+be read back, match exactly and decode successfully. Injected positioning,
+short-read and corrupt-readback faults retain the entire pending batch for a
+successful retry; reboot reads retain all original rows. Both write and
+readback positioning now require two seeks in total. For a baseline source
+comparison only, `EXPECT_HISTORY_FLUSH_SEEKS=0` expects the former `rows+1`.
+
+The registry suite now covers finite extreme, negative, NaN and infinite gas
+placeholders before legacy integer conversion. Recording JSON tests use real
+ArduinoJson with records at all four byte offsets; sanitizers catch reference
+binding to packed unaligned numeric fields. Related status/history/OTA JSON
+assignments also materialize scalar values. The complete HTTP handlers still
+require target/integration testing beyond the host serializer checks.
+
+See [the efficiency audit](../EFFICIENCY_AUDIT.md) for source/ELF inventory,
+compiler settings, before/after costs, limitations and hardware priorities.
+
+## Additional MCU regressions (2026-11-07)
+
+- The BME280 suite compares 1,064,960 complete production readings with the
+  original double formula, including all 20-bit temperature ADC codes and
+  signed/extreme trim cases. Output float bits, capabilities and validity match.
+- `imu_peak` instruments actual driver sqrt calls and compares 130,566 gyro
+  vectors in 1,024 windows with the original sqrt/max results. It checks empty,
+  signed-limit, multi-poll, discard/reinitialization and balanced/mixed windows.
+  A balanced 104+104 window requires 105 instead of 208 roots.
+- `protocol_validation` covers every packet length from the 16-byte header to
+  250 bytes at four byte alignments, 125,020 single-byte corruptions, immutable
+  input and invalid bounds. Host CRC does not execute the MCU's ROM function.
+- `optical_fifo` covers every 0..31-frame pointer snapshot, exact values/order/
+  ages and short requests at all four batch positions. The FIFO substitute
+  follows the documented fixed register address during bursts; physical
+  transfer races and partial-read recovery still need hardware acceptance.
+- Registry tests cover all three live-ring capacities, rollover, expiry,
+  wrapped/truncated snapshots and exact sample bytes. Its optional benchmark
+  uses nine runs of 1,000 reads per type and reports host-only median/range.
+
+See [the MCU follow-up](../MCU_OPTIMIZATION_REVIEW.md) and its evidence README
+for the isolated original-source comparison and actual target assembly costs.
+
+## Host compiler and coverage
+
+The [main/radio/OTA review](../FLOW_TRANSFER_REVIEW.md) adds operation counters
+around the real protocol implementation, exact short/motion/full retry bytes,
+lazy queue/failure checks, single-poll snapshots, resume-prefix read/buffer
+checks and a station OTA transfer suite. Both client and station exercise the
+maximum 1,310,720-byte slot. The station fixture substitutes JSON, signatures,
+hash primitives, partition/NVS and RTOS operations; real crypto/serializer tests,
+target builds and hardware acceptance remain separate. Allocation/prefetch
+failure falls back to direct reads, and incorrect signatures/digests are rejected.
+
+The registry's optional `--benchmark` also reports nine batches of 20,000
+environmental registrations for BME280 and BME680/raw fallback. These are host
+batch averages with fixture locks, not MCU or radio latency.
 
 `g++`, Clang and `zig c++` are supported; pass the path to `zig.exe` directly.
 The runner enables assertions explicitly, builds into a temporary directory and

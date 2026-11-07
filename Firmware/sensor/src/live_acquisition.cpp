@@ -103,7 +103,9 @@ void LiveAcquisition::loop() {
     if (temperature ? (!sensor_->freshTemperature() && now - lastReport < 1500) :
         now - lastReport < interval) { delay(5); continue; }
     lastReport = millis();
-    LiveCapture capture{}; capture.reading = sensor_->read();
+    // pollLive() just drained/checked the driver under this task's ownership.
+    // Read that snapshot without issuing a second status/FIFO transaction.
+    LiveCapture capture{}; capture.reading = sensor_->read(false);
     if (requested_.load() != profile || (normal && normalPaused_.load())) {
       sensor_->end(); active_.store(false); continue;
     }

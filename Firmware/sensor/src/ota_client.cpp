@@ -131,26 +131,25 @@ void checkOta(EspNowTransport& radio, const SensorRuntimeConfig& config,
     checkpoint.offset < manifest.imageSize && checkpoint.offset % kCheckpointBytes == 0;
   mbedtls_sha256_context hash;
   mbedtls_sha256_init(&hash); mbedtls_sha256_starts(&hash, 0);
+  // Reuse the existing sector buffer for prefix verification and transfer.
+  // Only flushed bytes enter the hash or checkpoint; a lost tail is retried.
+  std::unique_ptr<uint8_t[]> writeBuffer(new (std::nothrow) uint8_t[kSectorSize]);
+  if (!writeBuffer) {
+    mbedtls_sha256_free(&hash);
+    status(State::Paused, checkpoint.offset, Failure::FlashBegin);
+    return;
+  }
   if (resume) {
-    uint8_t buffer[1024];
     for (uint32_t offset = 0; offset < checkpoint.offset;) {
-      const size_t size = min(sizeof(buffer), static_cast<size_t>(checkpoint.offset - offset));
-      if (esp_partition_read(target, offset, buffer, size) != ESP_OK ||
-          mbedtls_sha256_update(&hash, buffer, size) != 0) { resume = false; break; }
+      const size_t size = min(size_t(kSectorSize), static_cast<size_t>(checkpoint.offset - offset));
+      if (esp_partition_read(target, offset, writeBuffer.get(), size) != ESP_OK ||
+          mbedtls_sha256_update(&hash, writeBuffer.get(), size) != 0) { resume = false; break; }
       offset += size; delay(1);
     }
     mbedtls_sha256_context copy; mbedtls_sha256_init(&copy); mbedtls_sha256_clone(&copy, &hash);
     uint8_t digest[32];
     resume = resume && mbedtls_sha256_finish(&copy, digest) == 0 && !memcmp(digest, checkpoint.prefixHash, 32);
     mbedtls_sha256_free(&copy);
-  }
-  // Keep this off the Arduino task stack. Only flushed bytes enter the hash
-  // or a persisted checkpoint, so a lost RAM tail is safely retransmitted.
-  std::unique_ptr<uint8_t[]> writeBuffer(new (std::nothrow) uint8_t[kSectorSize]);
-  if (!writeBuffer) {
-    mbedtls_sha256_free(&hash);
-    status(State::Paused, checkpoint.offset, Failure::FlashBegin);
-    return;
   }
   uint32_t buffered = 0;
   esp_ota_handle_t handle = 0;

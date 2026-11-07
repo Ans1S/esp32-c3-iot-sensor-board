@@ -1,0 +1,423 @@
+{
+  "audit_date": "2026-11-07",
+  "baseline_commit": "ff7afa30032221ec961f2bc939c1dbba4c90a0c2",
+  "hardware_accessed": false,
+  "classification": {
+    "proven": "Measured claim within its stated domain",
+    "indirect": "Improved surrogate; MCU runtime, energy or wear remains unmeasured",
+    "not_demonstrated": "No appropriate measurement available"
+  },
+  "optical_centered_mean": {
+    "domain": "Windows x86_64 host, Zig 0.15.2 / Clang 20.1.2, C++17 -O2 -UNDEBUG, no fast-math",
+    "equivalence": {
+      "patterns": 96,
+      "ring_heads": 200,
+      "bit_identical_windows": 19200,
+      "compared": [
+        "all 176 float residuals",
+        "ordered double energy"
+      ]
+    },
+    "logical_sample_reads_per_window": {
+      "before": 4576,
+      "after": 551,
+      "unit": "accessor invocations, not bus or physical memory transactions"
+    },
+    "host_elapsed_time": [
+      {
+        "phase": "before",
+        "runs": 9,
+        "iterations_per_run": 20000,
+        "median_us_per_window": 3.27941,
+        "range_us_per_window": [
+          3.208125,
+          3.393345
+        ],
+        "checksum": "14937366079162.631"
+      },
+      {
+        "phase": "after",
+        "runs": 9,
+        "iterations_per_run": 20000,
+        "median_us_per_window": 0.21848,
+        "range_us_per_window": [
+          0.21797,
+          0.219595
+        ],
+        "checksum": "14937366079162.631"
+      }
+    ],
+    "evidence": {
+      "local_log": ".tools/firmware-efficiency-20261107/pulse-benchmark-final.log",
+      "sha256": "db3b80f998a3da29a6ff17bed8912b16072d128813c951c0d2fc9e7219fd6266"
+    },
+    "native_c3_function": {
+      "targets": [
+        "sensor_pcb_v3",
+        "sensor_pcb_v4"
+      ],
+      "name": "sensor::PrecisionSensors::read()",
+      "bytes": [
+        2044,
+        2072
+      ],
+      "static_instructions": [
+        647,
+        653
+      ],
+      "frame_bytes": [
+        1104,
+        1104
+      ]
+    },
+    "mcu_full_estimator_timing_and_energy": "not_demonstrated"
+  },
+  "history_flush": {
+    "domain": "Production C++ on host, real temporary files and instrumented stdio calls",
+    "observations": [
+      {
+        "phase": "before",
+        "sensor_type": 1,
+        "rows": 91,
+        "repetitions": 5,
+        "seeks_each": 92,
+        "row_reads_each": 91
+      },
+      {
+        "phase": "before",
+        "sensor_type": 4,
+        "rows": 126,
+        "repetitions": 5,
+        "seeks_each": 127,
+        "row_reads_each": 126
+      },
+      {
+        "phase": "before",
+        "sensor_type": 3,
+        "rows": 63,
+        "repetitions": 5,
+        "seeks_each": 64,
+        "row_reads_each": 63
+      },
+      {
+        "phase": "after",
+        "sensor_type": 1,
+        "rows": 91,
+        "repetitions": 5,
+        "seeks_each": 2,
+        "row_reads_each": 91
+      },
+      {
+        "phase": "after",
+        "sensor_type": 4,
+        "rows": 126,
+        "repetitions": 5,
+        "seeks_each": 2,
+        "row_reads_each": 126
+      },
+      {
+        "phase": "after",
+        "sensor_type": 3,
+        "rows": 63,
+        "repetitions": 5,
+        "seeks_each": 2,
+        "row_reads_each": 63
+      }
+    ],
+    "fault_checks": [
+      "positioning failure",
+      "short middle read",
+      "corrupted readback",
+      "complete pending batch retained",
+      "successful retry",
+      "reboot readback"
+    ],
+    "native_s3_flush_function_bytes": [
+      1138,
+      1155
+    ],
+    "frame_bytes": [
+      976,
+      976
+    ],
+    "evidence": [
+      {
+        "local_log": ".tools/firmware-efficiency-20261107/history-flush-before-five.log",
+        "sha256": "38606f90dc64844c75f33974508dcc54c3bc1b703b894a47d87cce80623a7bd6"
+      },
+      {
+        "local_log": ".tools/firmware-efficiency-20261107/history-flush-after-five.log",
+        "sha256": "7c1d258b38f1ce3497adc4f5a5c9bc3be0d1e737cd801929e64914f162fb7ac0"
+      }
+    ],
+    "documented_isolated_comparison": {
+      "status": "passed",
+      "evidence": {
+        "local_log": ".tools/firmware-efficiency-20261107/flush-reproduction-final.log",
+        "sha256": "839125a5920b56cc73169a4cfcee69ee30892eb731fe39a6f4004c93c823dc1a"
+      }
+    },
+    "littlefs_latency_and_physical_flash_wear": "not_demonstrated"
+  },
+  "correctness": [
+    {
+      "issue": "out-of-range legacy gas float-to-uint32 conversion",
+      "before": "UBSan float-cast-overflow reproduced",
+      "after": "bounded conversion; expanded suite passes",
+      "original_failure_evidence": {
+        "local_log": ".tools/firmware-efficiency-20261107/gas-before-ubsan.log",
+        "sha256": "4152f023488b7f70b1872747dd4ec963fe1d20ba2dac04bbba46a022b1eb3abe"
+      }
+    },
+    {
+      "issue": "ArduinoJson const-reference binding to packed unaligned scalar",
+      "before": "UBSan alignment error in production recording serializer",
+      "after": "numeric value copies in recording/status/history/OTA JSON; full sanitizer runner passes",
+      "original_failure_evidence": {
+        "local_log": ".tools/firmware-efficiency-20261107/ubsan-after.log",
+        "sha256": "f849530e38905939bf9e380e42b79a23973ed6b1354e56dce17ede568cfb195a"
+      }
+    }
+  ],
+  "target_builds": {
+    "domain": "actual target ELF/PlatformIO; values ordered before, after",
+    "all_normal_builds_passed": true,
+    "partition_binaries_unchanged": true,
+    "metrics": {
+      "sensor_pcb_v3": {
+        "flash_bytes": [
+          1076713,
+          1076741
+        ],
+        "static_ram_bytes": [
+          45908,
+          45908
+        ],
+        "iram0_text_bytes": [
+          64186,
+          64186
+        ]
+      },
+      "sensor_pcb_v4": {
+        "flash_bytes": [
+          1077641,
+          1077669
+        ],
+        "static_ram_bytes": [
+          45908,
+          45908
+        ],
+        "iram0_text_bytes": [
+          64186,
+          64186
+        ]
+      },
+      "station_s3": {
+        "flash_bytes": [
+          1589738,
+          1590490
+        ],
+        "static_ram_bytes": [
+          108268,
+          108268
+        ],
+        "iram0_text_bytes": [
+          75779,
+          75779
+        ]
+      }
+    }
+  },
+  "validation": {
+    "cpp": [
+      {
+        "phase": "before",
+        "suites": 24,
+        "sanitize": false,
+        "status": "passed",
+        "evidence": {
+          "local_log": ".tools/firmware-efficiency-20261107/host-before.log",
+          "sha256": "472fcb55f6f939d0543687fada38f1938358fac14f596b7627b37c6426edcc2d"
+        }
+      },
+      {
+        "phase": "after",
+        "suites": 26,
+        "sanitize": false,
+        "status": "passed",
+        "evidence": {
+          "local_log": ".tools/firmware-efficiency-20261107/host-final.log",
+          "sha256": "e6bfad260404efdfd840deb8a3e879dcb94f859cfacf060481e8e11eb53dd8ef"
+        }
+      },
+      {
+        "phase": "after",
+        "suites": 26,
+        "sanitize": true,
+        "status": "passed",
+        "evidence": {
+          "local_log": ".tools/firmware-efficiency-20261107/host-final-public-sanitized.log",
+          "sha256": "e6bfad260404efdfd840deb8a3e879dcb94f859cfacf060481e8e11eb53dd8ef"
+        }
+      }
+    ],
+    "browser": {
+      "domain": "real embedded pages with fixture APIs, not a physical station",
+      "programs": [
+        "chart_readability",
+        "compact_dashboard",
+        "dashboard_performance",
+        "history_priority",
+        "interaction_stress",
+        "motion_dashboard",
+        "ota_status_page",
+        "recording_dashboard",
+        "sensor_settings_dashboard",
+        "ui_reliability"
+      ],
+      "before_and_after": "all 10 passed",
+      "evidence": [
+        {
+          "local_log": ".tools/firmware-efficiency-20261107/before-test_chart_readability.cjs.log",
+          "sha256": "fafbe4d7dadb84f886cdfb7c09d9f59df601d285af5d2944b014ac47901a5766"
+        },
+        {
+          "local_log": ".tools/firmware-efficiency-20261107/before-test_compact_dashboard.cjs.log",
+          "sha256": "95ad8cd06b944cf0b22d4a444fbb96be8553819c7c89bdb03ea9485cffc33dd3"
+        },
+        {
+          "local_log": ".tools/firmware-efficiency-20261107/before-test_dashboard_performance.cjs.log",
+          "sha256": "50a538ebf61200469cee701a717effa17b70e5227ce9dff54a1dd4f6a642459b"
+        },
+        {
+          "local_log": ".tools/firmware-efficiency-20261107/before-test_history_priority.cjs.log",
+          "sha256": "dba913386b13e23bcf3cd7b66f291a06c699e214ade775aa2127130a2cf8cd40"
+        },
+        {
+          "local_log": ".tools/firmware-efficiency-20261107/before-test_interaction_stress.cjs.log",
+          "sha256": "4e9f5921093e02cdec49d4a226c548b160cf56cc8f70ffac94c15bf900c98a23"
+        },
+        {
+          "local_log": ".tools/firmware-efficiency-20261107/before-test_motion_dashboard.cjs.log",
+          "sha256": "f9715e597da8c885d7d67e4f40aa4e60ba83f2fb6016ff51b7543fad7554a250"
+        },
+        {
+          "local_log": ".tools/firmware-efficiency-20261107/before-test_ota_status_page.cjs.log",
+          "sha256": "dc56154ddb70179c193c6a7ce25e45bc3fa17d2fb6120d818bdf50f1d0fce247"
+        },
+        {
+          "local_log": ".tools/firmware-efficiency-20261107/before-test_recording_dashboard.cjs.log",
+          "sha256": "4cd6da05bc4ee601884d307ced80e25833f0e673d9fd413871c54f1feea4a439"
+        },
+        {
+          "local_log": ".tools/firmware-efficiency-20261107/before-test_sensor_settings_dashboard.cjs.log",
+          "sha256": "8d0ba0cfc4ae36932b2effbc47de0b270b0efe5ed1fd537dca9beadb6d5752e9"
+        },
+        {
+          "local_log": ".tools/firmware-efficiency-20261107/before-test_ui_reliability.cjs.log",
+          "sha256": "fe168a138eb42ce67b1d68c19ba39dc830562360616fa9eb31cc5f77fa1704ee"
+        },
+        {
+          "local_log": ".tools/firmware-efficiency-20261107/final-test_chart_readability.cjs.log",
+          "sha256": "fafbe4d7dadb84f886cdfb7c09d9f59df601d285af5d2944b014ac47901a5766"
+        },
+        {
+          "local_log": ".tools/firmware-efficiency-20261107/final-test_compact_dashboard.cjs.log",
+          "sha256": "95ad8cd06b944cf0b22d4a444fbb96be8553819c7c89bdb03ea9485cffc33dd3"
+        },
+        {
+          "local_log": ".tools/firmware-efficiency-20261107/final-test_dashboard_performance.cjs.log",
+          "sha256": "863c95242d9a416c8be42d82c406230b18a5253b636ef8f15cae0905dcc04a04"
+        },
+        {
+          "local_log": ".tools/firmware-efficiency-20261107/final-test_history_priority.cjs.log",
+          "sha256": "dba913386b13e23bcf3cd7b66f291a06c699e214ade775aa2127130a2cf8cd40"
+        },
+        {
+          "local_log": ".tools/firmware-efficiency-20261107/final-test_interaction_stress.cjs.log",
+          "sha256": "4e9f5921093e02cdec49d4a226c548b160cf56cc8f70ffac94c15bf900c98a23"
+        },
+        {
+          "local_log": ".tools/firmware-efficiency-20261107/final-test_motion_dashboard.cjs.log",
+          "sha256": "f9715e597da8c885d7d67e4f40aa4e60ba83f2fb6016ff51b7543fad7554a250"
+        },
+        {
+          "local_log": ".tools/firmware-efficiency-20261107/final-test_ota_status_page.cjs.log",
+          "sha256": "dc56154ddb70179c193c6a7ce25e45bc3fa17d2fb6120d818bdf50f1d0fce247"
+        },
+        {
+          "local_log": ".tools/firmware-efficiency-20261107/final-test_recording_dashboard.cjs.log",
+          "sha256": "4cd6da05bc4ee601884d307ced80e25833f0e673d9fd413871c54f1feea4a439"
+        },
+        {
+          "local_log": ".tools/firmware-efficiency-20261107/final-test_sensor_settings_dashboard.cjs.log",
+          "sha256": "8d0ba0cfc4ae36932b2effbc47de0b270b0efe5ed1fd537dca9beadb6d5752e9"
+        },
+        {
+          "local_log": ".tools/firmware-efficiency-20261107/final-test_ui_reliability.cjs.log",
+          "sha256": "fe168a138eb42ce67b1d68c19ba39dc830562360616fa9eb31cc5f77fa1704ee"
+        }
+      ]
+    },
+    "python": [
+      {
+        "script": "test_ota_package.py",
+        "cases": 6,
+        "status": "passed",
+        "phase": "baseline; corresponding runtime scripts unchanged",
+        "evidence": {
+          "local_log": ".tools/firmware-efficiency-20261107/before-test_ota_package.py.log",
+          "sha256": "12379f689c5f4f2b7a6e76bfcc1adb4207e609fe35db98be8c322e4b1602a2fe"
+        }
+      },
+      {
+        "script": "test_station_upload.py",
+        "cases": 4,
+        "status": "passed",
+        "phase": "baseline; corresponding runtime scripts unchanged",
+        "evidence": {
+          "local_log": ".tools/firmware-efficiency-20261107/before-test_station_upload.py.log",
+          "sha256": "327d4e41e5072cef686b750f74b63ca495ed468a6aa7aaa7f6c96e8c3739c632"
+        }
+      },
+      {
+        "script": "test_library_patches.py",
+        "patches": 3,
+        "upstream_files": 5,
+        "status": "passed",
+        "phase": "baseline; corresponding runtime scripts unchanged",
+        "evidence": {
+          "local_log": ".tools/firmware-efficiency-20261107/before-test_library_patches.py.log",
+          "sha256": "c6c7003441cdfc5b2c7bed0ef032d0554dd399ee3b0277f69f3c2ce0240c949b"
+        }
+      },
+      {
+        "script": "test_publication.py",
+        "cases": 7,
+        "status": "passed",
+        "phase": "baseline; corresponding runtime scripts unchanged",
+        "evidence": {
+          "local_log": ".tools/firmware-efficiency-20261107/before-test_publication.py.log",
+          "sha256": "1920ee2093b5689b75692768018574bc72787ed5ed610295625fd20a78d91916"
+        }
+      },
+      {
+        "script": "test_web_scripts.py",
+        "embedded_scripts": 8,
+        "status": "passed",
+        "phase": "baseline; corresponding runtime scripts unchanged",
+        "evidence": {
+          "local_log": ".tools/firmware-efficiency-20261107/before-test_web_scripts.py.log",
+          "sha256": "9f8ae568c2d9e792bfbba83a59cf79df07b6e3b763de4a147e5f1c4c85dbe41e"
+        }
+      }
+    ],
+    "publication_worktree": {
+      "files_scanned": 407,
+      "archive_members_scanned": 78,
+      "findings": []
+    },
+    "physical_measurements": "not performed; not authorized",
+    "publish_release_commit_push_merge": "not performed"
+  }
+}

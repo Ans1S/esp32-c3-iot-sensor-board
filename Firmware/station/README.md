@@ -1,6 +1,6 @@
 # W-Charger Station Firmware
 
-Firmware **4.4.3 / 40403** uses the existing green light/dark design and a
+Firmware **4.4.4 / 40404** uses the existing green light/dark design and a
 compact overview of sensor names and current readings. Click or tap anywhere
 on a sensor card for details, or anywhere on a measurement tile for that
 measurement's chart. **Arrange** saves order, visibility, spacing and column
@@ -237,7 +237,7 @@ Normal USB and OTA firmware updates preserve this data and the recording archive
 
 ## Current release and publication checks
 
-Firmware **4.4.3 / 40403** includes bounded sensor reinitialization, long-uptime
+Firmware **4.4.4 / 40404** includes bounded sensor reinitialization, long-uptime
 corrections, adaptive normal history and the compact configurable dashboard.
 See [the complete change inventory](../CHANGELOG.md),
 [release artifacts](../releases/README.md) and

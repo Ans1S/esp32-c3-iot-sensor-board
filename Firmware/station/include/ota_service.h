@@ -4,6 +4,7 @@
 #include <esp_partition.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
+#include <memory>
 #include "ota_protocol.h"
 
 namespace station {
@@ -30,6 +31,12 @@ class OtaService {
   } job_;
   struct Node { uint8_t mac[6]{}; lil::ota::Identity identity{}; } nodes_[19]{};
   bool save();
+  bool readImage(uint32_t offset, uint8_t* output, size_t size);
+  void clearReadCache() { readCache_.reset(); readCacheBytes_ = 0; }
+  static constexpr size_t kReadCacheSize = 8 * lil::ota::kBlockSize;
+  std::unique_ptr<uint8_t[]> readCache_;
+  uint32_t readCacheOffset_ = 0;
+  size_t readCacheBytes_ = 0;
   SemaphoreHandle_t mutex_ = nullptr;
   Preferences preferences_;
   const esp_partition_t* partition_ = nullptr;

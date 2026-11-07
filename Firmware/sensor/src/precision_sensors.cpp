@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <math.h>
+#include "pulse_signal.h"
 
 namespace sensor {
 using Type = lil::protocol::EnvironmentalSensorType;
@@ -133,24 +134,34 @@ bool PrecisionSensors::poll() {
   if (hasOptical_ && count == 0 && newestMs - lastSampleMs_ >= 300) {
     waveGap_ = true; waveCount_ = 0; hasOptical_ = false; resetSignal();
   }
-  for (uint8_t i = 0; i < count; ++i) {
-    uint8_t b[6];
-    if (!readBytes(7,b,6)) return invalidateOpticalCapture();
-    red_ = ((uint32_t(b[0]) << 16) | (uint32_t(b[1]) << 8) | b[2]) & 0x3FFFF;
-    infrared_ = ((uint32_t(b[3]) << 16) | (uint32_t(b[4]) << 8) | b[5]) & 0x3FFFF;
-    // No hardware timestamp: backdate FIFO entries at the nominal 40 ms period.
-    lastSampleMs_ = newestMs - uint32_t(count - 1 - i) * lil::timing::kOpticalSampleMs;
-    hasOptical_ = true;
-    if (waveCount_ == lil::protocol::kOpticalBatchSize) {
-      for (size_t j = 1; j < lil::protocol::kOpticalBatchSize; ++j) { wave_[j-1] = wave_[j]; waveTimes_[j-1] = waveTimes_[j]; }
-      --waveCount_; waveGap_ = true;
+  // MAX30102 FIFO_DATA stays at 0x07 during a burst. Bound requests to eight
+  // complete red/IR frames (48 bytes), well within the ESP32 Wire buffer.
+  // Drain only the original pointer snapshot; new samples wait for next poll.
+  for (uint8_t first = 0; first < count;) {
+    const uint8_t frames = count - first > 8 ? 8 : count - first;
+    uint8_t bytes[8 * 6];
+    if (!readBytes(7, bytes, frames * 6)) return invalidateOpticalCapture();
+    for (uint8_t local = 0; local < frames; ++local) {
+      const uint8_t i = first + local;
+      const uint8_t* b = bytes + local * 6;
+      red_ = ((uint32_t(b[0]) << 16) | (uint32_t(b[1]) << 8) | b[2]) & 0x3FFFF;
+      infrared_ = ((uint32_t(b[3]) << 16) | (uint32_t(b[4]) << 8) | b[5]) & 0x3FFFF;
+      // No hardware timestamp: backdate FIFO entries at the nominal 40 ms period.
+      lastSampleMs_ = newestMs - uint32_t(count - 1 - i) * lil::timing::kOpticalSampleMs;
+      hasOptical_ = true;
+      if (waveCount_ == lil::protocol::kOpticalBatchSize) {
+        for (size_t j = 1; j < lil::protocol::kOpticalBatchSize; ++j) { wave_[j-1] = wave_[j]; waveTimes_[j-1] = waveTimes_[j]; }
+        --waveCount_; waveGap_ = true;
+      }
+      wave_[waveCount_] = {red_, infrared_, 0}; waveTimes_[waveCount_++] = lastSampleMs_;
+      // Only IR enters the heart-rate estimator. A dim or clipped red channel
+      // is not evidence that the separately sampled IR pulse is unusable.
+      if (infrared_ < 10000 || infrared_ > 250000) { resetSignal(); continue; }
+      signal_[head_] = infrared_;
+      if (++head_ == lil::timing::kPulseSamples) head_ = 0;
+      if (count_ < lil::timing::kPulseSamples) ++count_;
     }
-    wave_[waveCount_] = {red_, infrared_, 0}; waveTimes_[waveCount_++] = lastSampleMs_;
-    // Only IR enters the heart-rate estimator. A dim or clipped red channel
-    // is not evidence that the separately sampled IR pulse is unusable.
-    if (infrared_ < 10000 || infrared_ > 250000) { resetSignal(); continue; }
-    signal_[head_] = infrared_; head_ = (head_ + 1) % 200;
-    if (count_ < 200) ++count_;
+    first += frames;
   }
   // Bounded optical gain settling; every change invalidates the analysis window.
   if (count && millis() - lastAdjustMs_ >= 1000) {
@@ -170,8 +181,8 @@ bool PrecisionSensors::poll() {
   }
   return !failed_;
 }
-EnvironmentalReading PrecisionSensors::read() {
-  poll();
+EnvironmentalReading PrecisionSensors::read(bool pollFirst) {
+  if (pollFirst) poll();
   EnvironmentalReading result{}; result.sensorType = type_;
   const uint32_t processingStart = millis();
   result.live.flags = lil::protocol::kLiveTimingKnown;
@@ -204,14 +215,9 @@ EnvironmentalReading PrecisionSensors::read() {
         (!hasCalculated_ || millis() - lastEstimateMs_ >= lil::timing::kPulseUpdateMs)) {
       lastEstimateMs_ = millis(); hasCalculated_ = true;
       hasEstimate_ = false;
-      constexpr int halfMean = 12, analyzed = 200 - 2 * halfMean;
-      float ac[analyzed]; double energy = 0;
-      for (int i = halfMean; i < 200 - halfMean; ++i) {
-        double mean = 0;
-        for (int j = -halfMean; j <= halfMean; ++j) mean += signal_[(head_ + i + j) % 200];
-        ac[i-halfMean] = signal_[(head_ + i) % 200] - mean / (2 * halfMean + 1);
-        energy += ac[i-halfMean] * ac[i-halfMean];
-      }
+      constexpr int analyzed = pulse::kAnalyzedSamples;
+      float ac[analyzed];
+      const double energy = pulse::detrend(signal_, head_, ac);
       float correlations[52]{};
       for (int lag = 6; lag <= 51; ++lag) {
         double xy = 0, xx = 0, yy = 0;

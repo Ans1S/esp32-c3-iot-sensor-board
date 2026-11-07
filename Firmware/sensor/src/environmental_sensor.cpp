@@ -188,9 +188,9 @@ bool EnvironmentalSensor::beginType(
   return started;
 }
 
-EnvironmentalReading EnvironmentalSensor::read() {
-  if (initialized_ && detectedType_ == lil::protocol::EnvironmentalSensorType::kLsm6dsox) return lsm6dsox_.read();
-  if (initialized_ && (detectedType_ == lil::protocol::EnvironmentalSensorType::kTmp117 || detectedType_ == lil::protocol::EnvironmentalSensorType::kMax30102)) return precision_.read();
+EnvironmentalReading EnvironmentalSensor::read(bool pollFirst) {
+  if (initialized_ && detectedType_ == lil::protocol::EnvironmentalSensorType::kLsm6dsox) return lsm6dsox_.read(pollFirst);
+  if (initialized_ && (detectedType_ == lil::protocol::EnvironmentalSensorType::kTmp117 || detectedType_ == lil::protocol::EnvironmentalSensorType::kMax30102)) return precision_.read(pollFirst);
   if (measurementBudgetExpired()) return EnvironmentalReading{};
   if (requestedType_ == lil::protocol::EnvironmentalSensorType::kDisabled) {
     EnvironmentalReading disabled{};
