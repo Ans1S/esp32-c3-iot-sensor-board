@@ -1,0 +1,74 @@
+{
+  "platformio": "6.1.19",
+  "platform": "pioarduino 55.03.311",
+  "framework": "Arduino-ESP32 3.3.11",
+  "gcc": "14.2.0 esp-14.2.0_20260121",
+  "binutils": "2.43.1",
+  "host": "Windows x86_64, Zig 0.15.2 / Clang 20.1.2",
+  "targets": {
+    "sensor_pcb_v3": {
+      "flags": [
+        "-std=gnu++17",
+        "-march=rv32imc_zicsr_zifencei",
+        "-fno-rtti",
+        "-std=gnu++2b",
+        "-fexceptions",
+        "-std=gnu++2a",
+        "-Os",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-fstack-protector",
+        "-fno-jump-tables",
+        "-fno-tree-switch-conversion",
+        "-DF_CPU=80000000L"
+      ],
+      "effective_standard": "gnu++2a (C++20)",
+      "pcb": 3,
+      "lto": false
+    },
+    "sensor_pcb_v4": {
+      "flags": [
+        "-std=gnu++17",
+        "-march=rv32imc_zicsr_zifencei",
+        "-fno-rtti",
+        "-std=gnu++2b",
+        "-fexceptions",
+        "-std=gnu++2a",
+        "-Os",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-fstack-protector",
+        "-fno-jump-tables",
+        "-fno-tree-switch-conversion",
+        "-DF_CPU=80000000L"
+      ],
+      "effective_standard": "gnu++2a (C++20)",
+      "pcb": 4,
+      "lto": false
+    },
+    "station_s3": {
+      "flags": [
+        "-std=gnu++17",
+        "-mlongcalls",
+        "-fno-builtin-memcpy",
+        "-fno-builtin-memset",
+        "-fno-builtin-bzero",
+        "-mdisable-hardware-atomics",
+        "-fno-rtti",
+        "-std=gnu++2b",
+        "-fexceptions",
+        "-std=gnu++2a",
+        "-Os",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-fstack-protector",
+        "-fno-jump-tables",
+        "-fno-tree-switch-conversion",
+        "-DF_CPU=240000000L"
+      ],
+      "effective_standard": "gnu++2a (C++20)",
+      "pcb": null,
+      "lto": false
+    }
+  }
+}

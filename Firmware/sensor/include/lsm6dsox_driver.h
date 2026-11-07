@@ -8,7 +8,7 @@ class Lsm6dsoxDriver {
  public:
   bool begin(uint8_t address);
   bool poll();
-  EnvironmentalReading read();
+  EnvironmentalReading read(bool pollFirst = true);
   void resetFeedback() { feedback_ = lil::MotionFeedbackTracker{}; }
  private:
   bool writeRegister(uint8_t reg, uint8_t value);
@@ -23,6 +23,7 @@ class Lsm6dsoxDriver {
   uint32_t lastPollMs_ = 0;
   uint32_t accelCount_ = 0, gyroCount_ = 0;
   float sums_[2][3]{};
+  float gyroPeakSquared_ = 0;
   lil::protocol::MotionReading motion_{};
   lil::MotionFeedbackTracker feedback_{};
 };

@@ -4,6 +4,7 @@
 #include <vector>
 #include <cstdint>
 struct WireStub {
+  unsigned readRequests = 0;
   uint8_t registers[256]{};
   uint8_t address = 0, reg = 0;
   bool fail = false, stuckReset = false, shortRead = false, overrun = false;
@@ -23,6 +24,7 @@ struct WireStub {
     return 0;
   }
   uint8_t requestFrom(uint8_t, uint8_t n) {
+    ++readRequests;
     rx.clear();
     if (shortRead) return 0;
     if (reg == 0x3A) {

@@ -1,0 +1,941 @@
+phase,target,source,line,name,frame_bytes,kind
+before,sensor_pcb_v4,Firmware/sensor/src/adc_reader.cpp,16,void sensor::AdcReader::begin(sensor::PowerController&),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/adc_reader.cpp,22,void sensor::AdcReader::startBatteryMeasurement(),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/adc_reader.cpp,31,sensor::BatteryReading sensor::AdcReader::finishBatteryMeasurement(float),80,static
+before,sensor_pcb_v4,Firmware/sensor/src/adc_reader.cpp,76,sensor::BatteryReading sensor::AdcReader::readBattery(float),48,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme280_driver.cpp,18,"bool sensor::Bme280Driver::readBytes(uint8_t, uint8_t*, uint8_t)",32,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme280_driver.cpp,48,bool sensor::Bme280Driver::waitReady(uint32_t),32,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme280_driver.cpp,37,"bool sensor::Bme280Driver::write8(uint8_t, uint8_t)",16,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme280_driver.cpp,60,bool sensor::Bme280Driver::begin(uint8_t),128,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme280_driver.cpp,103,sensor::EnvironmentalReading sensor::Bme280Driver::read(),384,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,86,"bool sensor::{anonymous}::inRange(float, float, float)",32,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,179,"static int8_t sensor::Bme680Driver::rawI2cRead(uint8_t, uint8_t*, uint32_t, void*)",32,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,202,"static int8_t sensor::Bme680Driver::rawI2cWrite(uint8_t, const uint8_t*, uint32_t, void*)",32,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,219,"static void sensor::Bme680Driver::rawDelayUs(uint32_t, void*)",0,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,75,long unsigned int sensor::{anonymous}::bsecLogicalMillis(),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,95,bool sensor::Bme680Driver::ensureStateStore(),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,224,bool sensor::Bme680Driver::beginRaw(uint8_t),32,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,255,bool sensor::Bme680Driver::tryAddress(uint8_t),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,262,void sensor::Bme680Driver::seedClockOverflowCounter(),32,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,275,void sensor::Bme680Driver::restoreState(),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,102,"bool sensor::Bme680Driver::begin(uint8_t, float)",720,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,639,void sensor::Bme680Driver::saveCalibrationMetadata(),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,646,uint32_t sensor::Bme680Driver::currentCalibrationElapsedSeconds() const,16,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,614,void sensor::Bme680Driver::saveState(uint8_t),48,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,569,void sensor::Bme680Driver::updateCalibrationStatus(sensor::EnvironmentalReading&),32,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,479,sensor::EnvironmentalReading sensor::Bme680Driver::readRaw(),80,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,304,sensor::EnvironmentalReading sensor::Bme680Driver::readBsec(),112,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,293,sensor::EnvironmentalReading sensor::Bme680Driver::read(),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,655,void sensor::Bme680Driver::prepareForDeepSleep(uint32_t),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,665,uint32_t sensor::Bme680Driver::recommendedSleepSeconds(uint32_t) const,16,static
+before,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,676,bool sensor::Bme680Driver::clearPersistentState(),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/bsec_state_store.cpp,42,bool sensor::BsecStateStore::begin(),0,static
+before,sensor_pcb_v4,Firmware/sensor/src/bsec_state_store.cpp,46,"bool sensor::BsecStateStore::load(uint8_t*, size_t)",320,static
+before,sensor_pcb_v4,Firmware/sensor/src/bsec_state_store.cpp,62,"bool sensor::BsecStateStore::save(const uint8_t*, size_t)",304,static
+before,sensor_pcb_v4,Firmware/sensor/src/bsec_state_store.cpp,74,"bool sensor::BsecStateStore::loadCalibration(uint32_t&, bool&)",48,static
+before,sensor_pcb_v4,Firmware/sensor/src/bsec_state_store.cpp,93,"bool sensor::BsecStateStore::saveCalibration(uint32_t, bool)",32,static
+before,sensor_pcb_v4,Firmware/sensor/src/bsec_state_store.cpp,103,bool sensor::BsecStateStore::clear(),0,static
+before,sensor_pcb_v4,Firmware/sensor/src/environmental_sensor.cpp,20,void sensor::{anonymous}::releaseI2cPins(),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/environmental_sensor.cpp,173,"bool sensor::EnvironmentalSensor::beginType(lil::protocol::EnvironmentalSensorType, uint8_t, float)",16,static
+before,sensor_pcb_v4,Firmware/sensor/src/environmental_sensor.cpp,191,sensor::EnvironmentalReading sensor::EnvironmentalSensor::read(),224,static
+before,sensor_pcb_v4,Firmware/sensor/src/environmental_sensor.cpp,221,"void sensor::EnvironmentalSensor::prepareForDeepSleep(uint32_t, lil::protocol::EnvironmentalSensorType)",0,static
+before,sensor_pcb_v4,Firmware/sensor/src/environmental_sensor.cpp,229,uint32_t sensor::EnvironmentalSensor::bme680RecommendedSleepSeconds(uint32_t) const,0,static
+before,sensor_pcb_v4,Firmware/sensor/src/environmental_sensor.cpp,234,bool sensor::EnvironmentalSensor::clearIaqState(),0,static
+before,sensor_pcb_v4,Firmware/sensor/src/environmental_sensor.cpp,238,lil::protocol::EnvironmentalSensorType sensor::EnvironmentalSensor::detectedType() const,0,static
+before,sensor_pcb_v4,Firmware/sensor/src/environmental_sensor.cpp,211,void sensor::EnvironmentalSensor::end(),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/environmental_sensor.cpp,92,lil::protocol::EnvironmentalSensorType sensor::EnvironmentalSensor::probeSensorType(uint8_t&) const,48,static
+before,sensor_pcb_v4,Firmware/sensor/src/environmental_sensor.cpp,155,"bool sensor::EnvironmentalSensor::startDetectedSensor(lil::protocol::EnvironmentalSensorType, float)",32,static
+before,sensor_pcb_v4,Firmware/sensor/src/environmental_sensor.cpp,27,"bool sensor::EnvironmentalSensor::begin(sensor::PowerController&, lil::protocol::EnvironmentalSensorType, float)",32,static
+before,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,65,"static void sensor::EspNowTransport::sendCallback(const wifi_tx_info_t*, esp_now_send_status_t)",0,static
+before,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,74,"static void sensor::EspNowTransport::receiveCallback(const esp_now_recv_info_t*, const uint8_t*, int)",320,static
+before,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,104,"bool sensor::EspNowTransport::receiveResponse(sensor::ExchangeResult&, const uint8_t*, TickType_t)",96,static
+before,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,282,bool sensor::EspNowTransport::ensurePeer(const uint8_t*),64,static
+before,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,198,"bool sensor::EspNowTransport::tryChannel(uint8_t, const uint8_t*, const lil::protocol::TelemetryPacket&, sensor::ExchangeResult&, int8_t, uint8_t, bool)",304,static
+before,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,126,"sensor::ExchangeResult sensor::EspNowTransport::exchange(const lil::protocol::TelemetryPacket&, const sensor::SensorRuntimeConfig&, bool)",48,static
+before,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,178,"sensor::ExchangeResult sensor::EspNowTransport::exchangeLpChannel(const lil::protocol::TelemetryPacket&, const sensor::SensorRuntimeConfig&, uint8_t, bool)",48,static
+before,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,295,void sensor::EspNowTransport::end(),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,39,bool sensor::EspNowTransport::begin(),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,312,"bool sensor::EspNowTransport::otaExchange(const uint8_t*, const lil::ota::Packet&, lil::ota::Packet&)",288,static
+before,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,338,"bool sensor::EspNowTransport::recordingExchange(const sensor::SensorRuntimeConfig&, const void*, size_t, uint64_t, uint32_t, uint32_t, lil::recording::Ack&)",96,static
+before,sensor_pcb_v4,Firmware/shared/src/lil_protocol.cpp,29,"uint32_t lil::protocol::crc32(const uint8_t*, size_t)",0,static
+before,sensor_pcb_v4,Firmware/shared/src/lil_protocol.cpp,33,"void lil::protocol::finalizePacket(void*, size_t, MessageType, uint32_t, uint16_t)",16,static
+before,sensor_pcb_v4,Firmware/shared/src/lil_protocol.cpp,49,"bool lil::protocol::validatePacket(const void*, size_t, MessageType, uint16_t)",32,static
+before,sensor_pcb_v4,Firmware/sensor/src/live_acquisition.cpp,29,sensor::LiveAcquisition::loop()::<lambda(sensor::LiveCapture&)>,16,static
+before,sensor_pcb_v4,Firmware/sensor/src/live_acquisition.cpp,7,"bool sensor::LiveAcquisition::begin(sensor::EnvironmentalSensor&, sensor::PowerController&, lil::protocol::EnvironmentalSensorType, float)",16,static
+before,sensor_pcb_v4,Firmware/sensor/src/live_acquisition.cpp,18,void sensor::LiveAcquisition::loop(),512,static
+before,sensor_pcb_v4,Firmware/sensor/src/live_acquisition.cpp,17,static void sensor::LiveAcquisition::entry(void*),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/logical_clock.cpp,9,uint64_t sensor::logicalTimeUs(),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/logical_clock.cpp,12,void sensor::accountForDeepSleep(uint64_t),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/low_power_wait.cpp,22,void sensor::lowPowerSensorWaitUs(uint32_t),32,static
+before,sensor_pcb_v4,Firmware/sensor/src/low_power_wait.cpp,68,void wchargerBsecLowPowerWait(uint32_t),0,static
+before,sensor_pcb_v4,Firmware/sensor/src/lsm6dsox_driver.cpp,7,void sensor::Lsm6dsoxDriver::discardWindow(),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/lsm6dsox_driver.cpp,14,"bool sensor::Lsm6dsoxDriver::writeRegister(uint8_t, uint8_t)",16,static
+before,sensor_pcb_v4,Firmware/sensor/src/lsm6dsox_driver.cpp,20,"bool sensor::Lsm6dsoxDriver::readRegisters(uint8_t, uint8_t*, uint8_t)",32,static
+before,sensor_pcb_v4,Firmware/sensor/src/lsm6dsox_driver.cpp,60,bool sensor::Lsm6dsoxDriver::poll(),96,static
+before,sensor_pcb_v4,Firmware/sensor/src/lsm6dsox_driver.cpp,115,sensor::EnvironmentalReading sensor::Lsm6dsoxDriver::read(),48,static
+before,sensor_pcb_v4,Firmware/sensor/src/lsm6dsox_driver.cpp,28,bool sensor::Lsm6dsoxDriver::begin(uint8_t),224,static
+before,sensor_pcb_v4,Firmware/sensor/src/main.cpp,134,uint8_t {anonymous}::takeNextRecoveryChannel(uint8_t),0,static
+before,sensor_pcb_v4,Firmware/sensor/include/sensor_config_store.h,33,sensor::SensorConfigStore::~SensorConfigStore(),0,static
+before,sensor_pcb_v4,Firmware/sensor/include/environmental_sensor.h,12,sensor::EnvironmentalSensor::~EnvironmentalSensor(),0,static
+before,sensor_pcb_v4,Firmware/sensor/src/main.cpp,152,bool {anonymous}::applyStationConfig(const lil::protocol::ConfigResponsePayload&),304,static
+before,sensor_pcb_v4,Firmware/sensor/src/main.cpp,327,bool {anonymous}::batteryProtectionRequired(const sensor::BatteryReading&),0,static
+before,sensor_pcb_v4,Firmware/sensor/src/main.cpp,105,{anonymous}::OperatingMode {anonymous}::operatingMode(const sensor::SensorRuntimeConfig&),0,static
+before,sensor_pcb_v4,Firmware/sensor/include/live_acquisition.h,24,void sensor::LiveAcquisition::stop(),0,static
+before,sensor_pcb_v4,Firmware/sensor/include/live_acquisition.h,25,void sensor::LiveAcquisition::normal(uint32_t),0,static
+before,sensor_pcb_v4,Firmware/sensor/include/logical_clock.h,6,uint64_t sensor::logicalTimeMs(),16,static
+before,sensor_pcb_v4,Firmware/sensor/include/environmental_sensor.h,12,sensor::EnvironmentalSensor::EnvironmentalSensor(),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/main.cpp,821,void loop(),0,static
+before,sensor_pcb_v4,Firmware/shared/include/lil_protocol.h,209,"void lil::protocol::finalize(Packet<Payload>&, MessageType, uint32_t) [with Payload = TelemetryPayload]",0,static
+before,sensor_pcb_v4,Firmware/sensor/src/main.cpp,263,"lil::protocol::TelemetryPacket {anonymous}::makeTelemetryPacket(const sensor::EnvironmentalReading&, const sensor::BatteryReading&, lil::protocol::SensorOperatingMode)",48,static
+before,sensor_pcb_v4,Firmware/sensor/src/main.cpp,390,{anonymous}::runLiveMode(sensor::BatteryReading)::<lambda()>,448,static
+before,sensor_pcb_v4,Firmware/sensor/src/main.cpp,401,{anonymous}::runLiveMode(sensor::BatteryReading)::<lambda(bool)>,32,static
+before,sensor_pcb_v4,Firmware/sensor/src/main.cpp,333,void {anonymous}::reportBatteryAndSleep(const sensor::BatteryReading&),464,static
+before,sensor_pcb_v4,Firmware/sensor/src/main.cpp,572,void setup(),1600,static
+before,sensor_pcb_v4,Firmware/sensor/src/main.cpp,821,cpp),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/measurement_budget.cpp,11,int64_t sensor::{anonymous}::effectiveDeadlineUs(),0,static
+before,sensor_pcb_v4,Firmware/sensor/src/measurement_budget.cpp,18,void sensor::beginMeasurementBudget(uint32_t),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/measurement_budget.cpp,23,void sensor::endMeasurementBudget(),0,static
+before,sensor_pcb_v4,Firmware/sensor/src/measurement_budget.cpp,25,void sensor::beginFetchWindow(),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/measurement_budget.cpp,26,void sensor::endFetchWindow(),0,static
+before,sensor_pcb_v4,Firmware/sensor/src/measurement_budget.cpp,28,bool sensor::measurementBudgetExpired(),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/measurement_budget.cpp,33,void sensor::measurementWaitUs(uint32_t),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/measurement_budget.cpp,44,bool wchargerSensorBudgetExpired(),0,static
+before,sensor_pcb_v4,Firmware/sensor/src/measurement_budget.cpp,47,void wchargerBeginFetchWindow(),0,static
+before,sensor_pcb_v4,Firmware/sensor/src/measurement_budget.cpp,48,void wchargerEndFetchWindow(),0,static
+before,sensor_pcb_v4,Firmware/sensor/src/ota_client.cpp,52,static constexpr void sensor::beginOtaBootGuard()::<lambda(void*)>::_FUN(void*),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/ota_client.cpp,94,"sensor::checkOta(EspNowTransport&, const SensorRuntimeConfig&, AdcReader&, BatteryReading&)::<lambda()>",16,static
+before,sensor_pcb_v4,Firmware/sensor/src/ota_client.cpp,99,"sensor::checkOta(EspNowTransport&, const SensorRuntimeConfig&, AdcReader&, BatteryReading&)::<lambda(lil::ota::State, uint32_t, lil::ota::Failure)>",32,static
+before,sensor_pcb_v4,Firmware/sensor/src/ota_client.cpp,15,bool verifyRollbackLater(),0,static
+before,sensor_pcb_v4,Firmware/sensor/src/ota_client.cpp,46,void sensor::beginOtaBootGuard(),48,static
+before,sensor_pcb_v4,Firmware/sensor/src/ota_client.cpp,57,void sensor::finishOtaBootGuard(),0,static
+before,sensor_pcb_v4,Firmware/sensor/src/ota_client.cpp,64,bool sensor::otaBootPending(),0,static
+before,sensor_pcb_v4,Firmware/sensor/src/ota_client.cpp,65,bool sensor::confirmOtaBootAfterContact(),32,static
+before,sensor_pcb_v4,Firmware/sensor/src/ota_client.cpp,75,"void sensor::checkOta(EspNowTransport&, const SensorRuntimeConfig&, AdcReader&, BatteryReading&)",2304,static
+before,sensor_pcb_v4,Firmware/shared/src/ota_crypto.cpp,11,bool lil::ota::verifyManifest(const Manifest&),64,static
+before,sensor_pcb_v4,Firmware/sensor/src/power_controller.cpp,7,"static void sensor::PowerController::writeActive(gpio_num_t, bool, bool)",0,static
+before,sensor_pcb_v4,Firmware/sensor/src/power_controller.cpp,34,void sensor::PowerController::sensorPower(bool),0,static
+before,sensor_pcb_v4,Firmware/sensor/src/power_controller.cpp,39,void sensor::PowerController::adcPower(bool),0,static
+before,sensor_pcb_v4,Firmware/sensor/src/power_controller.cpp,15,void sensor::PowerController::begin(),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/power_controller.cpp,43,void sensor::PowerController::prepareForDeepSleep(),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/precision_sensors.cpp,10,"uint8_t sensor::{anonymous}::opticalCurrent(uint8_t, uint32_t)",0,static
+before,sensor_pcb_v4,Firmware/sensor/src/precision_sensors.cpp,54,void sensor::PrecisionSensors::resetSignal(),0,static
+before,sensor_pcb_v4,Firmware/sensor/src/precision_sensors.cpp,55,bool sensor::PrecisionSensors::invalidateOpticalCapture(),0,static
+before,sensor_pcb_v4,Firmware/sensor/src/precision_sensors.cpp,24,"bool sensor::PrecisionSensors::readBytes(uint8_t, uint8_t*, uint8_t)",32,static
+before,sensor_pcb_v4,Firmware/sensor/src/precision_sensors.cpp,38,"static bool sensor::PrecisionSensors::probe(sensor::Type, uint8_t&)",1024,static
+before,sensor_pcb_v4,Firmware/sensor/src/precision_sensors.cpp,30,"bool sensor::PrecisionSensors::write8(uint8_t, uint8_t)",16,static
+before,sensor_pcb_v4,Firmware/sensor/src/precision_sensors.cpp,62,bool sensor::PrecisionSensors::clearOpticalFifo(),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/precision_sensors.cpp,99,bool sensor::PrecisionSensors::poll(),144,static
+before,sensor_pcb_v4,Firmware/sensor/src/precision_sensors.cpp,184,sensor::EnvironmentalReading sensor::PrecisionSensors::read(),1104,static
+before,sensor_pcb_v4,Firmware/sensor/src/precision_sensors.cpp,34,"bool sensor::PrecisionSensors::write16(uint8_t, uint16_t)",16,static
+before,sensor_pcb_v4,Firmware/sensor/src/precision_sensors.cpp,68,"bool sensor::PrecisionSensors::begin(sensor::Type, uint8_t)",1040,static
+before,sensor_pcb_v4,Firmware/shared/include/recording_protocol.h,71,constexpr size_t lil::recording::size(lil::protocol::EnvironmentalSensorType),0,static
+before,sensor_pcb_v4,Firmware/shared/include/recording_protocol.h,76,uint32_t lil::recording::checksum(const Record&),32,static
+before,sensor_pcb_v4,Firmware/shared/include/recording_protocol.h,82,bool lil::recording::valid(const Record&),16,static
+before,sensor_pcb_v4,Firmware/shared/src/recording_journal.cpp,13,"bool lil::recording::Journal::readHeader(size_t, Header&)",0,static
+before,sensor_pcb_v4,Firmware/shared/src/recording_journal.cpp,16,"bool lil::recording::Journal::clearBit(size_t, size_t, uint8_t)",48,static
+before,sensor_pcb_v4,Firmware/shared/src/recording_journal.cpp,24,"bool lil::recording::Journal::begin(lil::recording::Flash&, uint64_t)",832,static
+before,sensor_pcb_v4,Firmware/shared/src/recording_journal.cpp,80,bool lil::recording::Journal::clear(),16,static
+before,sensor_pcb_v4,Firmware/shared/src/recording_journal.cpp,86,"bool lil::recording::Journal::initialize(size_t, size_t)",112,static
+before,sensor_pcb_v4,Firmware/shared/src/recording_journal.cpp,98,bool lil::recording::Journal::append(const lil::recording::Record&),192,static
+before,sensor_pcb_v4,Firmware/shared/src/recording_journal.cpp,128,"bool lil::recording::Journal::locate(size_t&, uint8_t&)",112,static
+before,sensor_pcb_v4,Firmware/shared/src/recording_journal.cpp,139,bool lil::recording::Journal::peek(lil::recording::Record&),160,static
+before,sensor_pcb_v4,Firmware/shared/src/recording_journal.cpp,147,bool lil::recording::Journal::acknowledge(const lil::recording::Record&),176,static
+before,sensor_pcb_v4,Firmware/sensor/include/recording_store.h,10,virtual size_t sensor::RecordingFlash::bytes() const,0,static
+before,sensor_pcb_v4,Firmware/sensor/include/recording_store.h,7,constexpr sensor::RecordingFlash::~RecordingFlash(),0,static
+before,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,13,"virtual bool sensor::RecordingFlash::read(size_t, void*, size_t)",16,static
+before,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,16,"virtual bool sensor::RecordingFlash::write(size_t, const void*, size_t)",16,static
+before,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,19,"virtual bool sensor::RecordingFlash::erase(size_t, size_t)",16,static
+before,sensor_pcb_v4,Firmware/sensor/include/recording_store.h,7,virtual constexpr sensor::RecordingFlash::~RecordingFlash(),0,static
+before,sensor_pcb_v4,Firmware/shared/include/recording_protocol.h,71,constexpr size_t lil::recording::size(lil::protocol::EnvironmentalSensorType),0,static
+before,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,8,bool sensor::RecordingFlash::begin(),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,42,bool sensor::RecordingStore::start(),32,static
+before,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,56,void sensor::RecordingStore::stop(bool),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,23,bool sensor::RecordingStore::begin(lil::protocol::EnvironmentalSensorType),32,static
+before,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,68,"bool sensor::RecordingStore::append(uint64_t, const lil::protocol::TelemetryPayload&)",176,static
+before,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,81,bool sensor::RecordingStore::next(lil::recording::Upload&),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,87,bool sensor::RecordingStore::acknowledge(const lil::recording::Record&),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,96,"void sensor::RecordingStore::anchor(uint64_t, uint32_t, uint32_t)",32,static
+before,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,111,lil::recording::Status sensor::RecordingStore::status(uint32_t) const,16,static
+before,sensor_pcb_v4,Firmware/sensor/src/sensor_config_store.cpp,124,bool sensor::{anonymous}::validRuntimeConfig(const sensor::SensorRuntimeConfig&),32,static
+before,sensor_pcb_v4,Firmware/sensor/src/sensor_config_store.cpp,150,bool sensor::SensorConfigStore::ensurePreferencesOpen(),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/sensor_config_store.cpp,158,bool sensor::SensorConfigStore::begin(),80,static
+before,sensor_pcb_v4,Firmware/sensor/src/sensor_config_store.cpp,203,bool sensor::SensorConfigStore::firmwareChanged() const,0,static
+before,sensor_pcb_v4,Firmware/sensor/src/sensor_config_store.cpp,207,sensor::SensorRuntimeConfig sensor::SensorConfigStore::load(),176,static
+before,sensor_pcb_v4,Firmware/sensor/src/sensor_config_store.cpp,291,bool sensor::SensorConfigStore::saveIfChanged(const sensor::SensorRuntimeConfig&),32,static
+before,sensor_pcb_v4,Firmware/sensor/src/sensor_config_store.cpp,308,bool sensor::SensorConfigStore::factoryReset(),16,static
+before,sensor_pcb_v4,Firmware/sensor/src/sleep_controller.cpp,12,"static void sensor::SleepController::deepSleep(uint32_t, sensor::PowerController&, uint32_t)",32,static
+before,station_s3,Firmware/station/src/config_store.cpp,205,bool station::{anonymous}::validSensorType(lil::protocol::EnvironmentalSensorType),32,static
+before,station_s3,Firmware/station/src/config_store.cpp,14,bool station::{anonymous}::filesystemPartitionErased(),1072,static
+before,station_s3,Firmware/station/src/config_store.cpp,193,String station::{anonymous}::sensorKey(size_t),80,static
+before,station_s3,Firmware/station/src/config_store.cpp,197,String station::{anonymous}::historyKey(size_t),80,static
+before,station_s3,Firmware/station/src/config_store.cpp,201,String station::{anonymous}::latestTelemetryKey(size_t),80,static
+before,station_s3,Firmware/station/src/config_store.cpp,165,"void station::{anonymous}::migrateSensorBase(const Legacy&, station::SensorConfig&) [with Legacy = LegacySensorConfigV5]",32,static
+before,station_s3,Firmware/station/include/filesystem_guard.h,12,station::FilesystemGuard::FilesystemGuard(),32,static
+before,station_s3,Firmware/station/include/filesystem_guard.h,13,station::FilesystemGuard::~FilesystemGuard(),32,static
+before,station_s3,Firmware/station/src/config_store.cpp,235,bool station::ConfigStore::begin(),32,static
+before,station_s3,Firmware/station/src/config_store.cpp,251,void station::sanitizeSensorConfig(SensorConfig&),64,static
+before,station_s3,Firmware/station/src/config_store.cpp,277,void station::terminateStationStrings(StationConfig&),32,static
+before,station_s3,Firmware/station/src/config_store.cpp,293,void station::ConfigStore::applyDefaults(station::StationConfig&),80,static
+before,station_s3,Firmware/station/src/config_store.cpp,355,bool station::ConfigStore::saveStationConfig(const station::StationConfig&),32,static
+before,station_s3,Firmware/station/src/config_store.cpp,300,station::StationConfig station::ConfigStore::loadStationConfig(),448,static
+before,station_s3,Firmware/station/src/config_store.cpp,476,"bool station::ConfigStore::saveSensorConfig(size_t, const station::SensorConfig&)",64,static
+before,station_s3,Firmware/station/src/config_store.cpp,359,"bool station::ConfigStore::loadSensorConfigs(station::SensorConfig*, size_t)",176,static
+before,station_s3,Firmware/station/src/config_store.cpp,484,bool station::ConfigStore::deleteSensorConfig(size_t),64,static
+before,station_s3,Firmware/station/src/config_store.cpp,492,"bool station::ConfigStore::loadSensorIdentities(station::SensorIdentity*, size_t)",32,static
+before,station_s3,Firmware/station/src/config_store.cpp,505,"bool station::ConfigStore::saveSensorIdentities(const station::SensorIdentity*, size_t)",32,static
+before,station_s3,Firmware/station/src/config_store.cpp,520,station::DashboardLayout station::ConfigStore::loadDashboardLayout(),192,static
+before,station_s3,Firmware/station/src/config_store.cpp,528,bool station::ConfigStore::saveDashboardLayout(station::DashboardLayout),32,static
+before,station_s3,Firmware/station/src/config_store.cpp,631,bool station::ConfigStore::deleteHistory(size_t),64,static
+before,station_s3,Firmware/station/src/config_store.cpp,671,bool station::ConfigStore::deleteLatestTelemetry(size_t),64,static
+before,station_s3,Firmware/station/src/config_store.cpp,680,bool station::ConfigStore::factoryReset(),32,static
+before,station_s3,Firmware/station/src/config_store.cpp,511,size_t station::ConfigStore::historyBytesLength(size_t),80,static
+before,station_s3,Firmware/station/src/config_store.cpp,543,"bool station::ConfigStore::loadHistoryRange(size_t, size_t, void*, size_t)",80,static
+before,station_s3,Firmware/station/src/config_store.cpp,535,"bool station::ConfigStore::loadHistory(size_t, void*, size_t)",32,static
+before,station_s3,Firmware/station/src/config_store.cpp,557,"bool station::ConfigStore::saveHistory(size_t, const void*, size_t)",112,static
+before,station_s3,Firmware/station/src/config_store.cpp,575,"bool station::ConfigStore::saveHistoryParts(size_t, const void*, size_t, const void*, size_t)",112,static
+before,station_s3,Firmware/station/src/config_store.cpp,604,"bool station::ConfigStore::updateHistory(size_t, size_t, const void*, size_t, size_t, const void*, size_t)",80,static
+before,station_s3,Firmware/station/src/config_store.cpp,640,"bool station::ConfigStore::loadLatestTelemetry(size_t, void*, size_t)",80,static
+before,station_s3,Firmware/station/src/config_store.cpp,651,"bool station::ConfigStore::saveLatestTelemetry(size_t, const void*, size_t)",112,static
+before,station_s3,Firmware/station/src/espnow_gateway.cpp,55,"static void station::EspNowGateway::receiveCallback(const esp_now_recv_info_t*, const uint8_t*, int)",320,static
+before,station_s3,Firmware/station/src/espnow_gateway.cpp,333,bool station::EspNowGateway::_ZN7station13EspNowGateway10ensurePeerEPKh$part$0(const uint8_t*),304,static
+before,station_s3,Firmware/station/include/radio_send_guard.h,13,void station::RadioSendGuard::complete(),32,static
+before,station_s3,Firmware/station/src/espnow_gateway.cpp,78,"static void station::EspNowGateway::sendCallback(const wifi_tx_info_t*, esp_now_send_status_t)",32,static
+before,station_s3,Firmware/station/include/radio_send_guard.h,14,bool station::RadioSendGuard::pending() const,32,static
+before,station_s3,Firmware/shared/include/recording_protocol.h,71,constexpr size_t lil::recording::size(lil::protocol::EnvironmentalSensorType),32,static
+before,station_s3,Firmware/shared/include/recording_protocol.h,76,uint32_t lil::recording::checksum(const Record&),48,static
+before,station_s3,Firmware/shared/include/telemetry_validation.h,7,bool lil::protocol::validTelemetryValues(const TelemetryPayload&),48,static
+before,station_s3,Firmware/station/src/espnow_gateway.cpp,26,"bool station::EspNowGateway::begin(station::SensorRegistry&, station::ThingSpeakService&, station::WifiService&)",48,static
+before,station_s3,Firmware/station/src/espnow_gateway.cpp,131,void station::EspNowGateway::persistArchive(const station::EspNowArchiveEvent&),480,static
+before,station_s3,Firmware/station/src/espnow_gateway.cpp,95,static void station::EspNowGateway::archiveTaskEntry(void*),208,static
+before,station_s3,Firmware/station/src/espnow_gateway.cpp,150,void station::EspNowGateway::persist(const station::EspNowPersistenceEvent&),64,static
+before,station_s3,Firmware/station/src/espnow_gateway.cpp,121,void station::EspNowGateway::persistenceTaskLoop(),368,static
+before,station_s3,Firmware/station/src/espnow_gateway.cpp,92,static void station::EspNowGateway::persistenceTaskEntry(void*),32,static
+before,station_s3,Firmware/station/src/espnow_gateway.cpp,333,bool station::EspNowGateway::ensurePeer(const uint8_t*),32,static
+before,station_s3,Firmware/station/src/espnow_gateway.cpp,165,void station::EspNowGateway::handle(const station::EspNowRxEvent&),1104,static
+before,station_s3,Firmware/station/src/espnow_gateway.cpp,106,void station::EspNowGateway::taskLoop(),320,static
+before,station_s3,Firmware/station/src/espnow_gateway.cpp,88,static void station::EspNowGateway::taskEntry(void*),32,static
+before,station_s3,Firmware/station/src/espnow_gateway.cpp,363,uint32_t station::EspNowGateway::receivedPackets() const,32,static
+before,station_s3,Firmware/station/src/espnow_gateway.cpp,367,uint32_t station::EspNowGateway::invalidPackets() const,32,static
+before,station_s3,Firmware/station/src/espnow_gateway.cpp,371,uint32_t station::EspNowGateway::droppedPackets() const,32,static
+before,station_s3,Firmware/station/src/filesystem_guard.cpp,10,bool station::initializeFilesystemLock(),32,static
+before,station_s3,Firmware/station/src/filesystem_guard.cpp,14,QueueDefinition* station::filesystemMutex(),32,static
+before,station_s3,Firmware/station/src/filesystem_guard.cpp,15,size_t station::historyWorkspaceReserve(),32,static
+before,station_s3,Firmware/station/src/filesystem_guard.cpp,19,void station::noteArchiveWork(),32,static
+before,station_s3,Firmware/shared/src/lil_protocol.cpp,29,"uint32_t lil::protocol::crc32(const uint8_t*, size_t)",32,static
+before,station_s3,Firmware/shared/src/lil_protocol.cpp,33,"void lil::protocol::finalizePacket(void*, size_t, MessageType, uint32_t, uint16_t)",32,static
+before,station_s3,Firmware/shared/src/lil_protocol.cpp,49,"bool lil::protocol::validatePacket(const void*, size_t, MessageType, uint16_t)",48,static
+before,station_s3,Firmware/station/src/main.cpp,22,void {anonymous}::fatal(const char*),32,static
+before,station_s3,Firmware/station/include/config_store.h,10,station::ConfigStore::~ConfigStore(),32,static
+before,station_s3,Firmware/station/src/main.cpp,30,void setup(),1072,static
+before,station_s3,Firmware/station/src/main.cpp,88,void loop(),32,static
+before,station_s3,Firmware/station/include/web_portal.h,16,station::WebPortal::~WebPortal(),32,static
+before,station_s3,Firmware/station/src/main.cpp,100,cpp),32,static
+before,station_s3,Firmware/station/include/wifi_service.h,18,station::WifiService::~WifiService(),32,static
+before,station_s3,Firmware/shared/src/ota_crypto.cpp,11,bool lil::ota::verifyManifest(const Manifest&),80,static
+before,station_s3,Firmware/station/src/ota_service.cpp,14,bool station::{anonymous}::active(lil::ota::State),32,static
+before,station_s3,Firmware/station/src/ota_service.cpp,11,"station::{anonymous}::Lock::Lock(SemaphoreHandle_t, TickType_t)",32,static
+before,station_s3,Firmware/station/include/ota_service.h,10,station::OtaService::~OtaService(),32,static
+before,station_s3,Firmware/station/src/ota_service.cpp,12,station::{anonymous}::Lock::~Lock(),32,static
+before,station_s3,Firmware/shared/include/ota_protocol.h,59,bool lil::ota::validIdentity(const Identity&),32,static
+before,station_s3,Firmware/shared/include/ota_protocol.h,86,const char* lil::ota::failureName(Failure),32,static
+before,station_s3,Firmware/station/src/ota_service.cpp,25,bool station::OtaService::begin(),32,static
+before,station_s3,Firmware/station/src/ota_service.cpp,45,bool station::OtaService::save(),32,static
+before,station_s3,Firmware/station/src/ota_service.cpp,48,"bool station::OtaService::startUpload(const uint8_t*, String&)",240,static
+before,station_s3,Firmware/station/src/ota_service.cpp,67,"bool station::OtaService::upload(const uint8_t*, size_t)",48,static
+before,station_s3,Firmware/station/src/ota_service.cpp,82,bool station::OtaService::finishUpload(String&),1232,static
+before,station_s3,Firmware/station/src/ota_service.cpp,146,void station::OtaService::abortUpload(),48,static
+before,station_s3,Firmware/station/src/ota_service.cpp,147,bool station::OtaService::cancel(),224,static
+before,station_s3,Firmware/station/src/ota_service.cpp,156,void station::OtaService::forget(const uint8_t*),48,static
+before,station_s3,Firmware/station/src/ota_service.cpp,162,"bool station::OtaService::respond(const uint8_t*, const lil::ota::Packet&, lil::ota::Packet&)",144,static
+before,station_s3,Firmware/station/src/ota_service.cpp,226,void station::OtaService::json(ArduinoJson::V743PB22::JsonObject),192,static
+before,station_s3,Firmware/station/src/ota_service.cpp,247,cpp),32,static
+before,station_s3,Firmware/station/src/paged_history.cpp,43,uint16_t station::{anonymous}::widthFor(uint8_t),32,static
+before,station_s3,Firmware/station/src/paged_history.cpp,91,size_t station::{anonymous}::rawFreeBytes(),32,static
+before,station_s3,Firmware/station/src/paged_history.cpp,53,"uint32_t station::{anonymous}::bounded(float, double, uint32_t)",48,static
+before,station_s3,Firmware/station/src/paged_history.cpp,44,"void station::{anonymous}::pathFor(const uint8_t*, uint32_t, char*, size_t)",48,static
+before,station_s3,Firmware/station/src/paged_history.cpp,37,station::{anonymous}::Guard::~Guard(),32,static
+before,station_s3,Firmware/shared/include/recording_protocol.h,71,constexpr size_t lil::recording::size(lil::protocol::EnvironmentalSensorType),32,static
+before,station_s3,Firmware/station/include/filesystem_guard.h,12,station::FilesystemGuard::FilesystemGuard(),32,static
+before,station_s3,Firmware/station/include/filesystem_guard.h,13,station::FilesystemGuard::~FilesystemGuard(),32,static
+before,station_s3,Firmware/shared/include/telemetry_validation.h,7,bool lil::protocol::validTelemetryValues(const TelemetryPayload&),48,static
+before,station_s3,Firmware/station/src/paged_history.cpp,72,"bool station::{anonymous}::decode(const uint8_t*, uint8_t, station::NormalHistoryPoint&)",384,static
+before,station_s3,Firmware/station/src/paged_history.cpp,123,int station::PagedHistory::nodeIndex(const uint8_t*) const,32,static
+before,station_s3,Firmware/station/src/paged_history.cpp,127,"void station::PagedHistory::configure(const station::SensorConfig*, size_t)",64,static
+before,station_s3,Firmware/station/src/paged_history.cpp,147,size_t station::PagedHistory::quotaPages(),32,static
+before,station_s3,Firmware/station/src/paged_history.cpp,160,void station::PagedHistory::setLegacyBytes(size_t),32,static
+before,station_s3,Firmware/station/src/paged_history.cpp,165,size_t station::PagedHistory::pagesFor(const uint8_t*) const,32,static
+before,station_s3,Firmware/station/src/paged_history.cpp,166,bool station::PagedHistory::erasePage(size_t),432,static
+before,station_s3,Firmware/station/src/paged_history.cpp,174,"bool station::PagedHistory::makeSpace(const uint8_t*, bool)",48,static
+before,station_s3,Firmware/station/src/paged_history.cpp,214,bool station::PagedHistory::flushNode(Node&),976,static
+before,station_s3,Firmware/station/src/paged_history.cpp,184,"bool station::PagedHistory::append(const uint8_t*, uint32_t, const lil::protocol::TelemetryPayload&, uint32_t, bool)",480,static
+before,station_s3,Firmware/station/src/paged_history.cpp,161,"bool station::PagedHistory::appendLegacy(const uint8_t*, const station::HistorySample&, uint32_t)",272,static
+before,station_s3,Firmware/station/src/paged_history.cpp,256,bool station::PagedHistory::flush(const uint8_t*),32,static
+before,station_s3,Firmware/station/src/paged_history.cpp,257,void station::PagedHistory::flushDue(),48,static
+before,station_s3,Firmware/station/src/paged_history.cpp,263,bool station::PagedHistory::reserveForArchive(),48,static
+before,station_s3,Firmware/station/src/paged_history.cpp,269,bool station::PagedHistory::clear(const uint8_t*),64,static
+before,station_s3,Firmware/station/src/paged_history.cpp,276,station::NormalHistoryInfo station::PagedHistory::infoLocked(const Node&) const,256,static
+before,station_s3,Firmware/station/src/paged_history.cpp,285,station::NormalHistoryInfo station::PagedHistory::info(const uint8_t*),32,static
+before,station_s3,Firmware/station/src/paged_history.cpp,286,"size_t station::PagedHistory::read(const uint8_t*, uint32_t, uint32_t, uint32_t, station::NormalHistoryPoint*, size_t, bool&, bool&)",864,static
+before,station_s3,Firmware/station/src/paged_history.cpp,94,bool station::PagedHistory::begin(bool),1248,static
+before,station_s3,Firmware/station/src/recording_archive.cpp,38,"void station::{anonymous}::pathFor(const uint8_t*, uint64_t, char*, size_t)",80,static
+before,station_s3,Firmware/station/src/recording_archive.cpp,33,station::{anonymous}::Guard::~Guard(),32,static
+before,station_s3,Firmware/shared/include/recording_protocol.h,71,constexpr size_t lil::recording::size(lil::protocol::EnvironmentalSensorType),32,static
+before,station_s3,Firmware/station/src/recording_archive.cpp,46,"bool station::{anonymous}::load(FILE*, Header&, uint32_t&)",32,static
+before,station_s3,Firmware/shared/include/recording_protocol.h,82,bool lil::recording::valid(const Record&),48,static
+before,station_s3,Firmware/shared/include/recording_protocol.h,131,lil::protocol::TelemetryPayload lil::recording::decode(const Record&),32,static
+before,station_s3,Firmware/station/include/filesystem_guard.h,12,station::FilesystemGuard::FilesystemGuard(),32,static
+before,station_s3,Firmware/station/include/filesystem_guard.h,13,station::FilesystemGuard::~FilesystemGuard(),32,static
+before,station_s3,Firmware/shared/include/telemetry_validation.h,7,bool lil::protocol::validTelemetryValues(const TelemetryPayload&),48,static
+before,station_s3,Firmware/station/src/recording_archive.cpp,57,"bool station::{anonymous}::readNext(FILE*, const Header&, lil::recording::Record&)",336,static
+before,station_s3,Firmware/station/src/recording_archive.cpp,63,"bool station::{anonymous}::readAt(FILE*, const Header&, uint32_t, lil::recording::Record&)",32,static
+before,station_s3,Firmware/station/src/recording_archive.cpp,73,bool station::RecordingArchive::begin(),32,static
+before,station_s3,Firmware/station/src/recording_archive.cpp,74,size_t station::RecordingArchive::freeBytes() const,32,static
+before,station_s3,Firmware/station/src/recording_archive.cpp,78,"bool station::RecordingArchive::append(const uint8_t*, const lil::recording::Upload&)",1120,static
+before,station_s3,Firmware/station/src/recording_archive.cpp,133,std::vector<station::RecordingInfo> station::RecordingArchive::list(const uint8_t*),688,static
+before,station_s3,Firmware/station/src/recording_archive.cpp,156,"size_t station::RecordingArchive::read(const uint8_t*, uint64_t, uint32_t&, lil::recording::Record*, size_t, station::RecordingInfo&, uint32_t)",704,static
+before,station_s3,Firmware/station/src/recording_archive.cpp,188,"bool station::RecordingArchive::remove(const uint8_t*, uint64_t)",384,static
+before,station_s3,Firmware/shared/include/recording_protocol.h,71,constexpr size_t lil::recording::size(lil::protocol::EnvironmentalSensorType),32,static
+before,station_s3,Firmware/shared/include/recording_protocol.h,76,uint32_t lil::recording::checksum(const Record&),48,static
+before,station_s3,Firmware/shared/include/recording_protocol.h,82,bool lil::recording::valid(const Record&),32,static
+before,station_s3,Firmware/shared/src/recording_journal.cpp,13,"bool lil::recording::Journal::readHeader(size_t, Header&)",32,static
+before,station_s3,Firmware/shared/src/recording_journal.cpp,16,"bool lil::recording::Journal::clearBit(size_t, size_t, uint8_t)",48,static
+before,station_s3,Firmware/shared/src/recording_journal.cpp,24,"bool lil::recording::Journal::begin(lil::recording::Flash&, uint64_t)",816,static
+before,station_s3,Firmware/shared/src/recording_journal.cpp,80,bool lil::recording::Journal::clear(),32,static
+before,station_s3,Firmware/shared/src/recording_journal.cpp,86,"bool lil::recording::Journal::initialize(size_t, size_t)",128,static
+before,station_s3,Firmware/shared/src/recording_journal.cpp,98,bool lil::recording::Journal::append(const lil::recording::Record&),192,static
+before,station_s3,Firmware/shared/src/recording_journal.cpp,128,"bool lil::recording::Journal::locate(size_t&, uint8_t&)",112,static
+before,station_s3,Firmware/shared/src/recording_journal.cpp,139,bool lil::recording::Journal::peek(lil::recording::Record&),160,static
+before,station_s3,Firmware/shared/src/recording_journal.cpp,147,bool lil::recording::Journal::acknowledge(const lil::recording::Record&),192,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,78,station::HistorySample* station::{anonymous}::allocateHistorySamples(size_t),32,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,166,void station::{anonymous}::LockGuard::relock(),32,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,165,void station::{anonymous}::LockGuard::unlock(),32,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,93,int16_t station::{anonymous}::encodeSignedHundredths(float),32,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,106,"uint16_t station::{anonymous}::encodeUnsigned(float, float)",48,static
+before,station_s3,Firmware/station/include/normal_history_policy.h,6,bool station::usesNormalHistory(const lil::protocol::TelemetryPayload&),32,static
+before,station_s3,Firmware/shared/include/telemetry_validation.h,7,bool lil::protocol::validTelemetryValues(const TelemetryPayload&),48,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,174,"void station::SensorRegistry::updateTxPowerLocked(size_t, int8_t, uint8_t)",32,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,458,bool station::SensorRegistry::persistHistoryLocked(size_t),64,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,403,"bool station::SensorRegistry::configureHistoryLocked(size_t, uint32_t, bool, bool)",64,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,309,bool station::SensorRegistry::loadHistoryLocked(size_t),1728,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,472,"bool station::SensorRegistry::persistHistorySampleLocked(size_t, size_t)",96,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,490,int station::SensorRegistry::findIndexLocked(const uint8_t*) const,32,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,499,int station::SensorRegistry::identityIndexLocked(const uint8_t*) const,32,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,529,"void station::SensorRegistry::commitConfigLocked(size_t, const station::SensorConfig&, const station::SensorConfig&)",144,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,759,"size_t station::SensorRegistry::liveHistory(const uint8_t*, station::LiveSample*, size_t) const",80,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,791,"size_t station::SensorRegistry::views(station::SensorView*, size_t) const",96,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,1033,bool station::SensorRegistry::requestFactoryReset(const uint8_t*),400,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,1056,bool station::SensorRegistry::requestIaqCalibrationReset(const uint8_t*),400,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,1078,bool station::SensorRegistry::deleteSensor(const uint8_t*),320,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,1146,"bool station::SensorRegistry::saveLatestTelemetryLocked(size_t, const lil::protocol::TelemetryPayload&, int8_t)",240,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,1157,"bool station::SensorRegistry::recordHistoryLocked(size_t, const lil::protocol::TelemetryPayload&, uint32_t, uint32_t)",48,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,704,"bool station::SensorRegistry::persistTelemetry(const uint8_t*, uint32_t, const lil::protocol::TelemetryPayload&, int8_t, uint32_t, uint32_t)",464,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,1252,size_t station::SensorRegistry::historyCapacity(const uint8_t*) const,80,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,1260,uint32_t station::SensorRegistry::historyBucketSeconds(const uint8_t*) const,80,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,1273,uint32_t station::SensorRegistry::historyRevision(const uint8_t*) const,80,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,1284,bool station::SensorRegistry::channelShared(uint32_t) const,48,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,1294,"bool station::SensorRegistry::generationMatches(const uint8_t*, uint32_t) const",48,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,1300,"bool station::SensorRegistry::findConfig(const uint8_t*, station::SensorConfig&, uint32_t*) const",48,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,1312,"bool station::SensorRegistry::cloudUploadMatches(const uint8_t*, uint32_t, uint32_t, const char*, const station::ThingSpeakFieldMapping&) const",64,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,1327,"bool station::SensorRegistry::findView(const uint8_t*, station::SensorView&) const",80,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,1340,"void station::SensorRegistry::updateRecording(const uint8_t*, const lil::recording::Status&)",48,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,1351,bool station::SensorRegistry::needsPersistence(const uint8_t*) const,48,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,1357,static String station::SensorRegistry::formatMac(const uint8_t*),80,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,1364,"static bool station::SensorRegistry::parseMac(const String&, uint8_t*)",48,static
+before,station_s3,Firmware/station/include/app_config.h,87,"void station::copyText(char (&)[N], const String&) [with unsigned int N = 25]",64,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,505,"int station::SensorRegistry::rememberIdentityLocked(const uint8_t*, const char*, station::SensorIdentity*)",80,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,1111,"bool station::SensorRegistry::setMotionReference(const uint8_t*, bool)",3968,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,539,int station::SensorRegistry::allocateIndexLocked(const uint8_t*),336,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,561,"bool station::SensorRegistry::registerTelemetry(const uint8_t*, uint32_t, const lil::protocol::TelemetryPayload&, int8_t, station::SensorConfig&, int8_t&, bool&, uint32_t&)",464,static
+before,station_s3,Firmware/station/include/app_config.h,87,"void station::copyText(char (&)[N], const String&) [with unsigned int N = 33]",64,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,809,"bool station::SensorRegistry::updateConfig(const uint8_t*, const String&, uint32_t, uint32_t, const String&, bool, const station::ThingSpeakFieldMapping&, uint8_t, lil::protocol::EnvironmentalSensorType, float, float)",4432,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,916,"bool station::SensorRegistry::setThingSpeakChannel(const uint8_t*, uint32_t, const String&, uint8_t)",400,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,949,"bool station::SensorRegistry::syncThingSpeakProfile(uint8_t, const station::ThingSpeakChannelProfile&)",2272,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,992,bool station::SensorRegistry::removeThingSpeakProfile(uint8_t),2256,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,1219,"size_t station::SensorRegistry::history(const uint8_t*, station::HistorySample*, size_t) const",64,static
+before,station_s3,Firmware/station/src/sensor_registry.cpp,228,"bool station::SensorRegistry::begin(station::ConfigStore&, uint32_t, station::PagedHistory*)",368,static
+before,station_s3,Firmware/station/src/thingspeak_service.cpp,144,"station::ThingSpeakService::upload(const station::CloudUploadJob&)::<lambda(uint8_t, const String&)>",80,static
+before,station_s3,Firmware/station/src/thingspeak_service.cpp,39,bool station::ThingSpeakService::begin(station::SensorRegistry&),32,static
+before,station_s3,Firmware/station/src/thingspeak_service.cpp,373,static String station::ThingSpeakService::urlEncode(const String&),32,static
+before,station_s3,Firmware/station/src/thingspeak_service.cpp,390,int station::ThingSpeakService::lastHttpStatus() const,32,static
+before,station_s3,Firmware/station/src/thingspeak_service.cpp,394,int station::ThingSpeakService::lastEntryId() const,32,static
+before,station_s3,Firmware/station/src/thingspeak_service.cpp,398,uint32_t station::ThingSpeakService::successfulUploads() const,32,static
+before,station_s3,Firmware/station/src/thingspeak_service.cpp,402,uint32_t station::ThingSpeakService::failedUploads() const,32,static
+before,station_s3,Firmware/station/src/thingspeak_service.cpp,406,uint32_t station::ThingSpeakService::lastAttemptMs() const,32,static
+before,station_s3,Firmware/station/src/thingspeak_service.cpp,410,uint32_t station::ThingSpeakService::lastSuccessMs() const,32,static
+before,station_s3,Firmware/station/src/thingspeak_service.cpp,414,uint32_t station::ThingSpeakService::droppedJobs() const,32,static
+before,station_s3,Firmware/shared/include/upload_scheduler.h,100,"void lil::UploadScheduler<Job, Capacity>::erase(size_t) [with Job = station::CloudUploadJob; unsigned int Capacity = 64]",32,static
+before,station_s3,Firmware/shared/include/upload_scheduler.h,104,"void lil::UploadScheduler<Job, Capacity>::insert(const Entry&) [with Job = station::CloudUploadJob; unsigned int Capacity = 64]",32,static
+before,station_s3,Firmware/station/src/thingspeak_service.cpp,51,"bool station::ThingSpeakService::queue(const station::SensorConfig&, const lil::protocol::TelemetryPayload&, int8_t, uint32_t, uint32_t, bool, uint32_t)",624,static
+before,station_s3,Firmware/shared/include/upload_scheduler.h,31,"void lil::UploadScheduler<Job, Capacity>::expire(uint32_t) [with Job = station::CloudUploadJob; unsigned int Capacity = 64]",32,static
+before,station_s3,Firmware/station/src/thingspeak_service.cpp,120,bool station::ThingSpeakService::upload(const station::CloudUploadJob&),576,static
+before,station_s3,Firmware/station/src/thingspeak_service.cpp,91,void station::ThingSpeakService::taskLoop(),640,static
+before,station_s3,Firmware/station/src/thingspeak_service.cpp,87,static void station::ThingSpeakService::taskEntry(void*),32,static
+before,station_s3,Firmware/station/src/thingspeak_service.cpp,321,"station::ThingSpeakApiResult station::ThingSpeakService::accountRequest(const char*, const String&, const String&, const String&)",416,static
+before,station_s3,Firmware/station/src/thingspeak_service.cpp,283,station::ThingSpeakApiResult station::ThingSpeakService::listChannels(const String&),96,static
+before,station_s3,Firmware/station/src/thingspeak_service.cpp,290,"station::ThingSpeakApiResult station::ThingSpeakService::createManagedChannel(const String&, const String&)",64,static
+before,station_s3,Firmware/station/src/thingspeak_service.cpp,245,"station::ChannelCreationResult station::ThingSpeakService::createChannel(const String&, const String&)",240,static
+before,station_s3,Firmware/station/src/thingspeak_service.cpp,296,"station::ThingSpeakApiResult station::ThingSpeakService::updateChannel(const String&, uint32_t, const String&)",96,static
+before,station_s3,Firmware/station/src/thingspeak_service.cpp,305,"station::ThingSpeakApiResult station::ThingSpeakService::clearChannel(const String&, uint32_t)",96,static
+before,station_s3,Firmware/station/src/thingspeak_service.cpp,313,"station::ThingSpeakApiResult station::ThingSpeakService::deleteChannel(const String&, uint32_t)",96,static
+before,station_s3,Firmware/station/src/web_portal.cpp,55,"bool station::{anonymous}::constantTimeEquals(const char*, const char*, size_t)",32,static
+before,station_s3,Firmware/station/src/web_portal.cpp,182,void station::{anonymous}::sendNoCache(WebServer&),80,static
+before,station_s3,Firmware/station/src/web_portal.cpp,365,"station::WebPortal::begin(station::StationConfig&, station::ConfigStore&, station::WifiService&, station::SensorRegistry&, station::ThingSpeakService&, station::EspNowGateway&)::<lambda()>",80,static
+before,station_s3,Firmware/station/src/web_portal.cpp,64,void station::{anonymous}::randomToken(char*),48,static
+before,station_s3,Firmware/station/src/web_portal.cpp,26,"bool station::{anonymous}::readUnsignedArgument(WebServer&, const char*, uint32_t&, uint32_t, uint32_t, bool)",96,static
+before,station_s3,Firmware/station/src/web_portal.cpp,35,"bool station::{anonymous}::readFieldArgument(WebServer&, const char*, uint8_t&)",48,static
+before,station_s3,Firmware/station/src/web_portal.cpp,1184,"station::WebPortal::saveDashboardLayout()::<lambda(const String&, bool)>",544,static
+before,station_s3,Firmware/station/src/web_portal.cpp,865,uint64_t station::{anonymous}::recordingSession(const String&),32,static
+before,station_s3,Firmware/station/src/web_portal.cpp,42,"void station::{anonymous}::hashAdminPassword(const String&, char*)",368,static
+before,station_s3,Firmware/station/src/web_portal.cpp,72,"void station::{anonymous}::appendFormValue(String&, const char*, const String&)",64,static
+before,station_s3,Firmware/station/src/web_portal.cpp,138,String station::{anonymous}::managedChannelSettings(WebServer&),96,static
+before,station_s3,Firmware/station/src/web_portal.cpp,109,"bool station::{anonymous}::validOptionalDecimal(const String&, double, double)",80,static
+before,station_s3,Firmware/station/src/web_portal.cpp,120,bool station::{anonymous}::validManagedChannelRequest(WebServer&),384,static
+before,station_s3,Firmware/station/include/web_input.h,28,"bool station::webinput::finiteDecimal(const char*, float&, float, float)",48,static
+before,station_s3,Firmware/station/src/web_portal.cpp,408,bool station::WebPortal::authenticationEnabled() const,32,static
+before,station_s3,Firmware/station/src/web_portal.cpp,412,String station::WebPortal::currentSessionToken() const,112,static
+before,station_s3,Firmware/station/src/web_portal.cpp,431,bool station::WebPortal::isAuthenticated(),80,static
+before,station_s3,Firmware/station/src/web_portal.cpp,475,bool station::WebPortal::verifyAdminPassword(const String&) const,112,static
+before,station_s3,Firmware/station/src/web_portal.cpp,484,void station::WebPortal::setAdminPassword(const String&),32,static
+before,station_s3,Firmware/station/src/web_portal.cpp,492,void station::WebPortal::refreshCsrfToken(),32,static
+before,station_s3,Firmware/station/src/web_portal.cpp,494,const char* station::WebPortal::createAuthSession(),32,static
+before,station_s3,Firmware/station/src/web_portal.cpp,520,void station::WebPortal::clearAuthSessions(),32,static
+before,station_s3,Firmware/station/src/web_portal.cpp,526,void station::WebPortal::revokeCurrentSession(),64,static
+before,station_s3,Firmware/station/src/web_portal.cpp,540,bool station::WebPortal::loginBlocked(uint32_t&),32,static
+before,station_s3,Firmware/station/src/web_portal.cpp,545,bool station::WebPortal::recordFailedLogin(uint32_t&),32,static
+before,station_s3,Firmware/station/src/web_portal.cpp,550,void station::WebPortal::clearLoginFailures(),32,static
+before,station_s3,Firmware/station/src/web_portal.cpp,554,bool station::WebPortal::validRequestOrigin() const,112,static
+before,station_s3,Firmware/station/src/web_portal.cpp,629,void station::WebPortal::handleLogout(),96,static
+before,station_s3,Firmware/station/src/web_portal.cpp,639,bool station::WebPortal::verifyCsrf(),80,static
+before,station_s3,Firmware/station/include/thingspeak_service.h,30,station::ChannelCreationResult::~ChannelCreationResult(),32,static
+before,station_s3,Firmware/station/include/thingspeak_service.h,39,station::ThingSpeakApiResult::~ThingSpeakApiResult(),32,static
+before,station_s3,Firmware/station/src/web_portal.cpp,2056,void station::WebPortal::scheduleRestart(),32,static
+before,station_s3,Firmware/station/include/app_config.h,87,"void station::copyText(char (&)[N], const String&) [with unsigned int N = 33]",64,static
+before,station_s3,Firmware/station/include/app_config.h,87,"void station::copyText(char (&)[N], const String&) [with unsigned int N = 65]",64,static
+before,station_s3,Firmware/station/include/app_config.h,87,"void station::copyText(char (&)[N], const String&) [with unsigned int N = 41]",64,static
+before,station_s3,Firmware/station/include/app_config.h,87,"void station::copyText(char (&)[N], const String&) [with unsigned int N = 25]",64,static
+before,station_s3,Firmware/station/include/recording_json.h,28,"void station::recordingInfoJson(ArduinoJson::V743PB22::JsonObject, const RecordingInfo&)",112,static
+before,station_s3,Firmware/station/include/recording_json.h,38,"void station::recordingPointJson(ArduinoJson::V743PB22::JsonDocument&, const lil::recording::Record&)",320,static
+before,station_s3,Firmware/station/src/web_portal.cpp,2039,"void station::WebPortal::sendJsonResult(bool, const String&, bool, bool)",160,static
+before,station_s3,Firmware/station/src/web_portal.cpp,929,void station::WebPortal::deleteRecording(),512,static
+before,station_s3,Firmware/station/src/web_portal.cpp,941,void station::WebPortal::setMotionReference(),80,static
+before,station_s3,Firmware/station/src/web_portal.cpp,1176,void station::WebPortal::saveDashboardLayout(),416,static
+before,station_s3,Firmware/station/src/web_portal.cpp,1261,void station::WebPortal::saveSetup(),1152,static
+before,station_s3,Firmware/station/src/web_portal.cpp,1314,void station::WebPortal::saveSetupSensor(),576,static
+before,station_s3,Firmware/station/src/web_portal.cpp,1370,void station::WebPortal::saveStation(),1264,static
+before,station_s3,Firmware/station/src/web_portal.cpp,1450,void station::WebPortal::saveSensor(),656,static
+before,station_s3,Firmware/station/src/web_portal.cpp,1591,void station::WebPortal::saveChannelProfile(),1136,static
+before,station_s3,Firmware/station/src/web_portal.cpp,1645,void station::WebPortal::deleteChannelProfile(),1056,static
+before,station_s3,Firmware/station/src/web_portal.cpp,1941,void station::WebPortal::clearManagedThingSpeakChannel(),96,static
+before,station_s3,Firmware/station/src/web_portal.cpp,1957,void station::WebPortal::deleteManagedThingSpeakChannel(),112,static
+before,station_s3,Firmware/station/src/web_portal.cpp,1996,void station::WebPortal::resetSensor(),80,static
+before,station_s3,Firmware/station/src/web_portal.cpp,2004,void station::WebPortal::resetSensorIaqCalibration(),80,static
+before,station_s3,Firmware/station/src/web_portal.cpp,2014,void station::WebPortal::deleteSensor(),80,static
+before,station_s3,Firmware/station/src/web_portal.cpp,2025,void station::WebPortal::factoryReset(),80,static
+before,station_s3,Firmware/station/src/web_portal.cpp,872,void station::WebPortal::sendRecordings(),304,static
+before,station_s3,Firmware/station/src/web_portal.cpp,1129,void station::WebPortal::sendPagedHistory(const uint8_t*),384,static
+before,station_s3,Firmware/station/src/web_portal.cpp,949,void station::WebPortal::sendJsonHistory(),832,static
+before,station_s3,Firmware/station/src/web_portal.cpp,1669,void station::WebPortal::createThingSpeakChannel(),1376,static
+before,station_s3,Firmware/station/src/web_portal.cpp,81,"void station::{anonymous}::extractApiKeys(ArduinoJson::V743PB22::JsonObjectConst, String&, String&)",112,static
+before,station_s3,Firmware/station/src/web_portal.cpp,1238,void station::WebPortal::sendWifiScan(),688,static
+before,station_s3,Firmware/station/src/web_portal.cpp,1199,void station::WebPortal::sendJsonConfig(),368,static
+before,station_s3,Firmware/station/src/web_portal.cpp,663,void station::WebPortal::sendJsonStatus(),368,static
+before,station_s3,Firmware/station/src/web_portal.cpp,565,void station::WebPortal::handleLogin(),240,static
+before,station_s3,Firmware/station/src/web_portal.cpp,455,bool station::WebPortal::requireAuthentication(bool),176,static
+before,station_s3,Firmware/station/src/web_portal.cpp,1877,void station::WebPortal::updateManagedThingSpeakChannel(),1232,static
+before,station_s3,Firmware/station/src/web_portal.cpp,1735,void station::WebPortal::listThingSpeakChannels(),432,static
+before,station_s3,Firmware/station/src/web_portal.cpp,1810,void station::WebPortal::createManagedThingSpeakChannel(),1296,static
+before,station_s3,Firmware/station/src/web_portal.cpp,882,void station::WebPortal::sendRecording(),448,static
+before,station_s3,Firmware/station/src/web_portal.cpp,200,"bool station::WebPortal::begin(station::StationConfig&, station::ConfigStore&, station::WifiService&, station::SensorRegistry&, station::ThingSpeakService&, station::EspNowGateway&)",96,static
+before,station_s3,Firmware/station/src/web_portal.cpp,656,void station::WebPortal::loop(),32,static
+before,station_s3,Firmware/station/src/wifi_service.cpp,63,void station::WifiService::startStationConnection(),32,static
+before,station_s3,Firmware/station/src/wifi_service.cpp,72,void station::WifiService::startMdnsIfNeeded(),64,static
+before,station_s3,Firmware/station/src/wifi_service.cpp,148,bool station::WifiService::startSetupPortalAccessPoint(),192,static
+before,station_s3,Firmware/station/src/wifi_service.cpp,19,bool station::WifiService::begin(const station::StationConfig&),80,static
+before,station_s3,Firmware/station/src/wifi_service.cpp,139,bool station::WifiService::startRecoveryPortal(),32,static
+before,station_s3,Firmware/station/src/wifi_service.cpp,177,void station::WifiService::stopSetupPortal(),32,static
+before,station_s3,Firmware/station/src/wifi_service.cpp,190,uint8_t station::WifiService::channel() const,48,static
+before,station_s3,Firmware/station/src/wifi_service.cpp,199,bool station::WifiService::stationConnected() const,32,static
+before,station_s3,Firmware/station/src/wifi_service.cpp,203,bool station::WifiService::setupPortalActive() const,32,static
+before,station_s3,Firmware/station/src/wifi_service.cpp,207,bool station::WifiService::consumeSetupPortalCompletion(),32,static
+before,station_s3,Firmware/station/src/wifi_service.cpp,213,String station::WifiService::stationSsid() const,32,static
+before,station_s3,Firmware/station/src/wifi_service.cpp,217,String station::WifiService::stationIp() const,64,static
+before,station_s3,Firmware/station/src/wifi_service.cpp,221,String station::WifiService::accessPointIp() const,64,static
+before,station_s3,Firmware/station/src/wifi_service.cpp,225,String station::WifiService::accessPointSsid() const,32,static
+before,station_s3,Firmware/station/src/wifi_service.cpp,229,const uint8_t* station::WifiService::stationMac() const,32,static
+before,station_s3,Firmware/station/src/wifi_service.cpp,247,bool station::WifiService::networkScanInProgress() const,32,static
+before,station_s3,Firmware/station/src/wifi_service.cpp,251,void station::WifiService::collectNetworkScan(),80,static
+before,station_s3,Firmware/station/src/wifi_service.cpp,90,void station::WifiService::loop(),112,static
+before,station_s3,Firmware/station/src/wifi_service.cpp,233,bool station::WifiService::requestNetworkScan(),48,static
+before,station_s3,Firmware/station/src/wifi_service.cpp,291,"size_t station::WifiService::cachedNetworks(station::WifiNetwork*, size_t) const",32,static
+before,station_s3,Firmware/station/src/wifi_service.cpp,303,cpp),32,static
+after,sensor_pcb_v4,Firmware/sensor/src/adc_reader.cpp,16,void sensor::AdcReader::begin(sensor::PowerController&),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/adc_reader.cpp,22,void sensor::AdcReader::startBatteryMeasurement(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/adc_reader.cpp,31,sensor::BatteryReading sensor::AdcReader::finishBatteryMeasurement(float),80,static
+after,sensor_pcb_v4,Firmware/sensor/src/adc_reader.cpp,76,sensor::BatteryReading sensor::AdcReader::readBattery(float),48,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme280_driver.cpp,18,"bool sensor::Bme280Driver::readBytes(uint8_t, uint8_t*, uint8_t)",32,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme280_driver.cpp,48,bool sensor::Bme280Driver::waitReady(uint32_t),32,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme280_driver.cpp,37,"bool sensor::Bme280Driver::write8(uint8_t, uint8_t)",16,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme280_driver.cpp,60,bool sensor::Bme280Driver::begin(uint8_t),128,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme280_driver.cpp,103,sensor::EnvironmentalReading sensor::Bme280Driver::read(),384,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,86,"bool sensor::{anonymous}::inRange(float, float, float)",32,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,179,"static int8_t sensor::Bme680Driver::rawI2cRead(uint8_t, uint8_t*, uint32_t, void*)",32,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,202,"static int8_t sensor::Bme680Driver::rawI2cWrite(uint8_t, const uint8_t*, uint32_t, void*)",32,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,219,"static void sensor::Bme680Driver::rawDelayUs(uint32_t, void*)",0,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,75,long unsigned int sensor::{anonymous}::bsecLogicalMillis(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,95,bool sensor::Bme680Driver::ensureStateStore(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,224,bool sensor::Bme680Driver::beginRaw(uint8_t),32,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,255,bool sensor::Bme680Driver::tryAddress(uint8_t),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,262,void sensor::Bme680Driver::seedClockOverflowCounter(),32,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,275,void sensor::Bme680Driver::restoreState(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,102,"bool sensor::Bme680Driver::begin(uint8_t, float)",720,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,639,void sensor::Bme680Driver::saveCalibrationMetadata(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,646,uint32_t sensor::Bme680Driver::currentCalibrationElapsedSeconds() const,16,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,614,void sensor::Bme680Driver::saveState(uint8_t),48,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,569,void sensor::Bme680Driver::updateCalibrationStatus(sensor::EnvironmentalReading&),32,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,479,sensor::EnvironmentalReading sensor::Bme680Driver::readRaw(),80,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,304,sensor::EnvironmentalReading sensor::Bme680Driver::readBsec(),112,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,293,sensor::EnvironmentalReading sensor::Bme680Driver::read(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,655,void sensor::Bme680Driver::prepareForDeepSleep(uint32_t),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,665,uint32_t sensor::Bme680Driver::recommendedSleepSeconds(uint32_t) const,16,static
+after,sensor_pcb_v4,Firmware/sensor/src/bme680_driver.cpp,676,bool sensor::Bme680Driver::clearPersistentState(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/bsec_state_store.cpp,42,bool sensor::BsecStateStore::begin(),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/bsec_state_store.cpp,46,"bool sensor::BsecStateStore::load(uint8_t*, size_t)",320,static
+after,sensor_pcb_v4,Firmware/sensor/src/bsec_state_store.cpp,62,"bool sensor::BsecStateStore::save(const uint8_t*, size_t)",304,static
+after,sensor_pcb_v4,Firmware/sensor/src/bsec_state_store.cpp,74,"bool sensor::BsecStateStore::loadCalibration(uint32_t&, bool&)",48,static
+after,sensor_pcb_v4,Firmware/sensor/src/bsec_state_store.cpp,93,"bool sensor::BsecStateStore::saveCalibration(uint32_t, bool)",32,static
+after,sensor_pcb_v4,Firmware/sensor/src/bsec_state_store.cpp,103,bool sensor::BsecStateStore::clear(),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/environmental_sensor.cpp,20,void sensor::{anonymous}::releaseI2cPins(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/environmental_sensor.cpp,173,"bool sensor::EnvironmentalSensor::beginType(lil::protocol::EnvironmentalSensorType, uint8_t, float)",16,static
+after,sensor_pcb_v4,Firmware/sensor/src/environmental_sensor.cpp,191,sensor::EnvironmentalReading sensor::EnvironmentalSensor::read(bool),224,static
+after,sensor_pcb_v4,Firmware/sensor/src/environmental_sensor.cpp,221,"void sensor::EnvironmentalSensor::prepareForDeepSleep(uint32_t, lil::protocol::EnvironmentalSensorType)",0,static
+after,sensor_pcb_v4,Firmware/sensor/src/environmental_sensor.cpp,229,uint32_t sensor::EnvironmentalSensor::bme680RecommendedSleepSeconds(uint32_t) const,0,static
+after,sensor_pcb_v4,Firmware/sensor/src/environmental_sensor.cpp,234,bool sensor::EnvironmentalSensor::clearIaqState(),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/environmental_sensor.cpp,238,lil::protocol::EnvironmentalSensorType sensor::EnvironmentalSensor::detectedType() const,0,static
+after,sensor_pcb_v4,Firmware/sensor/src/environmental_sensor.cpp,211,void sensor::EnvironmentalSensor::end(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/environmental_sensor.cpp,92,lil::protocol::EnvironmentalSensorType sensor::EnvironmentalSensor::probeSensorType(uint8_t&) const,48,static
+after,sensor_pcb_v4,Firmware/sensor/src/environmental_sensor.cpp,155,"bool sensor::EnvironmentalSensor::startDetectedSensor(lil::protocol::EnvironmentalSensorType, float)",32,static
+after,sensor_pcb_v4,Firmware/sensor/src/environmental_sensor.cpp,27,"bool sensor::EnvironmentalSensor::begin(sensor::PowerController&, lil::protocol::EnvironmentalSensorType, float)",32,static
+after,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,63,"static void sensor::EspNowTransport::sendCallback(const wifi_tx_info_t*, esp_now_send_status_t)",0,static
+after,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,72,"static void sensor::EspNowTransport::receiveCallback(const esp_now_recv_info_t*, const uint8_t*, int)",320,static
+after,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,251,"sensor::EspNowTransport::tryChannel(uint8_t, const uint8_t*, const lil::protocol::TelemetryPacket&, sensor::ExchangeResult&, int8_t, uint8_t, bool)::<lambda(size_t, uint16_t)>",16,static
+after,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,106,"bool sensor::EspNowTransport::receiveResponse(sensor::ExchangeResult&, const uint8_t*, TickType_t)",96,static
+after,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,298,bool sensor::EspNowTransport::ensurePeer(const uint8_t*),64,static
+after,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,200,"bool sensor::EspNowTransport::tryChannel(uint8_t, const uint8_t*, const lil::protocol::TelemetryPacket&, sensor::ExchangeResult&, int8_t, uint8_t, bool)",336,static
+after,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,128,"sensor::ExchangeResult sensor::EspNowTransport::exchange(const lil::protocol::TelemetryPacket&, const sensor::SensorRuntimeConfig&, bool)",48,static
+after,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,180,"sensor::ExchangeResult sensor::EspNowTransport::exchangeLpChannel(const lil::protocol::TelemetryPacket&, const sensor::SensorRuntimeConfig&, uint8_t, bool)",48,static
+after,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,311,void sensor::EspNowTransport::end(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,39,bool sensor::EspNowTransport::begin(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,333,"bool sensor::EspNowTransport::otaExchange(const uint8_t*, const lil::ota::Packet&, lil::ota::Packet&)",304,static
+after,sensor_pcb_v4,Firmware/sensor/src/espnow_transport.cpp,366,"bool sensor::EspNowTransport::recordingExchange(const sensor::SensorRuntimeConfig&, const void*, size_t, uint64_t, uint32_t, uint32_t, lil::recording::Ack&)",112,static
+after,sensor_pcb_v4,Firmware/shared/src/lil_protocol.cpp,29,"uint32_t lil::protocol::crc32(const uint8_t*, size_t)",0,static
+after,sensor_pcb_v4,Firmware/shared/src/lil_protocol.cpp,33,"void lil::protocol::finalizePacket(void*, size_t, MessageType, uint32_t, uint16_t)",16,static
+after,sensor_pcb_v4,Firmware/shared/src/lil_protocol.cpp,49,"bool lil::protocol::validatePacket(const void*, size_t, MessageType, uint16_t)",32,static
+after,sensor_pcb_v4,Firmware/sensor/src/live_acquisition.cpp,29,sensor::LiveAcquisition::loop()::<lambda(sensor::LiveCapture&)>,16,static
+after,sensor_pcb_v4,Firmware/sensor/src/live_acquisition.cpp,7,"bool sensor::LiveAcquisition::begin(sensor::EnvironmentalSensor&, sensor::PowerController&, lil::protocol::EnvironmentalSensorType, float)",16,static
+after,sensor_pcb_v4,Firmware/sensor/src/live_acquisition.cpp,18,void sensor::LiveAcquisition::loop(),512,static
+after,sensor_pcb_v4,Firmware/sensor/src/live_acquisition.cpp,17,static void sensor::LiveAcquisition::entry(void*),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/logical_clock.cpp,9,uint64_t sensor::logicalTimeUs(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/logical_clock.cpp,12,void sensor::accountForDeepSleep(uint64_t),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/low_power_wait.cpp,22,void sensor::lowPowerSensorWaitUs(uint32_t),32,static
+after,sensor_pcb_v4,Firmware/sensor/src/low_power_wait.cpp,68,void wchargerBsecLowPowerWait(uint32_t),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/lsm6dsox_driver.cpp,7,void sensor::Lsm6dsoxDriver::discardWindow(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/lsm6dsox_driver.cpp,14,"bool sensor::Lsm6dsoxDriver::writeRegister(uint8_t, uint8_t)",16,static
+after,sensor_pcb_v4,Firmware/sensor/src/lsm6dsox_driver.cpp,20,"bool sensor::Lsm6dsoxDriver::readRegisters(uint8_t, uint8_t*, uint8_t)",32,static
+after,sensor_pcb_v4,Firmware/sensor/src/lsm6dsox_driver.cpp,60,bool sensor::Lsm6dsoxDriver::poll(),96,static
+after,sensor_pcb_v4,Firmware/sensor/src/lsm6dsox_driver.cpp,115,sensor::EnvironmentalReading sensor::Lsm6dsoxDriver::read(bool),48,static
+after,sensor_pcb_v4,Firmware/sensor/src/lsm6dsox_driver.cpp,28,bool sensor::Lsm6dsoxDriver::begin(uint8_t),224,static
+after,sensor_pcb_v4,Firmware/sensor/src/main.cpp,134,uint8_t {anonymous}::takeNextRecoveryChannel(uint8_t),0,static
+after,sensor_pcb_v4,Firmware/sensor/include/sensor_config_store.h,33,sensor::SensorConfigStore::~SensorConfigStore(),0,static
+after,sensor_pcb_v4,Firmware/sensor/include/environmental_sensor.h,12,sensor::EnvironmentalSensor::~EnvironmentalSensor(),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/main.cpp,152,bool {anonymous}::applyStationConfig(const lil::protocol::ConfigResponsePayload&),304,static
+after,sensor_pcb_v4,Firmware/sensor/src/main.cpp,328,bool {anonymous}::batteryProtectionRequired(const sensor::BatteryReading&),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/main.cpp,263,"lil::protocol::TelemetryPacket {anonymous}::makeTelemetryPacket(const sensor::EnvironmentalReading&, const sensor::BatteryReading&, lil::protocol::SensorOperatingMode)",48,static
+after,sensor_pcb_v4,Firmware/sensor/src/main.cpp,105,{anonymous}::OperatingMode {anonymous}::operatingMode(const sensor::SensorRuntimeConfig&),0,static
+after,sensor_pcb_v4,Firmware/sensor/include/live_acquisition.h,24,void sensor::LiveAcquisition::stop(),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/main.cpp,389,{anonymous}::runLiveMode(sensor::BatteryReading)::<lambda()>,448,static
+after,sensor_pcb_v4,Firmware/sensor/src/main.cpp,400,{anonymous}::runLiveMode(sensor::BatteryReading)::<lambda(bool)>,32,static
+after,sensor_pcb_v4,Firmware/sensor/include/live_acquisition.h,25,void sensor::LiveAcquisition::normal(uint32_t),0,static
+after,sensor_pcb_v4,Firmware/sensor/include/logical_clock.h,6,uint64_t sensor::logicalTimeMs(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/main.cpp,334,void {anonymous}::reportBatteryAndSleep(const sensor::BatteryReading&),464,static
+after,sensor_pcb_v4,Firmware/sensor/include/environmental_sensor.h,12,sensor::EnvironmentalSensor::EnvironmentalSensor(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/main.cpp,816,void loop(),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/main.cpp,571,void setup(),1600,static
+after,sensor_pcb_v4,Firmware/sensor/src/main.cpp,816,cpp),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/measurement_budget.cpp,11,int64_t sensor::{anonymous}::effectiveDeadlineUs(),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/measurement_budget.cpp,18,void sensor::beginMeasurementBudget(uint32_t),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/measurement_budget.cpp,23,void sensor::endMeasurementBudget(),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/measurement_budget.cpp,25,void sensor::beginFetchWindow(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/measurement_budget.cpp,26,void sensor::endFetchWindow(),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/measurement_budget.cpp,28,bool sensor::measurementBudgetExpired(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/measurement_budget.cpp,33,void sensor::measurementWaitUs(uint32_t),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/measurement_budget.cpp,44,bool wchargerSensorBudgetExpired(),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/measurement_budget.cpp,47,void wchargerBeginFetchWindow(),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/measurement_budget.cpp,48,void wchargerEndFetchWindow(),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/ota_client.cpp,52,static constexpr void sensor::beginOtaBootGuard()::<lambda(void*)>::_FUN(void*),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/ota_client.cpp,94,"sensor::checkOta(EspNowTransport&, const SensorRuntimeConfig&, AdcReader&, BatteryReading&)::<lambda()>",16,static
+after,sensor_pcb_v4,Firmware/sensor/src/ota_client.cpp,99,"sensor::checkOta(EspNowTransport&, const SensorRuntimeConfig&, AdcReader&, BatteryReading&)::<lambda(lil::ota::State, uint32_t, lil::ota::Failure)>",32,static
+after,sensor_pcb_v4,Firmware/sensor/src/ota_client.cpp,15,bool verifyRollbackLater(),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/ota_client.cpp,46,void sensor::beginOtaBootGuard(),48,static
+after,sensor_pcb_v4,Firmware/sensor/src/ota_client.cpp,57,void sensor::finishOtaBootGuard(),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/ota_client.cpp,64,bool sensor::otaBootPending(),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/ota_client.cpp,65,bool sensor::confirmOtaBootAfterContact(),32,static
+after,sensor_pcb_v4,Firmware/sensor/src/ota_client.cpp,75,"void sensor::checkOta(EspNowTransport&, const SensorRuntimeConfig&, AdcReader&, BatteryReading&)",1280,static
+after,sensor_pcb_v4,Firmware/shared/src/ota_crypto.cpp,11,bool lil::ota::verifyManifest(const Manifest&),64,static
+after,sensor_pcb_v4,Firmware/sensor/src/power_controller.cpp,7,"static void sensor::PowerController::writeActive(gpio_num_t, bool, bool)",0,static
+after,sensor_pcb_v4,Firmware/sensor/src/power_controller.cpp,34,void sensor::PowerController::sensorPower(bool),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/power_controller.cpp,39,void sensor::PowerController::adcPower(bool),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/power_controller.cpp,15,void sensor::PowerController::begin(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/power_controller.cpp,43,void sensor::PowerController::prepareForDeepSleep(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/precision_sensors.cpp,10,"uint8_t sensor::{anonymous}::opticalCurrent(uint8_t, uint32_t)",0,static
+after,sensor_pcb_v4,Firmware/sensor/src/precision_sensors.cpp,54,void sensor::PrecisionSensors::resetSignal(),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/precision_sensors.cpp,55,bool sensor::PrecisionSensors::invalidateOpticalCapture(),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/precision_sensors.cpp,24,"bool sensor::PrecisionSensors::readBytes(uint8_t, uint8_t*, uint8_t)",32,static
+after,sensor_pcb_v4,Firmware/sensor/src/precision_sensors.cpp,38,"static bool sensor::PrecisionSensors::probe(sensor::Type, uint8_t&)",1024,static
+after,sensor_pcb_v4,Firmware/sensor/src/precision_sensors.cpp,30,"bool sensor::PrecisionSensors::write8(uint8_t, uint8_t)",16,static
+after,sensor_pcb_v4,Firmware/sensor/src/precision_sensors.cpp,62,bool sensor::PrecisionSensors::clearOpticalFifo(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/precision_sensors.cpp,99,bool sensor::PrecisionSensors::poll(),144,static
+after,sensor_pcb_v4,Firmware/sensor/src/precision_sensors.cpp,184,sensor::EnvironmentalReading sensor::PrecisionSensors::read(bool),1104,static
+after,sensor_pcb_v4,Firmware/sensor/src/precision_sensors.cpp,34,"bool sensor::PrecisionSensors::write16(uint8_t, uint16_t)",16,static
+after,sensor_pcb_v4,Firmware/sensor/src/precision_sensors.cpp,68,"bool sensor::PrecisionSensors::begin(sensor::Type, uint8_t)",1040,static
+after,sensor_pcb_v4,Firmware/shared/include/recording_protocol.h,71,constexpr size_t lil::recording::size(lil::protocol::EnvironmentalSensorType),0,static
+after,sensor_pcb_v4,Firmware/shared/include/recording_protocol.h,76,uint32_t lil::recording::checksum(const Record&),32,static
+after,sensor_pcb_v4,Firmware/shared/include/recording_protocol.h,82,bool lil::recording::valid(const Record&),16,static
+after,sensor_pcb_v4,Firmware/shared/src/recording_journal.cpp,13,"bool lil::recording::Journal::readHeader(size_t, Header&)",0,static
+after,sensor_pcb_v4,Firmware/shared/src/recording_journal.cpp,16,"bool lil::recording::Journal::clearBit(size_t, size_t, uint8_t)",48,static
+after,sensor_pcb_v4,Firmware/shared/src/recording_journal.cpp,24,"bool lil::recording::Journal::begin(lil::recording::Flash&, uint64_t)",832,static
+after,sensor_pcb_v4,Firmware/shared/src/recording_journal.cpp,80,bool lil::recording::Journal::clear(),16,static
+after,sensor_pcb_v4,Firmware/shared/src/recording_journal.cpp,86,"bool lil::recording::Journal::initialize(size_t, size_t)",112,static
+after,sensor_pcb_v4,Firmware/shared/src/recording_journal.cpp,98,bool lil::recording::Journal::append(const lil::recording::Record&),192,static
+after,sensor_pcb_v4,Firmware/shared/src/recording_journal.cpp,128,"bool lil::recording::Journal::locate(size_t&, uint8_t&)",112,static
+after,sensor_pcb_v4,Firmware/shared/src/recording_journal.cpp,139,bool lil::recording::Journal::peek(lil::recording::Record&),160,static
+after,sensor_pcb_v4,Firmware/shared/src/recording_journal.cpp,147,bool lil::recording::Journal::acknowledge(const lil::recording::Record&),176,static
+after,sensor_pcb_v4,Firmware/sensor/include/recording_store.h,10,virtual size_t sensor::RecordingFlash::bytes() const,0,static
+after,sensor_pcb_v4,Firmware/sensor/include/recording_store.h,7,constexpr sensor::RecordingFlash::~RecordingFlash(),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,13,"virtual bool sensor::RecordingFlash::read(size_t, void*, size_t)",16,static
+after,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,16,"virtual bool sensor::RecordingFlash::write(size_t, const void*, size_t)",16,static
+after,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,19,"virtual bool sensor::RecordingFlash::erase(size_t, size_t)",16,static
+after,sensor_pcb_v4,Firmware/sensor/include/recording_store.h,7,virtual constexpr sensor::RecordingFlash::~RecordingFlash(),0,static
+after,sensor_pcb_v4,Firmware/shared/include/recording_protocol.h,71,constexpr size_t lil::recording::size(lil::protocol::EnvironmentalSensorType),0,static
+after,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,8,bool sensor::RecordingFlash::begin(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,42,bool sensor::RecordingStore::start(),32,static
+after,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,56,void sensor::RecordingStore::stop(bool),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,23,bool sensor::RecordingStore::begin(lil::protocol::EnvironmentalSensorType),32,static
+after,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,68,"bool sensor::RecordingStore::append(uint64_t, const lil::protocol::TelemetryPayload&)",176,static
+after,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,81,bool sensor::RecordingStore::next(lil::recording::Upload&),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,87,bool sensor::RecordingStore::acknowledge(const lil::recording::Record&),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,96,"void sensor::RecordingStore::anchor(uint64_t, uint32_t, uint32_t)",32,static
+after,sensor_pcb_v4,Firmware/sensor/src/recording_store.cpp,111,lil::recording::Status sensor::RecordingStore::status(uint32_t) const,16,static
+after,sensor_pcb_v4,Firmware/sensor/src/sensor_config_store.cpp,124,bool sensor::{anonymous}::validRuntimeConfig(const sensor::SensorRuntimeConfig&),32,static
+after,sensor_pcb_v4,Firmware/sensor/src/sensor_config_store.cpp,150,bool sensor::SensorConfigStore::ensurePreferencesOpen(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/sensor_config_store.cpp,158,bool sensor::SensorConfigStore::begin(),80,static
+after,sensor_pcb_v4,Firmware/sensor/src/sensor_config_store.cpp,203,bool sensor::SensorConfigStore::firmwareChanged() const,0,static
+after,sensor_pcb_v4,Firmware/sensor/src/sensor_config_store.cpp,207,sensor::SensorRuntimeConfig sensor::SensorConfigStore::load(),176,static
+after,sensor_pcb_v4,Firmware/sensor/src/sensor_config_store.cpp,291,bool sensor::SensorConfigStore::saveIfChanged(const sensor::SensorRuntimeConfig&),32,static
+after,sensor_pcb_v4,Firmware/sensor/src/sensor_config_store.cpp,308,bool sensor::SensorConfigStore::factoryReset(),16,static
+after,sensor_pcb_v4,Firmware/sensor/src/sleep_controller.cpp,12,"static void sensor::SleepController::deepSleep(uint32_t, sensor::PowerController&, uint32_t)",32,static
+after,station_s3,Firmware/station/src/config_store.cpp,205,bool station::{anonymous}::validSensorType(lil::protocol::EnvironmentalSensorType),32,static
+after,station_s3,Firmware/station/src/config_store.cpp,14,bool station::{anonymous}::filesystemPartitionErased(),1072,static
+after,station_s3,Firmware/station/src/config_store.cpp,193,String station::{anonymous}::sensorKey(size_t),80,static
+after,station_s3,Firmware/station/src/config_store.cpp,197,String station::{anonymous}::historyKey(size_t),80,static
+after,station_s3,Firmware/station/src/config_store.cpp,201,String station::{anonymous}::latestTelemetryKey(size_t),80,static
+after,station_s3,Firmware/station/src/config_store.cpp,165,"void station::{anonymous}::migrateSensorBase(const Legacy&, station::SensorConfig&) [with Legacy = LegacySensorConfigV5]",32,static
+after,station_s3,Firmware/station/include/filesystem_guard.h,12,station::FilesystemGuard::FilesystemGuard(),32,static
+after,station_s3,Firmware/station/include/filesystem_guard.h,13,station::FilesystemGuard::~FilesystemGuard(),32,static
+after,station_s3,Firmware/station/src/config_store.cpp,235,bool station::ConfigStore::begin(),32,static
+after,station_s3,Firmware/station/src/config_store.cpp,251,void station::sanitizeSensorConfig(SensorConfig&),64,static
+after,station_s3,Firmware/station/src/config_store.cpp,277,void station::terminateStationStrings(StationConfig&),32,static
+after,station_s3,Firmware/station/src/config_store.cpp,293,void station::ConfigStore::applyDefaults(station::StationConfig&),80,static
+after,station_s3,Firmware/station/src/config_store.cpp,355,bool station::ConfigStore::saveStationConfig(const station::StationConfig&),32,static
+after,station_s3,Firmware/station/src/config_store.cpp,300,station::StationConfig station::ConfigStore::loadStationConfig(),448,static
+after,station_s3,Firmware/station/src/config_store.cpp,476,"bool station::ConfigStore::saveSensorConfig(size_t, const station::SensorConfig&)",64,static
+after,station_s3,Firmware/station/src/config_store.cpp,359,"bool station::ConfigStore::loadSensorConfigs(station::SensorConfig*, size_t)",176,static
+after,station_s3,Firmware/station/src/config_store.cpp,484,bool station::ConfigStore::deleteSensorConfig(size_t),64,static
+after,station_s3,Firmware/station/src/config_store.cpp,492,"bool station::ConfigStore::loadSensorIdentities(station::SensorIdentity*, size_t)",32,static
+after,station_s3,Firmware/station/src/config_store.cpp,505,"bool station::ConfigStore::saveSensorIdentities(const station::SensorIdentity*, size_t)",32,static
+after,station_s3,Firmware/station/src/config_store.cpp,520,station::DashboardLayout station::ConfigStore::loadDashboardLayout(),192,static
+after,station_s3,Firmware/station/src/config_store.cpp,528,bool station::ConfigStore::saveDashboardLayout(station::DashboardLayout),32,static
+after,station_s3,Firmware/station/src/config_store.cpp,631,bool station::ConfigStore::deleteHistory(size_t),64,static
+after,station_s3,Firmware/station/src/config_store.cpp,671,bool station::ConfigStore::deleteLatestTelemetry(size_t),64,static
+after,station_s3,Firmware/station/src/config_store.cpp,680,bool station::ConfigStore::factoryReset(),32,static
+after,station_s3,Firmware/station/src/config_store.cpp,511,size_t station::ConfigStore::historyBytesLength(size_t),80,static
+after,station_s3,Firmware/station/src/config_store.cpp,543,"bool station::ConfigStore::loadHistoryRange(size_t, size_t, void*, size_t)",80,static
+after,station_s3,Firmware/station/src/config_store.cpp,535,"bool station::ConfigStore::loadHistory(size_t, void*, size_t)",32,static
+after,station_s3,Firmware/station/src/config_store.cpp,557,"bool station::ConfigStore::saveHistory(size_t, const void*, size_t)",112,static
+after,station_s3,Firmware/station/src/config_store.cpp,575,"bool station::ConfigStore::saveHistoryParts(size_t, const void*, size_t, const void*, size_t)",112,static
+after,station_s3,Firmware/station/src/config_store.cpp,604,"bool station::ConfigStore::updateHistory(size_t, size_t, const void*, size_t, size_t, const void*, size_t)",80,static
+after,station_s3,Firmware/station/src/config_store.cpp,640,"bool station::ConfigStore::loadLatestTelemetry(size_t, void*, size_t)",80,static
+after,station_s3,Firmware/station/src/config_store.cpp,651,"bool station::ConfigStore::saveLatestTelemetry(size_t, const void*, size_t)",112,static
+after,station_s3,Firmware/station/src/espnow_gateway.cpp,55,"static void station::EspNowGateway::receiveCallback(const esp_now_recv_info_t*, const uint8_t*, int)",320,static
+after,station_s3,Firmware/station/src/espnow_gateway.cpp,333,bool station::EspNowGateway::_ZN7station13EspNowGateway10ensurePeerEPKh$part$0(const uint8_t*),304,static
+after,station_s3,Firmware/station/include/radio_send_guard.h,13,void station::RadioSendGuard::complete(),32,static
+after,station_s3,Firmware/station/src/espnow_gateway.cpp,78,"static void station::EspNowGateway::sendCallback(const wifi_tx_info_t*, esp_now_send_status_t)",32,static
+after,station_s3,Firmware/station/include/radio_send_guard.h,14,bool station::RadioSendGuard::pending() const,32,static
+after,station_s3,Firmware/shared/include/recording_protocol.h,71,constexpr size_t lil::recording::size(lil::protocol::EnvironmentalSensorType),32,static
+after,station_s3,Firmware/shared/include/recording_protocol.h,76,uint32_t lil::recording::checksum(const Record&),48,static
+after,station_s3,Firmware/shared/include/telemetry_validation.h,7,bool lil::protocol::validTelemetryValues(const TelemetryPayload&),48,static
+after,station_s3,Firmware/station/src/espnow_gateway.cpp,26,"bool station::EspNowGateway::begin(station::SensorRegistry&, station::ThingSpeakService&, station::WifiService&)",48,static
+after,station_s3,Firmware/station/src/espnow_gateway.cpp,131,void station::EspNowGateway::persistArchive(const station::EspNowArchiveEvent&),480,static
+after,station_s3,Firmware/station/src/espnow_gateway.cpp,95,static void station::EspNowGateway::archiveTaskEntry(void*),208,static
+after,station_s3,Firmware/station/src/espnow_gateway.cpp,150,void station::EspNowGateway::persist(const station::EspNowPersistenceEvent&),64,static
+after,station_s3,Firmware/station/src/espnow_gateway.cpp,121,void station::EspNowGateway::persistenceTaskLoop(),368,static
+after,station_s3,Firmware/station/src/espnow_gateway.cpp,92,static void station::EspNowGateway::persistenceTaskEntry(void*),32,static
+after,station_s3,Firmware/station/src/espnow_gateway.cpp,333,bool station::EspNowGateway::ensurePeer(const uint8_t*),32,static
+after,station_s3,Firmware/station/src/espnow_gateway.cpp,165,void station::EspNowGateway::handle(const station::EspNowRxEvent&),1104,static
+after,station_s3,Firmware/station/src/espnow_gateway.cpp,106,void station::EspNowGateway::taskLoop(),320,static
+after,station_s3,Firmware/station/src/espnow_gateway.cpp,88,static void station::EspNowGateway::taskEntry(void*),32,static
+after,station_s3,Firmware/station/src/espnow_gateway.cpp,363,uint32_t station::EspNowGateway::receivedPackets() const,32,static
+after,station_s3,Firmware/station/src/espnow_gateway.cpp,367,uint32_t station::EspNowGateway::invalidPackets() const,32,static
+after,station_s3,Firmware/station/src/espnow_gateway.cpp,371,uint32_t station::EspNowGateway::droppedPackets() const,32,static
+after,station_s3,Firmware/station/src/filesystem_guard.cpp,10,bool station::initializeFilesystemLock(),32,static
+after,station_s3,Firmware/station/src/filesystem_guard.cpp,14,QueueDefinition* station::filesystemMutex(),32,static
+after,station_s3,Firmware/station/src/filesystem_guard.cpp,15,size_t station::historyWorkspaceReserve(),32,static
+after,station_s3,Firmware/station/src/filesystem_guard.cpp,19,void station::noteArchiveWork(),32,static
+after,station_s3,Firmware/shared/src/lil_protocol.cpp,29,"uint32_t lil::protocol::crc32(const uint8_t*, size_t)",32,static
+after,station_s3,Firmware/shared/src/lil_protocol.cpp,33,"void lil::protocol::finalizePacket(void*, size_t, MessageType, uint32_t, uint16_t)",32,static
+after,station_s3,Firmware/shared/src/lil_protocol.cpp,49,"bool lil::protocol::validatePacket(const void*, size_t, MessageType, uint16_t)",48,static
+after,station_s3,Firmware/station/src/main.cpp,22,void {anonymous}::fatal(const char*),32,static
+after,station_s3,Firmware/station/include/config_store.h,10,station::ConfigStore::~ConfigStore(),32,static
+after,station_s3,Firmware/station/src/main.cpp,30,void setup(),1072,static
+after,station_s3,Firmware/station/src/main.cpp,88,void loop(),32,static
+after,station_s3,Firmware/station/include/web_portal.h,16,station::WebPortal::~WebPortal(),32,static
+after,station_s3,Firmware/station/src/main.cpp,100,cpp),32,static
+after,station_s3,Firmware/station/include/wifi_service.h,18,station::WifiService::~WifiService(),32,static
+after,station_s3,Firmware/shared/src/ota_crypto.cpp,11,bool lil::ota::verifyManifest(const Manifest&),80,static
+after,station_s3,Firmware/station/src/ota_service.cpp,15,bool station::{anonymous}::active(lil::ota::State),32,static
+after,station_s3,Firmware/station/src/ota_service.cpp,12,"station::{anonymous}::Lock::Lock(SemaphoreHandle_t, TickType_t)",32,static
+after,station_s3,Firmware/station/src/ota_service.cpp,13,station::{anonymous}::Lock::~Lock(),32,static
+after,station_s3,Firmware/shared/include/ota_protocol.h,59,bool lil::ota::validIdentity(const Identity&),32,static
+after,station_s3,Firmware/shared/include/ota_protocol.h,86,const char* lil::ota::failureName(Failure),32,static
+after,station_s3,Firmware/station/include/ota_service.h,35,void station::OtaService::clearReadCache(),32,static
+after,station_s3,Firmware/station/src/ota_service.cpp,26,bool station::OtaService::begin(),32,static
+after,station_s3,Firmware/station/src/ota_service.cpp,47,bool station::OtaService::save(),32,static
+after,station_s3,Firmware/station/src/ota_service.cpp,50,"bool station::OtaService::startUpload(const uint8_t*, String&)",240,static
+after,station_s3,Firmware/station/src/ota_service.cpp,70,"bool station::OtaService::upload(const uint8_t*, size_t)",48,static
+after,station_s3,Firmware/station/src/ota_service.cpp,85,bool station::OtaService::finishUpload(String&),1232,static
+after,station_s3,Firmware/station/src/ota_service.cpp,149,void station::OtaService::abortUpload(),48,static
+after,station_s3,Firmware/station/src/ota_service.cpp,150,bool station::OtaService::cancel(),224,static
+after,station_s3,Firmware/station/src/ota_service.cpp,160,void station::OtaService::forget(const uint8_t*),48,static
+after,station_s3,Firmware/station/src/ota_service.cpp,166,"bool station::OtaService::readImage(uint32_t, uint8_t*, size_t)",32,static
+after,station_s3,Firmware/station/src/ota_service.cpp,185,"bool station::OtaService::respond(const uint8_t*, const lil::ota::Packet&, lil::ota::Packet&)",144,static
+after,station_s3,Firmware/station/include/ota_service.h,11,station::OtaService::~OtaService(),32,static
+after,station_s3,Firmware/station/src/ota_service.cpp,253,void station::OtaService::json(ArduinoJson::V743PB22::JsonObject),192,static
+after,station_s3,Firmware/station/src/ota_service.cpp,274,cpp),32,static
+after,station_s3,Firmware/station/src/paged_history.cpp,43,uint16_t station::{anonymous}::widthFor(uint8_t),32,static
+after,station_s3,Firmware/station/src/paged_history.cpp,91,size_t station::{anonymous}::rawFreeBytes(),32,static
+after,station_s3,Firmware/station/src/paged_history.cpp,53,"uint32_t station::{anonymous}::bounded(float, double, uint32_t)",48,static
+after,station_s3,Firmware/station/src/paged_history.cpp,44,"void station::{anonymous}::pathFor(const uint8_t*, uint32_t, char*, size_t)",48,static
+after,station_s3,Firmware/station/src/paged_history.cpp,37,station::{anonymous}::Guard::~Guard(),32,static
+after,station_s3,Firmware/shared/include/recording_protocol.h,71,constexpr size_t lil::recording::size(lil::protocol::EnvironmentalSensorType),32,static
+after,station_s3,Firmware/station/include/filesystem_guard.h,12,station::FilesystemGuard::FilesystemGuard(),32,static
+after,station_s3,Firmware/station/include/filesystem_guard.h,13,station::FilesystemGuard::~FilesystemGuard(),32,static
+after,station_s3,Firmware/shared/include/telemetry_validation.h,7,bool lil::protocol::validTelemetryValues(const TelemetryPayload&),48,static
+after,station_s3,Firmware/station/src/paged_history.cpp,72,"bool station::{anonymous}::decode(const uint8_t*, uint8_t, station::NormalHistoryPoint&)",384,static
+after,station_s3,Firmware/station/src/paged_history.cpp,123,int station::PagedHistory::nodeIndex(const uint8_t*) const,32,static
+after,station_s3,Firmware/station/src/paged_history.cpp,127,"void station::PagedHistory::configure(const station::SensorConfig*, size_t)",64,static
+after,station_s3,Firmware/station/src/paged_history.cpp,147,size_t station::PagedHistory::quotaPages(),32,static
+after,station_s3,Firmware/station/src/paged_history.cpp,160,void station::PagedHistory::setLegacyBytes(size_t),32,static
+after,station_s3,Firmware/station/src/paged_history.cpp,165,size_t station::PagedHistory::pagesFor(const uint8_t*) const,32,static
+after,station_s3,Firmware/station/src/paged_history.cpp,166,bool station::PagedHistory::erasePage(size_t),432,static
+after,station_s3,Firmware/station/src/paged_history.cpp,174,"bool station::PagedHistory::makeSpace(const uint8_t*, bool)",48,static
+after,station_s3,Firmware/station/src/paged_history.cpp,214,bool station::PagedHistory::flushNode(Node&),976,static
+after,station_s3,Firmware/station/src/paged_history.cpp,184,"bool station::PagedHistory::append(const uint8_t*, uint32_t, const lil::protocol::TelemetryPayload&, uint32_t, bool)",480,static
+after,station_s3,Firmware/station/src/paged_history.cpp,161,"bool station::PagedHistory::appendLegacy(const uint8_t*, const station::HistorySample&, uint32_t)",272,static
+after,station_s3,Firmware/station/src/paged_history.cpp,256,bool station::PagedHistory::flush(const uint8_t*),32,static
+after,station_s3,Firmware/station/src/paged_history.cpp,257,void station::PagedHistory::flushDue(),48,static
+after,station_s3,Firmware/station/src/paged_history.cpp,263,bool station::PagedHistory::reserveForArchive(),48,static
+after,station_s3,Firmware/station/src/paged_history.cpp,269,bool station::PagedHistory::clear(const uint8_t*),64,static
+after,station_s3,Firmware/station/src/paged_history.cpp,276,station::NormalHistoryInfo station::PagedHistory::infoLocked(const Node&) const,256,static
+after,station_s3,Firmware/station/src/paged_history.cpp,285,station::NormalHistoryInfo station::PagedHistory::info(const uint8_t*),32,static
+after,station_s3,Firmware/station/src/paged_history.cpp,286,"size_t station::PagedHistory::read(const uint8_t*, uint32_t, uint32_t, uint32_t, station::NormalHistoryPoint*, size_t, bool&, bool&)",864,static
+after,station_s3,Firmware/station/src/paged_history.cpp,94,bool station::PagedHistory::begin(bool),1248,static
+after,station_s3,Firmware/station/src/recording_archive.cpp,38,"void station::{anonymous}::pathFor(const uint8_t*, uint64_t, char*, size_t)",80,static
+after,station_s3,Firmware/station/src/recording_archive.cpp,33,station::{anonymous}::Guard::~Guard(),32,static
+after,station_s3,Firmware/shared/include/recording_protocol.h,71,constexpr size_t lil::recording::size(lil::protocol::EnvironmentalSensorType),32,static
+after,station_s3,Firmware/station/src/recording_archive.cpp,46,"bool station::{anonymous}::load(FILE*, Header&, uint32_t&)",32,static
+after,station_s3,Firmware/shared/include/recording_protocol.h,82,bool lil::recording::valid(const Record&),48,static
+after,station_s3,Firmware/shared/include/recording_protocol.h,131,lil::protocol::TelemetryPayload lil::recording::decode(const Record&),32,static
+after,station_s3,Firmware/station/include/filesystem_guard.h,12,station::FilesystemGuard::FilesystemGuard(),32,static
+after,station_s3,Firmware/station/include/filesystem_guard.h,13,station::FilesystemGuard::~FilesystemGuard(),32,static
+after,station_s3,Firmware/shared/include/telemetry_validation.h,7,bool lil::protocol::validTelemetryValues(const TelemetryPayload&),48,static
+after,station_s3,Firmware/station/src/recording_archive.cpp,57,"bool station::{anonymous}::readNext(FILE*, const Header&, lil::recording::Record&)",336,static
+after,station_s3,Firmware/station/src/recording_archive.cpp,63,"bool station::{anonymous}::readAt(FILE*, const Header&, uint32_t, lil::recording::Record&)",32,static
+after,station_s3,Firmware/station/src/recording_archive.cpp,73,bool station::RecordingArchive::begin(),32,static
+after,station_s3,Firmware/station/src/recording_archive.cpp,74,size_t station::RecordingArchive::freeBytes() const,32,static
+after,station_s3,Firmware/station/src/recording_archive.cpp,78,"bool station::RecordingArchive::append(const uint8_t*, const lil::recording::Upload&)",1120,static
+after,station_s3,Firmware/station/src/recording_archive.cpp,133,std::vector<station::RecordingInfo> station::RecordingArchive::list(const uint8_t*),688,static
+after,station_s3,Firmware/station/src/recording_archive.cpp,156,"size_t station::RecordingArchive::read(const uint8_t*, uint64_t, uint32_t&, lil::recording::Record*, size_t, station::RecordingInfo&, uint32_t)",704,static
+after,station_s3,Firmware/station/src/recording_archive.cpp,188,"bool station::RecordingArchive::remove(const uint8_t*, uint64_t)",384,static
+after,station_s3,Firmware/shared/include/recording_protocol.h,71,constexpr size_t lil::recording::size(lil::protocol::EnvironmentalSensorType),32,static
+after,station_s3,Firmware/shared/include/recording_protocol.h,76,uint32_t lil::recording::checksum(const Record&),48,static
+after,station_s3,Firmware/shared/include/recording_protocol.h,82,bool lil::recording::valid(const Record&),32,static
+after,station_s3,Firmware/shared/src/recording_journal.cpp,13,"bool lil::recording::Journal::readHeader(size_t, Header&)",32,static
+after,station_s3,Firmware/shared/src/recording_journal.cpp,16,"bool lil::recording::Journal::clearBit(size_t, size_t, uint8_t)",48,static
+after,station_s3,Firmware/shared/src/recording_journal.cpp,24,"bool lil::recording::Journal::begin(lil::recording::Flash&, uint64_t)",816,static
+after,station_s3,Firmware/shared/src/recording_journal.cpp,80,bool lil::recording::Journal::clear(),32,static
+after,station_s3,Firmware/shared/src/recording_journal.cpp,86,"bool lil::recording::Journal::initialize(size_t, size_t)",128,static
+after,station_s3,Firmware/shared/src/recording_journal.cpp,98,bool lil::recording::Journal::append(const lil::recording::Record&),192,static
+after,station_s3,Firmware/shared/src/recording_journal.cpp,128,"bool lil::recording::Journal::locate(size_t&, uint8_t&)",112,static
+after,station_s3,Firmware/shared/src/recording_journal.cpp,139,bool lil::recording::Journal::peek(lil::recording::Record&),160,static
+after,station_s3,Firmware/shared/src/recording_journal.cpp,147,bool lil::recording::Journal::acknowledge(const lil::recording::Record&),192,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,78,station::HistorySample* station::{anonymous}::allocateHistorySamples(size_t),32,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,166,void station::{anonymous}::LockGuard::relock(),32,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,165,void station::{anonymous}::LockGuard::unlock(),32,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,93,int16_t station::{anonymous}::encodeSignedHundredths(float),32,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,106,"uint16_t station::{anonymous}::encodeUnsigned(float, float)",48,static
+after,station_s3,Firmware/station/include/normal_history_policy.h,6,bool station::usesNormalHistory(const lil::protocol::TelemetryPayload&),32,static
+after,station_s3,Firmware/shared/include/telemetry_validation.h,7,bool lil::protocol::validTelemetryValues(const TelemetryPayload&),48,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,174,"void station::SensorRegistry::updateTxPowerLocked(size_t, int8_t, uint8_t)",32,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,458,bool station::SensorRegistry::persistHistoryLocked(size_t),64,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,403,"bool station::SensorRegistry::configureHistoryLocked(size_t, uint32_t, bool, bool)",64,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,309,bool station::SensorRegistry::loadHistoryLocked(size_t),1728,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,472,"bool station::SensorRegistry::persistHistorySampleLocked(size_t, size_t)",96,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,490,int station::SensorRegistry::findIndexLocked(const uint8_t*) const,32,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,499,int station::SensorRegistry::identityIndexLocked(const uint8_t*) const,32,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,529,"void station::SensorRegistry::commitConfigLocked(size_t, const station::SensorConfig&, const station::SensorConfig&)",144,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,762,"size_t station::SensorRegistry::liveHistory(const uint8_t*, station::LiveSample*, size_t) const",80,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,794,"size_t station::SensorRegistry::views(station::SensorView*, size_t) const",96,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,1036,bool station::SensorRegistry::requestFactoryReset(const uint8_t*),400,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,1059,bool station::SensorRegistry::requestIaqCalibrationReset(const uint8_t*),400,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,1081,bool station::SensorRegistry::deleteSensor(const uint8_t*),320,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,1149,"bool station::SensorRegistry::saveLatestTelemetryLocked(size_t, const lil::protocol::TelemetryPayload&, int8_t)",240,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,1160,"bool station::SensorRegistry::recordHistoryLocked(size_t, const lil::protocol::TelemetryPayload&, uint32_t, uint32_t)",48,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,707,"bool station::SensorRegistry::persistTelemetry(const uint8_t*, uint32_t, const lil::protocol::TelemetryPayload&, int8_t, uint32_t, uint32_t)",464,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,1255,size_t station::SensorRegistry::historyCapacity(const uint8_t*) const,80,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,1263,uint32_t station::SensorRegistry::historyBucketSeconds(const uint8_t*) const,80,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,1276,uint32_t station::SensorRegistry::historyRevision(const uint8_t*) const,80,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,1287,bool station::SensorRegistry::channelShared(uint32_t) const,48,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,1297,"bool station::SensorRegistry::generationMatches(const uint8_t*, uint32_t) const",48,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,1303,"bool station::SensorRegistry::findConfig(const uint8_t*, station::SensorConfig&, uint32_t*) const",48,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,1315,"bool station::SensorRegistry::cloudUploadMatches(const uint8_t*, uint32_t, uint32_t, const char*, const station::ThingSpeakFieldMapping&) const",64,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,1330,"bool station::SensorRegistry::findView(const uint8_t*, station::SensorView&) const",80,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,1343,"void station::SensorRegistry::updateRecording(const uint8_t*, const lil::recording::Status&)",48,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,1354,bool station::SensorRegistry::needsPersistence(const uint8_t*) const,48,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,1360,static String station::SensorRegistry::formatMac(const uint8_t*),80,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,1367,"static bool station::SensorRegistry::parseMac(const String&, uint8_t*)",48,static
+after,station_s3,Firmware/station/include/app_config.h,87,"void station::copyText(char (&)[N], const String&) [with unsigned int N = 25]",64,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,505,"int station::SensorRegistry::rememberIdentityLocked(const uint8_t*, const char*, station::SensorIdentity*)",80,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,1114,"bool station::SensorRegistry::setMotionReference(const uint8_t*, bool)",3968,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,539,int station::SensorRegistry::allocateIndexLocked(const uint8_t*),336,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,561,"bool station::SensorRegistry::registerTelemetry(const uint8_t*, uint32_t, const lil::protocol::TelemetryPayload&, int8_t, station::SensorConfig&, int8_t&, bool&, uint32_t&)",288,static
+after,station_s3,Firmware/station/include/app_config.h,87,"void station::copyText(char (&)[N], const String&) [with unsigned int N = 33]",64,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,812,"bool station::SensorRegistry::updateConfig(const uint8_t*, const String&, uint32_t, uint32_t, const String&, bool, const station::ThingSpeakFieldMapping&, uint8_t, lil::protocol::EnvironmentalSensorType, float, float)",4432,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,919,"bool station::SensorRegistry::setThingSpeakChannel(const uint8_t*, uint32_t, const String&, uint8_t)",400,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,952,"bool station::SensorRegistry::syncThingSpeakProfile(uint8_t, const station::ThingSpeakChannelProfile&)",2272,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,995,bool station::SensorRegistry::removeThingSpeakProfile(uint8_t),2256,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,1222,"size_t station::SensorRegistry::history(const uint8_t*, station::HistorySample*, size_t) const",64,static
+after,station_s3,Firmware/station/src/sensor_registry.cpp,228,"bool station::SensorRegistry::begin(station::ConfigStore&, uint32_t, station::PagedHistory*)",368,static
+after,station_s3,Firmware/station/src/thingspeak_service.cpp,144,"station::ThingSpeakService::upload(const station::CloudUploadJob&)::<lambda(uint8_t, const String&)>",80,static
+after,station_s3,Firmware/station/src/thingspeak_service.cpp,39,bool station::ThingSpeakService::begin(station::SensorRegistry&),32,static
+after,station_s3,Firmware/station/src/thingspeak_service.cpp,373,static String station::ThingSpeakService::urlEncode(const String&),32,static
+after,station_s3,Firmware/station/src/thingspeak_service.cpp,390,int station::ThingSpeakService::lastHttpStatus() const,32,static
+after,station_s3,Firmware/station/src/thingspeak_service.cpp,394,int station::ThingSpeakService::lastEntryId() const,32,static
+after,station_s3,Firmware/station/src/thingspeak_service.cpp,398,uint32_t station::ThingSpeakService::successfulUploads() const,32,static
+after,station_s3,Firmware/station/src/thingspeak_service.cpp,402,uint32_t station::ThingSpeakService::failedUploads() const,32,static
+after,station_s3,Firmware/station/src/thingspeak_service.cpp,406,uint32_t station::ThingSpeakService::lastAttemptMs() const,32,static
+after,station_s3,Firmware/station/src/thingspeak_service.cpp,410,uint32_t station::ThingSpeakService::lastSuccessMs() const,32,static
+after,station_s3,Firmware/station/src/thingspeak_service.cpp,414,uint32_t station::ThingSpeakService::droppedJobs() const,32,static
+after,station_s3,Firmware/shared/include/upload_scheduler.h,100,"void lil::UploadScheduler<Job, Capacity>::erase(size_t) [with Job = station::CloudUploadJob; unsigned int Capacity = 64]",32,static
+after,station_s3,Firmware/shared/include/upload_scheduler.h,104,"void lil::UploadScheduler<Job, Capacity>::insert(const Entry&) [with Job = station::CloudUploadJob; unsigned int Capacity = 64]",32,static
+after,station_s3,Firmware/station/src/thingspeak_service.cpp,51,"bool station::ThingSpeakService::queue(const station::SensorConfig&, const lil::protocol::TelemetryPayload&, int8_t, uint32_t, uint32_t, bool, uint32_t)",624,static
+after,station_s3,Firmware/shared/include/upload_scheduler.h,31,"void lil::UploadScheduler<Job, Capacity>::expire(uint32_t) [with Job = station::CloudUploadJob; unsigned int Capacity = 64]",32,static
+after,station_s3,Firmware/station/src/thingspeak_service.cpp,120,bool station::ThingSpeakService::upload(const station::CloudUploadJob&),576,static
+after,station_s3,Firmware/station/src/thingspeak_service.cpp,91,void station::ThingSpeakService::taskLoop(),640,static
+after,station_s3,Firmware/station/src/thingspeak_service.cpp,87,static void station::ThingSpeakService::taskEntry(void*),32,static
+after,station_s3,Firmware/station/src/thingspeak_service.cpp,321,"station::ThingSpeakApiResult station::ThingSpeakService::accountRequest(const char*, const String&, const String&, const String&)",416,static
+after,station_s3,Firmware/station/src/thingspeak_service.cpp,283,station::ThingSpeakApiResult station::ThingSpeakService::listChannels(const String&),96,static
+after,station_s3,Firmware/station/src/thingspeak_service.cpp,290,"station::ThingSpeakApiResult station::ThingSpeakService::createManagedChannel(const String&, const String&)",64,static
+after,station_s3,Firmware/station/src/thingspeak_service.cpp,245,"station::ChannelCreationResult station::ThingSpeakService::createChannel(const String&, const String&)",240,static
+after,station_s3,Firmware/station/src/thingspeak_service.cpp,296,"station::ThingSpeakApiResult station::ThingSpeakService::updateChannel(const String&, uint32_t, const String&)",96,static
+after,station_s3,Firmware/station/src/thingspeak_service.cpp,305,"station::ThingSpeakApiResult station::ThingSpeakService::clearChannel(const String&, uint32_t)",96,static
+after,station_s3,Firmware/station/src/thingspeak_service.cpp,313,"station::ThingSpeakApiResult station::ThingSpeakService::deleteChannel(const String&, uint32_t)",96,static
+after,station_s3,Firmware/station/src/web_portal.cpp,55,"bool station::{anonymous}::constantTimeEquals(const char*, const char*, size_t)",32,static
+after,station_s3,Firmware/station/src/web_portal.cpp,182,void station::{anonymous}::sendNoCache(WebServer&),80,static
+after,station_s3,Firmware/station/src/web_portal.cpp,365,"station::WebPortal::begin(station::StationConfig&, station::ConfigStore&, station::WifiService&, station::SensorRegistry&, station::ThingSpeakService&, station::EspNowGateway&)::<lambda()>",80,static
+after,station_s3,Firmware/station/src/web_portal.cpp,64,void station::{anonymous}::randomToken(char*),48,static
+after,station_s3,Firmware/station/src/web_portal.cpp,26,"bool station::{anonymous}::readUnsignedArgument(WebServer&, const char*, uint32_t&, uint32_t, uint32_t, bool)",96,static
+after,station_s3,Firmware/station/src/web_portal.cpp,35,"bool station::{anonymous}::readFieldArgument(WebServer&, const char*, uint8_t&)",48,static
+after,station_s3,Firmware/station/src/web_portal.cpp,1184,"station::WebPortal::saveDashboardLayout()::<lambda(const String&, bool)>",544,static
+after,station_s3,Firmware/station/src/web_portal.cpp,865,uint64_t station::{anonymous}::recordingSession(const String&),32,static
+after,station_s3,Firmware/station/src/web_portal.cpp,42,"void station::{anonymous}::hashAdminPassword(const String&, char*)",368,static
+after,station_s3,Firmware/station/src/web_portal.cpp,72,"void station::{anonymous}::appendFormValue(String&, const char*, const String&)",64,static
+after,station_s3,Firmware/station/src/web_portal.cpp,138,String station::{anonymous}::managedChannelSettings(WebServer&),96,static
+after,station_s3,Firmware/station/src/web_portal.cpp,109,"bool station::{anonymous}::validOptionalDecimal(const String&, double, double)",80,static
+after,station_s3,Firmware/station/src/web_portal.cpp,120,bool station::{anonymous}::validManagedChannelRequest(WebServer&),384,static
+after,station_s3,Firmware/station/include/web_input.h,28,"bool station::webinput::finiteDecimal(const char*, float&, float, float)",48,static
+after,station_s3,Firmware/station/src/web_portal.cpp,408,bool station::WebPortal::authenticationEnabled() const,32,static
+after,station_s3,Firmware/station/src/web_portal.cpp,412,String station::WebPortal::currentSessionToken() const,112,static
+after,station_s3,Firmware/station/src/web_portal.cpp,431,bool station::WebPortal::isAuthenticated(),80,static
+after,station_s3,Firmware/station/src/web_portal.cpp,475,bool station::WebPortal::verifyAdminPassword(const String&) const,112,static
+after,station_s3,Firmware/station/src/web_portal.cpp,484,void station::WebPortal::setAdminPassword(const String&),32,static
+after,station_s3,Firmware/station/src/web_portal.cpp,492,void station::WebPortal::refreshCsrfToken(),32,static
+after,station_s3,Firmware/station/src/web_portal.cpp,494,const char* station::WebPortal::createAuthSession(),32,static
+after,station_s3,Firmware/station/src/web_portal.cpp,520,void station::WebPortal::clearAuthSessions(),32,static
+after,station_s3,Firmware/station/src/web_portal.cpp,526,void station::WebPortal::revokeCurrentSession(),64,static
+after,station_s3,Firmware/station/src/web_portal.cpp,540,bool station::WebPortal::loginBlocked(uint32_t&),32,static
+after,station_s3,Firmware/station/src/web_portal.cpp,545,bool station::WebPortal::recordFailedLogin(uint32_t&),32,static
+after,station_s3,Firmware/station/src/web_portal.cpp,550,void station::WebPortal::clearLoginFailures(),32,static
+after,station_s3,Firmware/station/src/web_portal.cpp,554,bool station::WebPortal::validRequestOrigin() const,112,static
+after,station_s3,Firmware/station/src/web_portal.cpp,629,void station::WebPortal::handleLogout(),96,static
+after,station_s3,Firmware/station/src/web_portal.cpp,639,bool station::WebPortal::verifyCsrf(),80,static
+after,station_s3,Firmware/station/include/thingspeak_service.h,30,station::ChannelCreationResult::~ChannelCreationResult(),32,static
+after,station_s3,Firmware/station/include/thingspeak_service.h,39,station::ThingSpeakApiResult::~ThingSpeakApiResult(),32,static
+after,station_s3,Firmware/station/src/web_portal.cpp,2056,void station::WebPortal::scheduleRestart(),32,static
+after,station_s3,Firmware/station/include/app_config.h,87,"void station::copyText(char (&)[N], const String&) [with unsigned int N = 33]",64,static
+after,station_s3,Firmware/station/include/app_config.h,87,"void station::copyText(char (&)[N], const String&) [with unsigned int N = 65]",64,static
+after,station_s3,Firmware/station/include/app_config.h,87,"void station::copyText(char (&)[N], const String&) [with unsigned int N = 41]",64,static
+after,station_s3,Firmware/station/include/app_config.h,87,"void station::copyText(char (&)[N], const String&) [with unsigned int N = 25]",64,static
+after,station_s3,Firmware/station/include/recording_json.h,28,"void station::recordingInfoJson(ArduinoJson::V743PB22::JsonObject, const RecordingInfo&)",112,static
+after,station_s3,Firmware/station/include/recording_json.h,38,"void station::recordingPointJson(ArduinoJson::V743PB22::JsonDocument&, const lil::recording::Record&)",320,static
+after,station_s3,Firmware/station/src/web_portal.cpp,2039,"void station::WebPortal::sendJsonResult(bool, const String&, bool, bool)",160,static
+after,station_s3,Firmware/station/src/web_portal.cpp,929,void station::WebPortal::deleteRecording(),512,static
+after,station_s3,Firmware/station/src/web_portal.cpp,941,void station::WebPortal::setMotionReference(),80,static
+after,station_s3,Firmware/station/src/web_portal.cpp,1176,void station::WebPortal::saveDashboardLayout(),416,static
+after,station_s3,Firmware/station/src/web_portal.cpp,1261,void station::WebPortal::saveSetup(),1152,static
+after,station_s3,Firmware/station/src/web_portal.cpp,1314,void station::WebPortal::saveSetupSensor(),576,static
+after,station_s3,Firmware/station/src/web_portal.cpp,1370,void station::WebPortal::saveStation(),1264,static
+after,station_s3,Firmware/station/src/web_portal.cpp,1450,void station::WebPortal::saveSensor(),656,static
+after,station_s3,Firmware/station/src/web_portal.cpp,1591,void station::WebPortal::saveChannelProfile(),1136,static
+after,station_s3,Firmware/station/src/web_portal.cpp,1645,void station::WebPortal::deleteChannelProfile(),1056,static
+after,station_s3,Firmware/station/src/web_portal.cpp,1941,void station::WebPortal::clearManagedThingSpeakChannel(),96,static
+after,station_s3,Firmware/station/src/web_portal.cpp,1957,void station::WebPortal::deleteManagedThingSpeakChannel(),112,static
+after,station_s3,Firmware/station/src/web_portal.cpp,1996,void station::WebPortal::resetSensor(),80,static
+after,station_s3,Firmware/station/src/web_portal.cpp,2004,void station::WebPortal::resetSensorIaqCalibration(),80,static
+after,station_s3,Firmware/station/src/web_portal.cpp,2014,void station::WebPortal::deleteSensor(),80,static
+after,station_s3,Firmware/station/src/web_portal.cpp,2025,void station::WebPortal::factoryReset(),80,static
+after,station_s3,Firmware/station/src/web_portal.cpp,872,void station::WebPortal::sendRecordings(),304,static
+after,station_s3,Firmware/station/src/web_portal.cpp,1129,void station::WebPortal::sendPagedHistory(const uint8_t*),384,static
+after,station_s3,Firmware/station/src/web_portal.cpp,949,void station::WebPortal::sendJsonHistory(),832,static
+after,station_s3,Firmware/station/src/web_portal.cpp,1669,void station::WebPortal::createThingSpeakChannel(),1376,static
+after,station_s3,Firmware/station/src/web_portal.cpp,81,"void station::{anonymous}::extractApiKeys(ArduinoJson::V743PB22::JsonObjectConst, String&, String&)",112,static
+after,station_s3,Firmware/station/src/web_portal.cpp,1238,void station::WebPortal::sendWifiScan(),688,static
+after,station_s3,Firmware/station/src/web_portal.cpp,1199,void station::WebPortal::sendJsonConfig(),368,static
+after,station_s3,Firmware/station/src/web_portal.cpp,663,void station::WebPortal::sendJsonStatus(),368,static
+after,station_s3,Firmware/station/src/web_portal.cpp,565,void station::WebPortal::handleLogin(),240,static
+after,station_s3,Firmware/station/src/web_portal.cpp,455,bool station::WebPortal::requireAuthentication(bool),176,static
+after,station_s3,Firmware/station/src/web_portal.cpp,1877,void station::WebPortal::updateManagedThingSpeakChannel(),1232,static
+after,station_s3,Firmware/station/src/web_portal.cpp,1735,void station::WebPortal::listThingSpeakChannels(),432,static
+after,station_s3,Firmware/station/src/web_portal.cpp,1810,void station::WebPortal::createManagedThingSpeakChannel(),1296,static
+after,station_s3,Firmware/station/src/web_portal.cpp,882,void station::WebPortal::sendRecording(),448,static
+after,station_s3,Firmware/station/src/web_portal.cpp,200,"bool station::WebPortal::begin(station::StationConfig&, station::ConfigStore&, station::WifiService&, station::SensorRegistry&, station::ThingSpeakService&, station::EspNowGateway&)",96,static
+after,station_s3,Firmware/station/src/web_portal.cpp,656,void station::WebPortal::loop(),32,static
+after,station_s3,Firmware/station/src/wifi_service.cpp,63,void station::WifiService::startStationConnection(),32,static
+after,station_s3,Firmware/station/src/wifi_service.cpp,72,void station::WifiService::startMdnsIfNeeded(),64,static
+after,station_s3,Firmware/station/src/wifi_service.cpp,148,bool station::WifiService::startSetupPortalAccessPoint(),192,static
+after,station_s3,Firmware/station/src/wifi_service.cpp,19,bool station::WifiService::begin(const station::StationConfig&),80,static
+after,station_s3,Firmware/station/src/wifi_service.cpp,139,bool station::WifiService::startRecoveryPortal(),32,static
+after,station_s3,Firmware/station/src/wifi_service.cpp,177,void station::WifiService::stopSetupPortal(),32,static
+after,station_s3,Firmware/station/src/wifi_service.cpp,190,uint8_t station::WifiService::channel() const,48,static
+after,station_s3,Firmware/station/src/wifi_service.cpp,199,bool station::WifiService::stationConnected() const,32,static
+after,station_s3,Firmware/station/src/wifi_service.cpp,203,bool station::WifiService::setupPortalActive() const,32,static
+after,station_s3,Firmware/station/src/wifi_service.cpp,207,bool station::WifiService::consumeSetupPortalCompletion(),32,static
+after,station_s3,Firmware/station/src/wifi_service.cpp,213,String station::WifiService::stationSsid() const,32,static
+after,station_s3,Firmware/station/src/wifi_service.cpp,217,String station::WifiService::stationIp() const,64,static
+after,station_s3,Firmware/station/src/wifi_service.cpp,221,String station::WifiService::accessPointIp() const,64,static
+after,station_s3,Firmware/station/src/wifi_service.cpp,225,String station::WifiService::accessPointSsid() const,32,static
+after,station_s3,Firmware/station/src/wifi_service.cpp,229,const uint8_t* station::WifiService::stationMac() const,32,static
+after,station_s3,Firmware/station/src/wifi_service.cpp,247,bool station::WifiService::networkScanInProgress() const,32,static
+after,station_s3,Firmware/station/src/wifi_service.cpp,251,void station::WifiService::collectNetworkScan(),80,static
+after,station_s3,Firmware/station/src/wifi_service.cpp,90,void station::WifiService::loop(),112,static
+after,station_s3,Firmware/station/src/wifi_service.cpp,233,bool station::WifiService::requestNetworkScan(),48,static
+after,station_s3,Firmware/station/src/wifi_service.cpp,291,"size_t station::WifiService::cachedNetworks(station::WifiNetwork*, size_t) const",32,static
+after,station_s3,Firmware/station/src/wifi_service.cpp,303,cpp),32,static

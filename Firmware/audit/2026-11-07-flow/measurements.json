@@ -1,0 +1,482 @@
+{
+  "date": "2026-11-07",
+  "baseline": "preserved previous local MCU audit result, not clean HEAD",
+  "hardware_accessed": false,
+  "new_optimizations": 7,
+  "inventory": {
+    "before_modules": 214,
+    "after_modules": 222,
+    "before_definitions": 1872,
+    "after_definitions": 1912,
+    "parse_errors": {}
+  },
+  "domains": {
+    "target_build": "Actual GCC ELF and binaries; static instructions/frames are not execution counts/watermarks",
+    "host": "Windows x86_64, Zig 0.15.2 / Clang 20.1.2, C++17 -O2 -UNDEBUG",
+    "not_measured": [
+      "MCU cycles/timing",
+      "total OTA duration/throughput",
+      "current/energy",
+      "physical RF/I2C",
+      "heap fragmentation/task high-water marks"
+    ]
+  },
+  "main": {
+    "crc_finalizations": [
+      1,
+      0
+    ],
+    "crc_input_bytes": [
+      207,
+      0
+    ],
+    "maintenance_unused_crc": [
+      1,
+      0
+    ],
+    "evidence": [
+      {
+        "local_log": ".tools/firmware-flow-20261107/host-before-final.log",
+        "sha256": "45fcbcb6f5679235d75ac8af7e86def94f364edc2953fabac33b373a6faacbb8"
+      },
+      {
+        "local_log": ".tools/firmware-flow-20261107/host-final-sanitized.log",
+        "sha256": "11dd3f844226eec43dc8a5bbe400a0f11ef68083f35a35a8d91f26e64f8b1c9c"
+      }
+    ]
+  },
+  "radio": {
+    "one_attempt_crc_finalizations": [
+      2,
+      1
+    ],
+    "crc_input_bytes": [
+      120,
+      60
+    ],
+    "queues_at_begin": [
+      2,
+      1
+    ],
+    "queue_data_bytes_at_begin": [
+      1124,
+      220
+    ],
+    "queue_control_block_overhead": "excluded",
+    "environmental_copy_bytes_per_attempt": [
+      207,
+      60
+    ],
+    "wire_formats": "short/motion/full bytes identical against original retry algorithm, including age saturation/unknown/unused slots",
+    "combined_main_and_radio_crc_bytes": [
+      327,
+      60
+    ],
+    "conditional_memory_saving": "OTA queue is allocated at first OTA exchange, before sending",
+    "callback_publication": "release/acquire atomics; callback shutdown boundary retained",
+    "evidence": [
+      {
+        "local_log": ".tools/firmware-flow-20261107/queue-wire-before.log",
+        "sha256": "a79b20b766ae2f7436bd6f31b7758f7eed989e4d264d1251abbf3514a4ef43db"
+      },
+      {
+        "local_log": ".tools/firmware-flow-20261107/host-final-sanitized.log",
+        "sha256": "11dd3f844226eec43dc8a5bbe400a0f11ef68083f35a35a8d91f26e64f8b1c9c"
+      }
+    ]
+  },
+  "acquisition": {
+    "observations_before_after": [
+      [
+        230,
+        19,
+        19
+      ],
+      [
+        211,
+        19,
+        0
+      ]
+    ],
+    "observation_columns": [
+      "driver_polls",
+      "captures",
+      "duplicate_same_tick_polls"
+    ],
+    "actual_imu_extra_i2c_requests_after_poll": [
+      1,
+      0
+    ],
+    "evidence": [
+      {
+        "local_log": ".tools/firmware-flow-20261107/host-before-final.log",
+        "sha256": "45fcbcb6f5679235d75ac8af7e86def94f364edc2953fabac33b373a6faacbb8"
+      },
+      {
+        "local_log": ".tools/firmware-flow-20261107/host-final-sanitized.log",
+        "sha256": "11dd3f844226eec43dc8a5bbe400a0f11ef68083f35a35a8d91f26e64f8b1c9c"
+      }
+    ]
+  },
+  "ota": {
+    "resume_prefix_read_calls": [
+      16,
+      4
+    ],
+    "prefix_bytes_verified": [
+      16384,
+      16384
+    ],
+    "sensor_local_frame_bytes": [
+      2304,
+      1280
+    ],
+    "sensor_heap_buffer_bytes": [
+      4096,
+      4096
+    ],
+    "station_cache_heap_bytes": [
+      0,
+      1536
+    ],
+    "station_observations": [
+      {
+        "phase": "before",
+        "image_70000": {
+          "packets": 365,
+          "flash_reads": 365,
+          "flash_bytes": 70000,
+          "cache_allocations": 0
+        },
+        "full_slot": {
+          "image_bytes": 1310720,
+          "packets": 6827,
+          "flash_reads": 6827,
+          "flash_bytes": 1310720
+        },
+        "evidence": {
+          "local_log": ".tools/firmware-flow-20261107/ota-full-before.log",
+          "sha256": "e180c72c4d0f80e52ae8e5a8588c5d2e70e1c0c8202e835e69aede931fd943f4"
+        }
+      },
+      {
+        "phase": "after",
+        "image_70000": {
+          "packets": 365,
+          "flash_reads": 46,
+          "flash_bytes": 70000,
+          "cache_allocations": 1
+        },
+        "full_slot": {
+          "image_bytes": 1310720,
+          "packets": 6827,
+          "flash_reads": 854,
+          "flash_bytes": 1310720
+        },
+        "evidence": {
+          "local_log": ".tools/firmware-flow-20261107/host-final-sanitized.log",
+          "sha256": "11dd3f844226eec43dc8a5bbe400a0f11ef68083f35a35a8d91f26e64f8b1c9c"
+        }
+      }
+    ],
+    "full_slot_sensor_sector_writes": [
+      320,
+      320
+    ],
+    "wire_block_bytes": [
+      192,
+      192
+    ],
+    "failure_guards": [
+      "direct-read fallback on allocation/speculative-read failure",
+      "reject invalid EOF/overflow offsets",
+      "cache invalidation on job/cancel/status changes",
+      "durable cancel failure retains active job",
+      "resume corruption/read failure restarts",
+      "buffer allocation failure does not begin/select image",
+      "signature/digest rejection, nonce and lock guards"
+    ],
+    "fixture_limits": "Station substitutes JSON/hash/signature primitives and SDK/NVS; real package crypto and target/browser checks separate"
+  },
+  "registry": {
+    "s3_function_bytes": [
+      1532,
+      1496
+    ],
+    "static_instructions": [
+      572,
+      565
+    ],
+    "local_frame_bytes": [
+      464,
+      288
+    ],
+    "removed_intermediate_payload_copy_bytes": 191,
+    "experiments": [
+      {
+        "name": "A",
+        "order": "before then after",
+        "observations": [
+          {
+            "phase": "before",
+            "sensor_type": 1,
+            "runs": 9,
+            "iterations_per_run": 20000,
+            "median_us": 0.01761,
+            "range_us": [
+              0.01729,
+              0.017845
+            ],
+            "packets": 180000
+          },
+          {
+            "phase": "before",
+            "sensor_type": 2,
+            "runs": 9,
+            "iterations_per_run": 20000,
+            "median_us": 0.017565,
+            "range_us": [
+              0.01713,
+              0.018285
+            ],
+            "packets": 180000
+          },
+          {
+            "phase": "after",
+            "sensor_type": 1,
+            "runs": 9,
+            "iterations_per_run": 20000,
+            "median_us": 0.01356,
+            "range_us": [
+              0.013555,
+              0.013725
+            ],
+            "packets": 180000
+          },
+          {
+            "phase": "after",
+            "sensor_type": 2,
+            "runs": 9,
+            "iterations_per_run": 20000,
+            "median_us": 0.01357,
+            "range_us": [
+              0.01356,
+              0.024065
+            ],
+            "packets": 180000
+          }
+        ],
+        "evidence": [
+          {
+            "local_log": ".tools/firmware-flow-20261107/registry-before.log",
+            "sha256": "cfb701d0d6508bdd06d9f692656cdd533d9343e3f060b4f5dd84c1ea22e15323"
+          },
+          {
+            "local_log": ".tools/firmware-flow-20261107/registry-after.log",
+            "sha256": "bfb3e5d5df142fa4140012a32678760521f52146437249090e32eda87d9fc5ab"
+          }
+        ]
+      },
+      {
+        "name": "B",
+        "order": "after then before",
+        "observations": [
+          {
+            "phase": "before",
+            "sensor_type": 1,
+            "runs": 9,
+            "iterations_per_run": 20000,
+            "median_us": 0.015695,
+            "range_us": [
+              0.0156,
+              0.01574
+            ],
+            "packets": 180000
+          },
+          {
+            "phase": "before",
+            "sensor_type": 2,
+            "runs": 9,
+            "iterations_per_run": 20000,
+            "median_us": 0.01563,
+            "range_us": [
+              0.01562,
+              0.0158
+            ],
+            "packets": 180000
+          },
+          {
+            "phase": "after",
+            "sensor_type": 1,
+            "runs": 9,
+            "iterations_per_run": 20000,
+            "median_us": 0.01392,
+            "range_us": [
+              0.013875,
+              0.014135
+            ],
+            "packets": 180000
+          },
+          {
+            "phase": "after",
+            "sensor_type": 2,
+            "runs": 9,
+            "iterations_per_run": 20000,
+            "median_us": 0.013785,
+            "range_us": [
+              0.01377,
+              0.013955
+            ],
+            "packets": 180000
+          }
+        ],
+        "evidence": [
+          {
+            "local_log": ".tools/firmware-flow-20261107/registry-before-repeat.log",
+            "sha256": "504ade4d1190e996b9122adce9185a97e931fb94f220bf510414a0c01f472c64"
+          },
+          {
+            "local_log": ".tools/firmware-flow-20261107/registry-after-repeat.log",
+            "sha256": "c7c1e9aa406b2bc8bca7229b638050c7ac30aab51bfba29dac9e82279ceaf12e"
+          }
+        ]
+      }
+    ]
+  },
+  "build_metrics_before_after": {
+    "sensor_pcb_v3": {
+      "flash_bytes": [
+        1076617,
+        1076505
+      ],
+      "static_ram_bytes": [
+        45908,
+        45908
+      ],
+      "iram0_text_bytes": [
+        64186,
+        64186
+      ]
+    },
+    "sensor_pcb_v4": {
+      "flash_bytes": [
+        1077545,
+        1077393
+      ],
+      "static_ram_bytes": [
+        45908,
+        45908
+      ],
+      "iram0_text_bytes": [
+        64186,
+        64186
+      ]
+    },
+    "station_s3": {
+      "flash_bytes": [
+        1590566,
+        1590906
+      ],
+      "static_ram_bytes": [
+        108268,
+        108284
+      ],
+      "iram0_text_bytes": [
+        75779,
+        75779
+      ]
+    }
+  },
+  "validation": {
+    "normal_target_builds": 3,
+    "build_evidence": [
+      {
+        "local_log": ".tools/firmware-flow-20261107/sensors-final.log",
+        "sha256": "722fbc1c924ad4d911ca4d67bac131c0ed3a915cb311f5f1aebc61391a1401fd"
+      },
+      {
+        "local_log": ".tools/firmware-flow-20261107/station-after.log",
+        "sha256": "6222b7ae44c2a464b7d0ac1273297eab66d2d7806850acc52b39796ad7d5279f"
+      }
+    ],
+    "normal_cpp_suites": 30,
+    "sanitized_cpp_suites": 30,
+    "host_evidence": [
+      {
+        "local_log": ".tools/firmware-flow-20261107/host-final.log",
+        "sha256": "9b483258b332fccbb767e57148b8f35bfaeb43d972451903d48dd28f93c9d3ef"
+      },
+      {
+        "local_log": ".tools/firmware-flow-20261107/host-final-sanitized.log",
+        "sha256": "11dd3f844226eec43dc8a5bbe400a0f11ef68083f35a35a8d91f26e64f8b1c9c"
+      }
+    ],
+    "browser_programs_passed": [
+      "ota_status_page",
+      "recording_dashboard",
+      "interaction_stress"
+    ],
+    "browser_evidence": [
+      {
+        "local_log": ".tools/firmware-flow-20261107/browser-ota_status_page.log",
+        "sha256": "dc56154ddb70179c193c6a7ce25e45bc3fa17d2fb6120d818bdf50f1d0fce247"
+      },
+      {
+        "local_log": ".tools/firmware-flow-20261107/browser-recording_dashboard.log",
+        "sha256": "4cd6da05bc4ee601884d307ced80e25833f0e673d9fd413871c54f1feea4a439"
+      },
+      {
+        "local_log": ".tools/firmware-flow-20261107/browser-interaction_stress.log",
+        "sha256": "4e9f5921093e02cdec49d4a226c548b160cf56cc8f70ffac94c15bf900c98a23"
+      }
+    ],
+    "real_crypto_package_tests": 6,
+    "upload_preservation_tests": 4,
+    "python_test_evidence": [
+      {
+        "local_log": ".tools/firmware-flow-20261107/crypto-package.log",
+        "sha256": "593e9e9d1d0cfc786e8bf6df874603f07feccafec406ece4bfe8193224f905c8"
+      },
+      {
+        "local_log": ".tools/firmware-flow-20261107/upload-preservation.log",
+        "sha256": "43fc49a6bc78a30f15d0ebfa434ee6f3dde09b32ab950e74ce95995f805892bd"
+      }
+    ],
+    "library_patches_passed": 3,
+    "publication_scanner_tests_passed": 7,
+    "embedded_scripts_parsed": 8,
+    "additional_evidence": [
+      {
+        "local_log": ".tools/firmware-flow-20261107/library-patches.log",
+        "sha256": "5be65543813f79f1f2922aea0d2a2bc3e9aa246b569fcacdf95db3bf55877819"
+      },
+      {
+        "local_log": ".tools/firmware-flow-20261107/publication-tests.log",
+        "sha256": "2387ce7c60cc872429df265a59c8c6b61360ea114e60b29e0c9f48c9d3a2943a"
+      },
+      {
+        "local_log": ".tools/firmware-flow-20261107/web-syntax.log",
+        "sha256": "9f8ae568c2d9e792bfbba83a59cf79df07b6e3b763de4a147e5f1c4c85dbe41e"
+      }
+    ],
+    "gcc_probe_translation_units_per_phase": 36,
+    "selected_elf_prologues_match_available_gcc_frames": true,
+    "assembly_evidence": {
+      "local_log": ".tools/firmware-flow-20261107/assembly-verification.log",
+      "sha256": "47e9a9e5e26b6c99f567da66cac5520a9f12fa2e8cb50688dd3990a996c38413"
+    },
+    "documented_before_after_reproducer": {
+      "status": "passed",
+      "evidence": {
+        "local_log": ".tools/firmware-flow-20261107/reproduction-final.log",
+        "sha256": "11f50db2e480be2a795332a92e9d4ba49bf0f8c973520a2164d0994904d6c847"
+      }
+    },
+    "publication": {
+      "files_scanned": 468,
+      "archive_members_scanned": 78,
+      "findings": []
+    },
+    "commit_push_merge_release": "not performed"
+  }
+}

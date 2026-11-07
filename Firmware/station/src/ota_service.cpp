@@ -1,5 +1,6 @@
 #include "ota_service.h"
 #include <mbedtls/sha256.h>
+#include <new>
 
 namespace station {
 OtaService otaService;
@@ -23,6 +24,7 @@ String macText(const uint8_t* mac) {
 }
 }
 bool OtaService::begin() {
+  clearReadCache();
   mutex_ = xSemaphoreCreateMutex();
   partition_ = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
       static_cast<esp_partition_subtype_t>(0x40), "ota_store");
@@ -58,6 +60,7 @@ bool OtaService::startUpload(const uint8_t mac[6], String& error) {
   const Job previous = job_;
   job_ = Job{};
   if (!save()) { job_ = previous; error = "Cannot persist update state"; return false; }
+  clearReadCache();
   memcpy(job_.mac, mac, 6);
   uploading_ = true;
   uploadFailed_ = false;
@@ -143,7 +146,7 @@ bool OtaService::finishUpload(String& error) {
   if (!save()) { job_.magic = 0; error = "Cannot persist update job"; return false; }
   return true;
 }
-void OtaService::abortUpload() { Lock lock(mutex_); uploading_ = false; uploadFailed_ = true; }
+void OtaService::abortUpload() { Lock lock(mutex_); uploading_ = false; uploadFailed_ = true; clearReadCache(); }
 bool OtaService::cancel() {
   Lock lock(mutex_);
   if (uploading_) return false;
@@ -151,13 +154,33 @@ bool OtaService::cancel() {
   job_.state = lil::ota::State::Cancelled;
   const bool saved = save();
   if (!saved) job_ = previous;
+  else clearReadCache();
   return saved;
 }
 void OtaService::forget(const uint8_t* mac) {
   Lock lock(mutex_);
   for (auto& node : nodes_) if (!mac || !memcmp(node.mac, mac, 6)) node = Node{};
   preferences_.putBytes("nodes", nodes_, sizeof(nodes_));
-  if (!mac || !memcmp(job_.mac, mac, 6)) { job_ = Job{}; save(); activeNonce_ = 0; }
+  if (!mac || !memcmp(job_.mac, mac, 6)) { job_ = Job{}; save(); activeNonce_ = 0; clearReadCache(); }
+}
+bool OtaService::readImage(uint32_t offset, uint8_t* output, size_t size) {
+  // Called only with the job lock held and after the usual target/nonce checks.
+  // A failed allocation or speculative read must retain the direct-read path.
+  if (!readCache_) readCache_.reset(new (std::nothrow) uint8_t[kReadCacheSize]);
+  if (readCache_) {
+    bool hit = offset >= readCacheOffset_ && readCacheBytes_ >= size &&
+        offset - readCacheOffset_ <= readCacheBytes_ - size;
+    if (!hit) {
+      readCacheBytes_ = 0;
+      const size_t count = min(kReadCacheSize, size_t(job_.manifest.imageSize - offset));
+      if (esp_partition_read(partition_, sizeof(lil::ota::Manifest) + offset,
+                             readCache_.get(), count) == ESP_OK) {
+        readCacheOffset_ = offset; readCacheBytes_ = count; hit = true;
+      }
+    }
+    if (hit) { memcpy(output, readCache_.get() + (offset - readCacheOffset_), size); return true; }
+  }
+  return esp_partition_read(partition_, sizeof(lil::ota::Manifest) + offset, output, size) == ESP_OK;
 }
 bool OtaService::respond(const uint8_t mac[6], const lil::ota::Packet& request,
                         lil::ota::Packet& response) {
@@ -206,7 +229,7 @@ bool OtaService::respond(const uint8_t mac[6], const lil::ota::Packet& request,
   } else if (target && q.nonce == activeNonce_ && active(job_.state) && !uploading_ && partition_) {
     if (q.op == Op::Read && q.offset < job_.manifest.imageSize) {
       r.size = min(static_cast<uint32_t>(kBlockSize), job_.manifest.imageSize - q.offset);
-      if (esp_partition_read(partition_, sizeof(Manifest) + q.offset, r.data, r.size) != ESP_OK) return false;
+      if (!readImage(q.offset, r.data, r.size)) return false;
       r.op = Op::Data;
       job_.confirmed = q.offset; // The next request acknowledges the previous write.
       job_.state = State::Transferring;
@@ -217,9 +240,13 @@ bool OtaService::respond(const uint8_t mac[6], const lil::ota::Packet& request,
         job_.state = q.state; job_.failure = failure; save();
       }
       job_.confirmed = min(q.offset, job_.manifest.imageSize);
+      clearReadCache();
     }
   }
-  if (target) lastRequestMs_ = millis();
+  if (target) {
+    if (!active(job_.state)) clearReadCache();
+    lastRequestMs_ = millis();
+  }
   lil::protocol::finalize(response, kMessageType, request.header.sequence);
   return true;
 }
@@ -231,7 +258,7 @@ void OtaService::json(JsonObject output) {
   for (const auto& n : nodes_) if (n.identity.release) {
     JsonObject node = nodes.add<JsonObject>();
     node["mac"] = macText(n.mac); node["pcb"] = n.identity.pcb;
-    node["version"] = n.identity.version; node["release"] = n.identity.release;
+    node["version"] = n.identity.version; node["release"] = uint32_t(n.identity.release);
     char build[17]; for (size_t i = 0; i < 8; ++i) snprintf(build + i * 2, 3, "%02x", n.identity.build[i]);
     node["build"] = build;
   }
@@ -241,7 +268,7 @@ void OtaService::json(JsonObject output) {
     if (state == lil::ota::State::Transferring && millis() - lastRequestMs_ > 15000) state = lil::ota::State::Paused;
     output["state"] = lil::ota::stateName(state);
     output["reason"] = lil::ota::failureName(job_.failure);
-    output["bytes"] = job_.confirmed; output["total"] = job_.manifest.imageSize;
+    output["bytes"] = job_.confirmed; output["total"] = uint32_t(job_.manifest.imageSize);
   }
 }
 }

@@ -29,9 +29,9 @@ verify a target without writing to a connected device.
 - [Architecture](ARCHITECTURE.md)
 - [Hardware test plan](HARDWARE_TESTPLAN.md)
 
-Current station and sensor release: **4.4.3 / 40403**, protocol V5.
-It improves storage reads, selected-window loading and fault recovery while
-retaining the compact dashboard and adaptive normal history. See
+Current station and sensor release: **4.4.4 / 40404**, protocol V5.
+It reduces sensor arithmetic, packet preparation and OTA flash-read work while
+preserving acquisition, recording and recovery behavior. See
 [release packages](releases/README.md).
 For an installed station, `python Firmware/upload.py station --application-only`
 updates only its application and preserves Wi-Fi, sensors, settings and files.
@@ -62,10 +62,14 @@ stable snapshots; full-session CSV retains the original samples. See [operation,
 
 ## Full release and publication checks
 
-Firmware **4.4.3 / 40403** includes bounded sensor reinitialization, long-uptime
+Firmware **4.4.4 / 40404** includes bounded sensor reinitialization, long-uptime
 corrections, adaptive normal history and the compact configurable dashboard.
 See [the complete change inventory](CHANGELOG.md),
 [release artifacts](releases/README.md) and
 [publication review](PUBLICATION_REVIEW.md). Build diagnostics use relative
 paths; installation keys and device data must stay local. Software tests do not
 replace physical accuracy, rail-voltage and sleep-current acceptance.
+
+Efficiency evidence: [first audit](EFFICIENCY_AUDIT.md), [MCU review](MCU_OPTIMIZATION_REVIEW.md),
+and [main/radio/OTA review](FLOW_TRANSFER_REVIEW.md). These retain measured
+software counts and native code/stack costs separately from physical acceptance.

@@ -1,0 +1,32 @@
+W-Charger 4.4.4 / release 40404 / ESP-NOW protocol V5
+
+STATION UPDATE WITH SAVED SETTINGS
+
+station-4.4.4.bin is an application-only ESP32-S3 station image. Use it on
+the existing compatible recording partition layout. Write the application at
+address 0x10000 without erasing flash. Wi-Fi, sensor identities, settings and
+stored files remain in their existing partitions.
+
+From the source repository, the application-only update command is:
+  python Firmware/upload.py station --application-only
+
+For an already built image with esptool 5 installed, an example is:
+  python -m esptool --chip esp32s3 --port COM5 write-flash 0x10000 station-4.4.4.bin
+Replace COM5 with the actual station USB port. Older layouts require the
+installation or migration described in Firmware/RECORDINGS.md. Disconnect a
+recovered battery before USB installation.
+
+SENSOR OTA
+
+On the station's Firmware updates page, select the configured node and upload
+sensor-v3-4.4.4.ota for PCB V3 or sensor-v4-4.4.4.ota for PCB V4. Stop an
+active SW2 recording first. The update starts at a successful scheduled contact.
+The device must trust the installation signing identity used for this package.
+Same-version OTA updates are rejected. The station BIN is not a sensor OTA.
+
+CHECKS AND LIMITS
+
+Use the included SHA256SUMS.txt to check the bundle contents. The sensor
+signatures and build payloads were verified. Software tests and builds do not
+replace measurements of accuracy, radio behavior, current, stack headroom or
+power-cut recovery. No board was flashed during release preparation.

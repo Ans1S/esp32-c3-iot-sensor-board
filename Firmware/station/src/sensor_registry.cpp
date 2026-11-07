@@ -113,6 +113,14 @@ uint16_t encodeUnsigned(float value, float scale) {
       min<unsigned long>(UINT16_MAX, static_cast<unsigned long>(scaled)));
 }
 
+uint32_t encodeGasResistance(float value) {
+  // Legacy history also receives unsupported/failed-reading placeholders.
+  // Keep ordinary truncation, but never cast NaN or an out-of-range float.
+  if (!isfinite(value) || value <= 0.0F) return 0;
+  if (double(value) >= double(UINT32_MAX)) return UINT32_MAX;
+  return static_cast<uint32_t>(value);
+}
+
 HistorySample compactLegacySample(const LegacyHistorySampleV2& source) {
   HistorySample sample{};
   sample.timestamp = source.timestamp;
@@ -617,26 +625,29 @@ bool SensorRegistry::registerTelemetry(
     current.configPersistencePending = true;
   }
 
-  lil::protocol::TelemetryPayload displayTelemetry = telemetry;
   const bool rawFallback =
       (telemetry.flags & lil::protocol::kBme680RawFallback) != 0;
   const bool previousIaqAvailable =
       current.hasTelemetry &&
       (current.telemetry.capabilities & lil::protocol::kIaq) != 0 &&
       current.telemetry.iaqAccuracy > 0;
+  const float previousIaq = current.telemetry.iaq;
+  const uint8_t previousIaqAccuracy = current.telemetry.iaqAccuracy;
+  // Preserve the two cached IAQ scalars before replacing the runtime payload;
+  // avoid a second full packed-payload copy through a stack temporary.
+  current.telemetry = telemetry;
   if (rawFallback && previousIaqAvailable) {
     // A direct Bosch reading contains fresh T/H/P/gas values but no new BSEC
     // IAQ.  Keep the last real IAQ for the dashboard instead of replacing it
     // with the payload's default zero.  The raw-fallback flag remains set, so
     // callers can label the value stale and must not upload it as a new point.
-    displayTelemetry.capabilities |= lil::protocol::kIaq;
-    displayTelemetry.iaq = current.telemetry.iaq;
-    displayTelemetry.iaqAccuracy = current.telemetry.iaqAccuracy;
+    current.telemetry.capabilities |= lil::protocol::kIaq;
+    current.telemetry.iaq = previousIaq;
+    current.telemetry.iaqAccuracy = previousIaqAccuracy;
   }
 
   duplicate = false;
   current.hasTelemetry = true;
-  current.telemetry = displayTelemetry;
   current.stationRssi = rssi;
   const uint64_t monotonicMs = static_cast<uint64_t>(esp_timer_get_time()) / 1000;
   current.receivedIntervalMs = current.receivedPackets ?
@@ -673,7 +684,7 @@ bool SensorRegistry::registerTelemetry(
     if (storeSample && live.samples) {
       live.samples[live.head] = {current.lastSeenMs, telemetry};
       live.lastSampleMonotonicMs = monotonicMs;
-      live.head = (live.head + 1) % live.capacity;
+      if (++live.head == live.capacity) live.head = 0;
       if (live.count < live.capacity) ++live.count;
     }
   } else if (live_[index].samples) {
@@ -758,9 +769,24 @@ size_t SensorRegistry::liveHistory(const uint8_t mac[6], LiveSample* output, siz
   if (monotonicMs - live.lastSampleMonotonicMs > 60000) return 0;
   size_t count = 0;
   const uint32_t now = millis();
-  for (size_t i = 0; i < live.count && count < capacity; ++i) {
-    const auto& sample = live.samples[(live.head + live.capacity - live.count + i) % live.capacity];
-    if (now - sample.receivedMs <= 60000) output[count++] = sample;
+  size_t position = live.head >= live.count ? live.head - live.count :
+      live.capacity - (live.count - live.head);
+  for (size_t scanned = 0; scanned < live.count && count < capacity;) {
+    if (now - live.samples[position].receivedMs > 60000) {
+      ++scanned;
+      if (++position == live.capacity) position = 0;
+      continue;
+    }
+    // Check every timestamp, then copy each physically contiguous fresh run.
+    // A full fresh ring needs at most two libc copies and no per-row division.
+    const size_t first = position;
+    size_t run = 0;
+    do { ++run; ++position; ++scanned; }
+    while (position < live.capacity && scanned < live.count && count + run < capacity &&
+           now - live.samples[position].receivedMs <= 60000);
+    memcpy(output + count, live.samples + first, run * sizeof(LiveSample));
+    count += run;
+    if (position == live.capacity) position = 0;
   }
   return count;
 }
@@ -1181,7 +1207,7 @@ bool SensorRegistry::recordHistoryLocked(
       encodeUnsigned(telemetry.humidityPercent, 100.0F);
   sample.pressureDeciHpa = encodeUnsigned(telemetry.pressureHpa, 10.0F);
   sample.iaqDeci = encodeUnsigned(telemetry.iaq, 10.0F);
-  sample.gasResistanceOhms = telemetry.gasResistanceOhms;
+  sample.gasResistanceOhms = encodeGasResistance(telemetry.gasResistanceOhms);
   sample.batteryMillivolts = telemetry.batteryMillivolts;
   sample.iaqAccuracy = telemetry.iaqAccuracy;
   sample.sensorType = static_cast<uint8_t>(telemetry.sensorType);

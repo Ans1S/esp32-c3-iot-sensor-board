@@ -38,9 +38,7 @@ int8_t txPowerForAttempt(int8_t baseQuarterDbm, uint8_t attempt,
 
 bool EspNowTransport::begin() {
   responses_ = xQueueCreate(4, sizeof(ResponseEvent));
-  otaResponses_ = xQueueCreate(4, sizeof(OtaEvent));
-  if (otaResponses_ == nullptr) { if (responses_) vQueueDelete(responses_); responses_ = nullptr; return false; }
-  if (responses_ == nullptr) { vQueueDelete(otaResponses_); otaResponses_ = nullptr; return false; }
+  if (responses_ == nullptr) return false;
   instance_ = this;
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
@@ -74,19 +72,23 @@ void EspNowTransport::sendCallback(const wifi_tx_info_t* info,
 void EspNowTransport::receiveCallback(const esp_now_recv_info_t* info,
                                       const uint8_t* data, int length) {
   if (instance_ && info && info->src_addr && data &&
-      length == sizeof(lil::recording::AckPacket) && instance_->recordingResponses_) {
+      length == sizeof(lil::recording::AckPacket)) {
+    const auto responses = instance_->recordingResponses_.load(std::memory_order_acquire);
+    if (!responses) return;
     RecordingEvent event{};
     memcpy(event.mac, info->src_addr, 6); memcpy(&event.packet, data, sizeof(event.packet));
     if (lil::protocol::validate(event.packet, length, lil::recording::kAckMessage))
-      xQueueSend(instance_->recordingResponses_, &event, 0);
+      xQueueSend(responses, &event, 0);
     return;
   }
   if (instance_ && info && info->src_addr && data &&
-      length == sizeof(lil::ota::Packet) && instance_->otaResponses_) {
+      length == sizeof(lil::ota::Packet)) {
+    const auto responses = instance_->otaResponses_.load(std::memory_order_acquire);
+    if (!responses) return;
     OtaEvent event{};
     memcpy(event.mac, info->src_addr, 6);
     memcpy(&event.packet, data, sizeof(event.packet));
-    xQueueSend(instance_->otaResponses_, &event, 0);
+    xQueueSend(responses, &event, 0);
     return;
   }
   if (instance_ == nullptr || info == nullptr || info->src_addr == nullptr || data == nullptr ||
@@ -210,7 +212,12 @@ bool EspNowTransport::tryChannel(
   // Environmental telemetry never needs the IMU suffix. Preserve the V5
   // wire size so an existing 4.0.0 station can acknowledge a trial boot.
   const uint32_t preparedMs = millis();
-  auto wirePacket = packet;
+  struct WireBuffer {
+    lil::protocol::PacketHeader header;
+    uint8_t payload[sizeof(lil::protocol::TelemetryPayload)];
+  };
+  static_assert(sizeof(WireBuffer) == sizeof(packet));
+  static_assert(offsetof(WireBuffer, payload) == sizeof(lil::protocol::PacketHeader));
   const bool motion = packet.payload.sensorType == lil::protocol::EnvironmentalSensorType::kLsm6dsox ||
                       (packet.payload.capabilities & lil::protocol::kMotion) != 0;
   const bool optical = packet.payload.sensorType == lil::protocol::EnvironmentalSensorType::kMax30102 ||
@@ -218,8 +225,6 @@ bool EspNowTransport::tryChannel(
   const size_t payloadSize = (optical || lil::protocol::isLiveSensor(packet.payload.sensorType)) ? sizeof(packet.payload) : motion ?
       lil::protocol::kMotionTelemetryPayloadSize : lil::protocol::kLegacyTelemetryPayloadSize;
   const size_t wireSize = sizeof(lil::protocol::PacketHeader) + payloadSize;
-  lil::protocol::finalizePacket(&wirePacket, wireSize,
-      lil::protocol::MessageType::kTelemetry, packet.header.sequence, payloadSize);
   const bool broadcast = memcmp(destination, kBroadcastMac, 6) == 0;
   for (uint8_t attempt = 0; attempt < attempts; ++attempt) {
     const int8_t txPower = forceMaximumPower
@@ -236,13 +241,24 @@ bool EspNowTransport::tryChannel(
                           pdMS_TO_TICKS(8U + (esp_random() % 35U)))) return true;
     }
     if (receiveResponse(result, destination, 0)) return true;
-    wirePacket = packet;
-    const uint32_t waitMs = millis() - preparedMs;
-    auto addAge = [waitMs](uint16_t age) { return age == UINT16_MAX ? age : static_cast<uint16_t>(min(uint32_t(65534), uint32_t(age) + waitMs)); };
-    wirePacket.payload.live.acquisitionAgeMs = addAge(packet.payload.live.acquisitionAgeMs);
-    wirePacket.payload.live.estimateAgeMs = addAge(packet.payload.live.estimateAgeMs);
-    for (uint8_t i = 0; i < min(size_t(packet.payload.live.count), lil::protocol::kOpticalBatchSize); ++i)
-      wirePacket.payload.live.optical[i].ageMs = addAge(packet.payload.live.optical[i].ageMs);
+    // Copy only bytes which will cross the radio. The plain byte payload has
+    // no default initialization and is never read outside this copied prefix.
+    WireBuffer wirePacket;
+    memcpy(&wirePacket, &packet, wireSize);
+    if (payloadSize == sizeof(packet.payload)) {
+      const uint32_t waitMs = millis() - preparedMs;
+      auto addAge = [waitMs](uint16_t age) { return age == UINT16_MAX ? age : static_cast<uint16_t>(min(uint32_t(65534), uint32_t(age) + waitMs)); };
+      auto setAge = [&](size_t offset, uint16_t age) {
+        const uint16_t updated = addAge(age);
+        memcpy(wirePacket.payload + offsetof(lil::protocol::TelemetryPayload, live) + offset,
+               &updated, sizeof(updated));
+      };
+      setAge(offsetof(lil::protocol::LiveReading, acquisitionAgeMs), packet.payload.live.acquisitionAgeMs);
+      setAge(offsetof(lil::protocol::LiveReading, estimateAgeMs), packet.payload.live.estimateAgeMs);
+      for (uint8_t i = 0; i < min(size_t(packet.payload.live.count), lil::protocol::kOpticalBatchSize); ++i)
+        setAge(offsetof(lil::protocol::LiveReading, optical) + i * sizeof(lil::protocol::OpticalFrame) +
+               offsetof(lil::protocol::OpticalFrame, ageMs), packet.payload.live.optical[i].ageMs);
+    }
     lil::protocol::finalizePacket(&wirePacket, wireSize, lil::protocol::MessageType::kTelemetry, packet.header.sequence, payloadSize);
     sendState_.store(1, std::memory_order_release);
     if (esp_now_send(destination, reinterpret_cast<const uint8_t*>(&wirePacket),
@@ -297,8 +313,13 @@ void EspNowTransport::end() {
   esp_now_unregister_send_cb();
   esp_now_deinit();
   instance_ = nullptr;
-  if (recordingResponses_) { vQueueDelete(recordingResponses_); recordingResponses_ = nullptr; }
-  if (otaResponses_) { vQueueDelete(otaResponses_); otaResponses_ = nullptr; }
+  // Callbacks are unregistered and ESP-NOW is stopped before queues are freed.
+  const auto recordingResponses = recordingResponses_.load(std::memory_order_relaxed);
+  recordingResponses_.store(nullptr, std::memory_order_release);
+  if (recordingResponses) vQueueDelete(recordingResponses);
+  const auto otaResponses = otaResponses_.load(std::memory_order_relaxed);
+  otaResponses_.store(nullptr, std::memory_order_release);
+  if (otaResponses) vQueueDelete(otaResponses);
   if (responses_ != nullptr) {
     vQueueDelete(responses_);
     responses_ = nullptr;
@@ -311,7 +332,14 @@ void EspNowTransport::end() {
 
 bool EspNowTransport::otaExchange(const uint8_t mac[6],
     const lil::ota::Packet& request, lil::ota::Packet& response) {
-  if (!otaResponses_ || !ensurePeer(mac)) return false;
+  // Discovery, battery-protection and failed telemetry wakes need no OTA queue.
+  // Allocate before sending the first pull request so its reply cannot race it.
+  auto responses = otaResponses_.load(std::memory_order_acquire);
+  if (!responses) {
+    responses = xQueueCreate(4, sizeof(OtaEvent));
+    otaResponses_.store(responses, std::memory_order_release);
+  }
+  if (!responses || !ensurePeer(mac)) return false;
   for (uint8_t attempt = 0; attempt < 5; ++attempt) {
     const uint32_t waitStarted = millis();
     while (sendState_.load(std::memory_order_acquire) == 1 && millis() - waitStarted < 500) delay(1);
@@ -323,7 +351,7 @@ bool EspNowTransport::otaExchange(const uint8_t mac[6],
     const uint32_t started = millis();
     OtaEvent event{};
     while (millis() - started < 700) {
-      if (xQueueReceive(otaResponses_, &event, pdMS_TO_TICKS(20)) != pdTRUE) continue;
+      if (xQueueReceive(responses, &event, pdMS_TO_TICKS(20)) != pdTRUE) continue;
       if (!memcmp(mac, event.mac, 6) &&
           lil::protocol::validate(event.packet, sizeof(event.packet), lil::ota::kMessageType) &&
           event.packet.header.sequence == request.header.sequence &&
@@ -343,8 +371,12 @@ bool EspNowTransport::recordingExchange(const SensorRuntimeConfig& config,
   lil::protocol::PacketHeader requestHeader{};
   memcpy(&requestHeader, request, sizeof(requestHeader));
   // Environmental wake cycles never allocate an archive-response queue.
-  if (!recordingResponses_) recordingResponses_ = xQueueCreate(4, sizeof(RecordingEvent));
-  if (!recordingResponses_ || !config.stationKnown || !config.provisioned ||
+  auto responses = recordingResponses_.load(std::memory_order_acquire);
+  if (!responses) {
+    responses = xQueueCreate(4, sizeof(RecordingEvent));
+    recordingResponses_.store(responses, std::memory_order_release);
+  }
+  if (!responses || !config.stationKnown || !config.provisioned ||
       sendState_.load(std::memory_order_acquire) == 1 ||
       esp_wifi_set_channel(config.wifiChannel, WIFI_SECOND_CHAN_NONE) != ESP_OK ||
       !ensurePeer(config.stationMac)) return false;
@@ -354,7 +386,7 @@ bool EspNowTransport::recordingExchange(const SensorRuntimeConfig& config,
   }
   const uint32_t started = millis(); RecordingEvent event{};
   while (millis() - started < 500) {
-    if (xQueueReceive(recordingResponses_, &event, pdMS_TO_TICKS(10)) != pdTRUE) continue;
+    if (xQueueReceive(responses, &event, pdMS_TO_TICKS(10)) != pdTRUE) continue;
     const auto& ack = event.packet.payload;
     if (!memcmp(event.mac, config.stationMac, 6) &&
         event.packet.header.sequence == requestHeader.sequence && ack.session == session &&

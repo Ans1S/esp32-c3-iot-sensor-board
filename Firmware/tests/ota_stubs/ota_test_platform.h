@@ -37,6 +37,8 @@ inline esp_partition_t running{0x10000, 0x140000}, target{0x150000, 0x140000};
 inline std::vector<uint8_t> flash(0x140000, 0xff);
 inline uint32_t cursor = 0, began = 0, resumed = UINT32_MAX;
 inline std::vector<size_t> writeSizes;
+inline std::vector<size_t> prefixReadSizes;
+inline size_t failPrefixReadAt = 0;
 inline bool selected = false, aborted = false, failWrite = false, failEnd = false;
 enum esp_ota_img_states_t { ESP_OTA_IMG_VALID, ESP_OTA_IMG_PENDING_VERIFY };
 inline esp_ota_img_states_t bootState = ESP_OTA_IMG_VALID;
@@ -48,6 +50,8 @@ inline int esp_ota_get_state_partition(const esp_partition_t*, esp_ota_img_state
 inline int esp_ota_mark_app_valid_cancel_rollback() { bootConfirmed = true; return 0; }
 inline int esp_ota_mark_app_invalid_rollback_and_reboot() { rolledBack = true; throw Restart{}; }
 inline int esp_partition_read(const esp_partition_t* p, size_t offset, void* output, size_t size) {
+  prefixReadSizes.push_back(size);
+  if (prefixReadSizes.size() == failPrefixReadAt) return -1;
   assert(p == &target && offset + size <= flash.size()); memcpy(output, flash.data()+offset, size); return 0;
 }
 inline int esp_partition_erase_range(const esp_partition_t* p, size_t offset, size_t size) {

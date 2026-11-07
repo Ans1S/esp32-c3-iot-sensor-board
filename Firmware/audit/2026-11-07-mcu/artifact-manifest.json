@@ -1,0 +1,118 @@
+{
+  "baseline_kind": "previous local audit result, including existing uncommitted changes",
+  "git_commit": "ff7afa30032221ec961f2bc939c1dbba4c90a0c2",
+  "baseline_archive_sha256": "a50efda4bc3337b7878cf30c0972d81fea8a7307500a83195e3b4471247925dd",
+  "date": "2026-11-07",
+  "hardware_accessed": false,
+  "published": false,
+  "artifacts": {
+    "before/sensor_pcb_v3": {
+      "firmware.elf": {
+        "bytes": 14802524,
+        "sha256": "b0871e847e7b0c0ffa605fbf1e75d5b03a3054718f05c06e737cce9db5e14da0"
+      },
+      "firmware.bin": {
+        "bytes": 1106448,
+        "sha256": "7d1e857b75a562e4ae4b6a8148a6c0be71c6a468c710c1f2f565cf85826ce5bd"
+      },
+      "firmware.map": {
+        "bytes": 12639505,
+        "sha256": "2ed21b35a4e78cf46cd07e0d4f836dc459ed12e3edd8988d9a6921f2b73b9591"
+      },
+      "partitions.bin": {
+        "bytes": 3072,
+        "sha256": "a20b91fc99f8b96c8026a6bce63c7b475610aff5b4ff1d1b48fd4940e9a57791"
+      }
+    },
+    "after/sensor_pcb_v3": {
+      "firmware.elf": {
+        "bytes": 14803784,
+        "sha256": "3b4153cfbfd54b5e2ec091b15901d90485db82de68225df1478582bd129e530a"
+      },
+      "firmware.bin": {
+        "bytes": 1106336,
+        "sha256": "baf160d9435b03eb42ae56986d5cbf353d969138de440e1faa066d803e215242"
+      },
+      "firmware.map": {
+        "bytes": 12639495,
+        "sha256": "5256a5939c3aad9647e057d546ff2c1978579d3eca26f46d3c4bf2091c9e80b9"
+      },
+      "partitions.bin": {
+        "bytes": 3072,
+        "sha256": "a20b91fc99f8b96c8026a6bce63c7b475610aff5b4ff1d1b48fd4940e9a57791"
+      }
+    },
+    "before/sensor_pcb_v4": {
+      "firmware.elf": {
+        "bytes": 14806180,
+        "sha256": "a052c23b11bd3becbe48a813a4e48e29ed3ff8f3fc5be8220649f10a48f8732d"
+      },
+      "firmware.bin": {
+        "bytes": 1107520,
+        "sha256": "e11699c8053ec5bbbdb143b298e0d58ca6ba6eef74e814e2f4d0a1650a96302c"
+      },
+      "firmware.map": {
+        "bytes": 12640793,
+        "sha256": "d9396c812becbb18aa71efad5a505c952d2a47b333d9ad9b6842408640dfbec1"
+      },
+      "partitions.bin": {
+        "bytes": 3072,
+        "sha256": "a20b91fc99f8b96c8026a6bce63c7b475610aff5b4ff1d1b48fd4940e9a57791"
+      }
+    },
+    "after/sensor_pcb_v4": {
+      "firmware.elf": {
+        "bytes": 14807436,
+        "sha256": "7089f12e80580658662a4d5d7fed3ca37450665716f41a1d6dd10014ffb5817f"
+      },
+      "firmware.bin": {
+        "bytes": 1107408,
+        "sha256": "8b55da74aa65307bef793283ea5ce43954312eb84b92bed33ad9b7443e9b21c8"
+      },
+      "firmware.map": {
+        "bytes": 12640783,
+        "sha256": "c839c199e9f9e21cd6865b6a71b3b894b61e92da92731e2370f064ecf5e4dd9d"
+      },
+      "partitions.bin": {
+        "bytes": 3072,
+        "sha256": "a20b91fc99f8b96c8026a6bce63c7b475610aff5b4ff1d1b48fd4940e9a57791"
+      }
+    },
+    "before/station_s3": {
+      "firmware.elf": {
+        "bytes": 18748936,
+        "sha256": "1e51b3de4fce1675d8fdab7365b620c6b3485788599166457ffd86770789aa58"
+      },
+      "firmware.bin": {
+        "bytes": 1617888,
+        "sha256": "41710862fbbcd5406992e98a0b3fc41be23d63014639336b37e4a1a9a4650350"
+      },
+      "firmware.map": {
+        "bytes": 17011531,
+        "sha256": "003f1d48050d70e64affba6df2abdc833b90bb21860b7feda3376c932f7df143"
+      },
+      "partitions.bin": {
+        "bytes": 3072,
+        "sha256": "c1527d1a8e40ab72a8c68546a846aa3324872eb63abf5cb0a312ad64373cf7e7"
+      }
+    },
+    "after/station_s3": {
+      "firmware.elf": {
+        "bytes": 18749928,
+        "sha256": "a2c1648b16efa6d0117d928cdb3daf33ce792b118f952e6a698ad04e79778777"
+      },
+      "firmware.bin": {
+        "bytes": 1617968,
+        "sha256": "3695a9d33cafdb8803e15fbdca293f983c57c76bc32085c09ca4e8a2efb7a0c9"
+      },
+      "firmware.map": {
+        "bytes": 17011415,
+        "sha256": "def2322d604966fb6e4089dac7b0de3484e25f4d4209a385b3d05c64b2ae5633"
+      },
+      "partitions.bin": {
+        "bytes": 3072,
+        "sha256": "c1527d1a8e40ab72a8c68546a846aa3324872eb63abf5cb0a312ad64373cf7e7"
+      }
+    }
+  }
+}

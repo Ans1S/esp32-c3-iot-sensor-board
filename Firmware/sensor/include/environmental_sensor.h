@@ -14,7 +14,9 @@ class EnvironmentalSensor {
   bool begin(PowerController& power,
              lil::protocol::EnvironmentalSensorType requestedType,
              float temperatureOffsetC);
-  EnvironmentalReading read();
+  // false is reserved for the acquisition owner immediately after pollLive().
+  // Driver validity and sample-age checks still run for the snapshot.
+  EnvironmentalReading read(bool pollFirst = true);
   bool pollLive() { return detectedType_ == lil::protocol::EnvironmentalSensorType::kLsm6dsox ? lsm6dsox_.poll() : precision_.poll(); }
   bool freshTemperature() const { return precision_.freshTemperature(); }
   void resetMotionFeedback() { lsm6dsox_.resetFeedback(); }

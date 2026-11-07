@@ -7,6 +7,8 @@ struct PrecisionWire {
   uint8_t address = 0, reg = 0, present = 0x48;
   bool fail = false, shortRead = false, stuckReset = false;
   uint8_t partialFifoBytes = 0;
+  unsigned fifoReadCalls = 0, shortFifoAt = 0;
+  std::vector<uint8_t> fifoRequests;
   uint16_t words[256]{};
   uint8_t registers[256]{};
   std::vector<uint8_t> tx;
@@ -33,10 +35,15 @@ struct PrecisionWire {
     } else if (reg == 4 && n == 3) {
       rx.push_back(fifo.size() & 31); rx.push_back(registers[5]); rx.push_back(0);
     } else if (reg == 7 && !fifo.empty()) {
-      const auto& frame = fifo.front();
-      for (uint8_t i = 0; i < (partialFifoBytes ? partialFifoBytes : 6); ++i)
-        rx.push_back(frame[i]);
-      fifo.pop_front();
+      ++fifoReadCalls; fifoRequests.push_back(n);
+      const unsigned limit = shortFifoAt == fifoReadCalls ? n - 1 :
+          partialFifoBytes && partialFifoBytes < n ? partialFifoBytes : n;
+      // The FIFO data register stays at 0x07 across complete red/IR frames.
+      // A short transfer deliberately leaves an uncertain consumed boundary.
+      while (rx.size() < limit && !fifo.empty()) {
+        const auto frame = fifo.front(); fifo.pop_front();
+        for (size_t i = 0; i < frame.size() && rx.size() < limit; ++i) rx.push_back(frame[i]);
+      }
     } else {
       for (int i=0;i<n;++i) rx.push_back(registers[reg+i]);
       if (reg == 0) registers[0] = 0;

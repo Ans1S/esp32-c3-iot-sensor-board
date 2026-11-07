@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-146c43.svg)](LICENSE)
 ![Sensor](https://img.shields.io/badge/Sensor-ESP32--C3-146c43.svg)
 ![Station](https://img.shields.io/badge/Station-ESP32--S3-146c43.svg)
-[![Firmware](https://img.shields.io/badge/Firmware-4.4.3-146c43.svg)](Firmware/releases/README.md)
+[![Firmware](https://img.shields.io/badge/Firmware-4.4.4-146c43.svg)](Firmware/releases/README.md)
 
 **[Dashboard](#one-dashboard-for-the-whole-network)** · **[Hardware](#choose-your-sensor)** · **[Get started](#from-clone-to-first-measurement)** · **[Downloads](Firmware/releases/README.md)**
 
@@ -177,9 +177,9 @@ python Firmware/upload.py sensor-v3
 4. Open **Find sensors**, name the node, select its sensor and save.
 5. Use the dashboard for measurements, settings, recordings and signed updates.
 
-**Current release: [4.4.3 / 40403](Firmware/releases/README.md)** — faster
-history and recording reads, selected-window loading, and recovery improvements.
-The [complete bundle](Firmware/releases/w-charger-4.4.3.zip) includes the station
+**Current release: [4.4.4 / 40404](Firmware/releases/README.md)** — faster
+sensor processing, leaner radio preparation and OTA flash reads with preserved recovery checks.
+The [complete bundle](Firmware/releases/w-charger-4.4.4.zip) includes the station
 application, both sensor packages, installation instructions and checksums.
 Published sensor packages require the signing identity trusted by the installed
 base firmware; new builders use their own key and matching packages.

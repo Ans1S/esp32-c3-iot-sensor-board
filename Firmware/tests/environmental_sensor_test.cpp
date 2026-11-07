@@ -20,9 +20,9 @@ void Bme680Driver::prepareForDeepSleep(uint32_t) {}
 uint32_t Bme680Driver::recommendedSleepSeconds(uint32_t fallback) const { return fallback; }
 bool Bme680Driver::clearPersistentState() { return !Preferences::failClear; }
 bool Lsm6dsoxDriver::begin(uint8_t address) { startedAddress = address; startedType = Type::kLsm6dsox; return true; }
-EnvironmentalReading Lsm6dsoxDriver::read() { return {}; }
+EnvironmentalReading Lsm6dsoxDriver::read(bool) { return {}; }
 bool PrecisionSensors::begin(Type type, uint8_t address) { startedAddress = address; startedType = type; return true; }
-EnvironmentalReading PrecisionSensors::read() { return {}; }
+EnvironmentalReading PrecisionSensors::read(bool) { return {}; }
 bool PrecisionSensors::probe(Type type, uint8_t& address) {
   const uint8_t probeAddress = type == Type::kTmp117 ? 0x48 : 0x57;
   if (!Wire.hasDevice(probeAddress)) return false;
