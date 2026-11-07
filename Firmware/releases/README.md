@@ -224,10 +224,12 @@ Historical 4.3.1 behavior and validation are documented in
 
 ## Validation and licenses
 
-All three PlatformIO targets, 24 production C++ suites, ten embedded browser
-suites, six cryptographic OTA package tests, four upload tests, three pinned
-library-patch checks and publication regressions pass. Eight station script
-blocks parse. No hardware was flashed or measured. Accuracy, RF/power-loss,
+For 4.4.4, all three PlatformIO targets and all 30 production C++ suites pass
+normally and with sanitizers. The ten embedded browser programs passed during
+the preceding audits; OTA status, recording dashboard and interaction stress
+were repeated for release preparation. Six cryptographic OTA package tests,
+four upload tests, three pinned library-patch checks, seven publication
+regressions and eight embedded-script syntax checks also pass. No hardware was flashed or measured. Accuracy, RF/power-loss,
 rollback behavior, rail discharge and current acceptance remain separate work;
 see [tests](../tests/README.md) and [the reliability review](../RELIABILITY_REVIEW.md).
 

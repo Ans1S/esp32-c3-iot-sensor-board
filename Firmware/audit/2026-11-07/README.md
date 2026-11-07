@@ -1,5 +1,9 @@
 # Audit evidence - 2026-11-07
 
+This directory is a historical pre-release 4.4.3 audit snapshot. Current
+4.4.4 package/build identities are recorded in the [release evidence](../2026-11-07-release/README.md).
+Do not overwrite these retained measurements when rerunning tools.
+
 Read [the audit report](../../EFFICIENCY_AUDIT.md) for conclusions and limits.
 All paths in these public artifacts are repository-relative. Build outputs,
 complete disassemblies, benchmark executables and raw diagnostic logs stay in
@@ -21,15 +25,15 @@ Recreate inventories in an environment containing the versions documented by
 `Firmware/tools/firmware_inventory.py`:
 
 ```sh
-python Firmware/tools/firmware_inventory.py --revision ff7afa30032221ec961f2bc939c1dbba4c90a0c2 --prefix before --output Firmware/audit/2026-11-07
-python Firmware/tools/firmware_inventory.py --prefix after --output Firmware/audit/2026-11-07
+python Firmware/tools/firmware_inventory.py --revision ff7afa30032221ec961f2bc939c1dbba4c90a0c2 --prefix before --output .tools/audit-reproduction/first
+python Firmware/tools/firmware_inventory.py --prefix after --output .tools/audit-reproduction/first
 ```
 
 After building a target, supply the **matching** installed binutils prefix:
 
 ```sh
-python Firmware/tools/elf_metrics.py PATH_TO_ELF --tool-prefix PATH_TO_TOOLCHAIN/bin/riscv32-esp-elf- --target sensor_pcb_v4 --phase after --output Firmware/audit/2026-11-07
-python Firmware/tools/elf_metrics.py PATH_TO_ELF --tool-prefix PATH_TO_TOOLCHAIN/bin/xtensa-esp32s3-elf- --target station_s3 --phase after --output Firmware/audit/2026-11-07
+python Firmware/tools/elf_metrics.py PATH_TO_ELF --tool-prefix PATH_TO_TOOLCHAIN/bin/riscv32-esp-elf- --target sensor_pcb_v4 --phase after --output .tools/audit-reproduction/first
+python Firmware/tools/elf_metrics.py PATH_TO_ELF --tool-prefix PATH_TO_TOOLCHAIN/bin/xtensa-esp32s3-elf- --target station_s3 --phase after --output .tools/audit-reproduction/first
 ```
 
 The before ELF must come from the saved baseline, not from a later rebuild

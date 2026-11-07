@@ -177,8 +177,8 @@ python Firmware/upload.py sensor-v3
 4. Open **Find sensors**, name the node, select its sensor and save.
 5. Use the dashboard for measurements, settings, recordings and signed updates.
 
-**Current release: [4.4.4 / 40404](Firmware/releases/README.md)** — faster
-sensor processing, leaner radio preparation and OTA flash reads with preserved recovery checks.
+**Current release: [4.4.4 / 40404](Firmware/releases/README.md)** — less repeated
+sensor processing, leaner radio preparation and fewer OTA flash reads with preserved recovery checks.
 The [complete bundle](Firmware/releases/w-charger-4.4.4.zip) includes the station
 application, both sensor packages, installation instructions and checksums.
 Published sensor packages require the signing identity trusted by the installed
@@ -209,6 +209,8 @@ protocol V5. [`Readme/`](Readme/) contains documentation graphics.
 Rebuild the UI images with `node Readme/generate-ui-screenshots.cjs` using
 Playwright and Sharp; `CODEX_NODE_MODULES` can point to their package directory.
 The generator renders the embedded pages locally without connecting to a station.
+The versioned 4.4.3 screenshots remain representative of the 4.4.4 interface;
+package downloads and current firmware versions are listed above.
 
 The dashboard belongs on a trusted local network: website access supports a
 password but uses HTTP. ThingSpeak uses HTTPS. ESP-NOW validates packet

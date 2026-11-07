@@ -1,5 +1,9 @@
 # Follow-up MCU audit evidence
 
+This directory is a historical pre-release 4.4.3 audit snapshot. Current
+4.4.4 package/build identities are recorded in the [release evidence](../2026-11-07-release/README.md).
+Do not overwrite these retained measurements when rerunning tools.
+
 Read [the report](../../MCU_OPTIMIZATION_REVIEW.md) for conclusions, costs and
 hardware limits. Before means the previous local audit result, including its
 uncommitted changes. It is not identical to clean HEAD. The local reference
