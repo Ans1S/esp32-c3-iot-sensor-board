@@ -1,0 +1,26 @@
+{
+  "sensor_pcb_v3": {
+    "file": "sensor-v3-4.4.4.ota",
+    "bytes": 1106416,
+    "sha256": "2a24a8d5b865b416861402131f3b5f723113b7f0a27b21310014ccbb6488e7f2",
+    "elf_sha256": "1fc91d85973d8d93035c6491477ba59d2146a73f6cfeda8ac51388a734a6bf94",
+    "image_sha256": "3da464a5f6bbb0c45b65ab268f913a35e714c7ab23226c2c7567433c315b8b46",
+    "partitions_sha256": "a20b91fc99f8b96c8026a6bce63c7b475610aff5b4ff1d1b48fd4940e9a57791"
+  },
+  "sensor_pcb_v4": {
+    "file": "sensor-v4-4.4.4.ota",
+    "bytes": 1107424,
+    "sha256": "4ada51b9ebc563f5c30dea938ff8ee1f58bec6980e9f6174ffd27bb0ba3fbf99",
+    "elf_sha256": "d5a0a8b0359401dba1a05c6820fe27190824328019b57785c99be7266b3db19c",
+    "image_sha256": "121e8871723eec1861142026cedefff17c31ce04699420a1e7c59ca7b303256b",
+    "partitions_sha256": "a20b91fc99f8b96c8026a6bce63c7b475610aff5b4ff1d1b48fd4940e9a57791"
+  },
+  "station_s3": {
+    "file": "station-4.4.4.bin",
+    "bytes": 1618368,
+    "sha256": "ac754ab3bb2127092423ef7b36f4356bffd346b9753b38798072fbee57640884",
+    "elf_sha256": "1979afc27080a551dad22f249069b0fe432207d16ff1f64805499bd9f73a0247",
+    "image_sha256": "ac754ab3bb2127092423ef7b36f4356bffd346b9753b38798072fbee57640884",
+    "partitions_sha256": "c1527d1a8e40ab72a8c68546a846aa3324872eb63abf5cb0a312ad64373cf7e7"
+  }
+}

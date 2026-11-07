@@ -1,5 +1,6 @@
 // Compile and execute the production setup/live/protection control flow.
 #include "boot_test_platform.h"
+#include "protocol_counter.h"
 #include "../sensor/src/main.cpp"
 void testRadioTick() { ++testMillis; }
 void resetBoot(bool cold = true) {
@@ -34,6 +35,32 @@ void assertProtected() {
   assert(lil::protocol::validate(p,sizeof(p),lil::protocol::MessageType::kTelemetry));
 }
 int main() {
+  resetBoot();
+  rtcState.sequence = 1234;
+  sensor::EnvironmentalReading prepared{};
+  prepared.valid = true; prepared.temperatureC = 21.125F;
+  prepared.capabilities = lil::protocol::kTemperature;
+  prepared.sensorType = lil::protocol::EnvironmentalSensorType::kBme280;
+  testTelemetryFinalizations = testTelemetryCrcBytes = 0;
+  const auto preparedPacket = makeTelemetryPacket(prepared, {true,3800},
+      lil::protocol::SensorOperatingMode::kEnergySaving);
+  assert(preparedPacket.header.sequence == 1234 && preparedPacket.payload.temperatureC == 21.125F);
+  assert(testTelemetryFinalizations == (FLOW_OPTIMIZED ? 0 : 1));
+  printf("Main telemetry preparation: %zu CRC finalizations, %zu CRC bytes before transport\n",
+         testTelemetryFinalizations, testTelemetryCrcBytes);
+  // A maintenance-only BSEC wake must preserve its work/cadence without
+  // constructing or signing a telemetry envelope that will never be sent.
+  resetBoot();
+  sensor::savedConfig.environmentalSensorType = lil::protocol::EnvironmentalSensorType::kBme680;
+  sensor::savedConfig.sleepSeconds = 3600;
+  sensor::batteries.push_back({true,3500});
+  assert(boot() == 300);
+  resetBoot(false); testMillis -= 86400000 - 300000;
+  sensor::batteries.push_back({true,3500});
+  testTelemetryFinalizations = testTelemetryCrcBytes = 0;
+  assert(boot() == 300 && sensorStarts == 1 && normalExchanges == 0 && radioStarts == 0);
+  assert(testTelemetryFinalizations == (FLOW_OPTIMIZED ? 0 : 1));
+  printf("Main BME680 maintenance: %zu telemetry CRC finalizations, no radio\n", testTelemetryFinalizations);
   // Execute actual configuration application, including fixed -> auto changes.
   runtimeConfig = sensor::SensorRuntimeConfig{};
   lil::protocol::ConfigResponsePayload response{};

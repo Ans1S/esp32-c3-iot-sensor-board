@@ -8,7 +8,7 @@ must stop before a scheduled OTA transfer starts.
 
 ## Updating the station without resetting settings
 
-Release 4.4.3 uses the same NVS and partition layouts as the existing recording
+Release 4.4.4 uses the same NVS and partition layouts as the existing recording
 release. `python Firmware/upload.py station --application-only` builds and
 writes only the installed station application. The distributed station BIN
 also goes at `0x10000`, without full erasure. Wi-Fi credentials, paired sensors,

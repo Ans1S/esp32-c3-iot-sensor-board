@@ -1,0 +1,211 @@
+path,definitions,review,evidence
+Firmware/ota_package.py,4,Source-level review,Build/patch/package/upload/publication tests or direct inventory/ELF tool execution
+Firmware/sensor/include/adc_reader.h,0,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/include/bme280_driver.h,0,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/include/bme680_driver.h,0,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/include/bsec_state_store.h,0,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/include/environmental_reading.h,0,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/include/environmental_sensor.h,3,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/include/espnow_transport.h,0,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/include/hardware_profile.h,0,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/include/live_acquisition.h,10,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/include/logical_clock.h,1,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/include/low_power_wait.h,0,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/include/lsm6dsox_driver.h,1,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/include/measurement_budget.h,0,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/include/ota_client.h,0,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/include/power_controller.h,0,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/include/power_options.h,0,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/include/precision_sensors.h,1,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/include/pulse_signal.h,1,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/include/recording_store.h,3,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/include/sensor_config_store.h,0,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/include/sensor_log.h,2,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/include/sleep_controller.h,0,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/partitions_recording.csv,0,Source-level review,Configuration/partition/dependency source review; normal target builds
+Firmware/sensor/platformio-experiments.ini,0,Source-level review,Configuration/partition/dependency source review; normal target builds; not active in the three normal builds
+Firmware/sensor/platformio.ini,0,Source-level review,Configuration/partition/dependency source review; normal target builds
+Firmware/sensor/scripts/patch_bme280.py,1,Source-level review,Build/patch/package/upload/publication tests or direct inventory/ELF tool execution; not active in the three normal builds
+Firmware/sensor/scripts/patch_bme68x.py,0,Source-level review,Build/patch/package/upload/publication tests or direct inventory/ELF tool execution
+Firmware/sensor/scripts/patch_bsec2.py,1,Source-level review,Build/patch/package/upload/publication tests or direct inventory/ELF tool execution
+Firmware/sensor/src/adc_reader.cpp,4,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/src/bme280_driver.cpp,7,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/src/bme680_driver.cpp,24,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/src/bsec_state_store.cpp,7,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/src/environmental_sensor.cpp,11,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/src/espnow_transport.cpp,13,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/src/live_acquisition.cpp,4,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/src/logical_clock.cpp,2,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/src/low_power_wait.cpp,3,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/src/lsm6dsox_driver.cpp,6,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/src/main.cpp,17,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/src/measurement_budget.cpp,10,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/src/ota_client.cpp,10,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/src/power_controller.cpp,5,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/src/precision_sensors.cpp,11,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/src/recording_store.cpp,12,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/src/sensor_config_store.cpp,10,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/sensor/src/sleep_controller.cpp,1,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/shared/include/lil_protocol.h,5,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/shared/include/motion_feedback.h,3,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/shared/include/ota_protocol.h,4,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/shared/include/power_policy.h,6,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/shared/include/precision_cadence.h,8,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/shared/include/recording_button.h,2,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/shared/include/recording_journal.h,6,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/shared/include/recording_protocol.h,6,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/shared/include/sensor_timing.h,2,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/shared/include/telemetry_validation.h,1,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/shared/include/upload_scheduler.h,9,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/shared/library.json,0,Source-level review,Configuration/partition/dependency source review; normal target builds
+Firmware/shared/scripts/public_build_paths.py,0,Source-level review,Build/patch/package/upload/publication tests or direct inventory/ELF tool execution
+Firmware/shared/src/lil_protocol.cpp,3,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/shared/src/ota_crypto.cpp,1,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/shared/src/recording_journal.cpp,11,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/fresh_upload.py,0,Source-level review,Build/patch/package/upload/publication tests or direct inventory/ELF tool execution
+Firmware/station/include/app_config.h,1,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/include/config_store.h,1,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/include/espnow_gateway.h,2,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/include/filesystem_guard.h,3,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/include/login_throttle.h,2,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/include/normal_history_policy.h,1,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/include/ota_page.h,37,Source-level review,Embedded-script source review; 8 syntax checks; 10 browser programs
+Firmware/station/include/ota_service.h,0,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/include/paged_history.h,0,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/include/radio_send_guard.h,4,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/include/recording_archive.h,0,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/include/recording_json.h,6,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/include/sensor_identity.h,1,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/include/sensor_registry.h,2,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/include/thingspeak_service.h,0,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/include/web_input.h,2,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/include/web_pages.h,0,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/include/web_portal.h,0,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/include/wifi_service.h,0,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/partitions_ota.csv,0,Source-level review,Configuration/partition/dependency source review; normal target builds
+Firmware/station/platformio.ini,0,Source-level review,Configuration/partition/dependency source review; normal target builds
+Firmware/station/src/config_store.cpp,34,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/src/espnow_gateway.cpp,15,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/src/filesystem_guard.cpp,4,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/src/main.cpp,3,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/src/ota_service.cpp,14,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/src/paged_history.cpp,29,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/src/recording_archive.cpp,16,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/src/sensor_registry.cpp,53,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/src/thingspeak_service.cpp,21,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/src/web_pages.cpp,478,Source-level review,Embedded-script source review; 8 syntax checks; 10 browser programs
+Firmware/station/src/web_portal.cpp,101,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/station/src/wifi_service.cpp,20,Source-level review,Target builds; production host suites where covered; emitted-symbol CSVs
+Firmware/tests/archive_stubs/LittleFS.h,2,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/battery_boot_test.cpp,5,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/bme280_stubs/Wire.h,9,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/bme280_test.cpp,4,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/bme680_stubs/Preferences.h,5,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/bme680_stubs/Wire.h,6,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/bme680_stubs/bsec2.h,12,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/bme680_test.cpp,14,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/bme68x_fault_test.cpp,4,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/boot_stubs/Arduino.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/boot_stubs/adc_reader.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/boot_stubs/boot_test_platform.h,61,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/boot_stubs/driver/gpio.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/boot_stubs/environmental_sensor.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/boot_stubs/esp_random.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/boot_stubs/esp_sleep.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/boot_stubs/esp_timer.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/boot_stubs/espnow_transport.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/boot_stubs/hardware_profile.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/boot_stubs/live_acquisition.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/boot_stubs/logical_clock.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/boot_stubs/low_power_wait.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/boot_stubs/ota_client.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/boot_stubs/power_controller.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/boot_stubs/recording_store.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/boot_stubs/sensor_config_store.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/boot_stubs/sensor_log.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/boot_stubs/sleep_controller.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/clock_budget_test.cpp,2,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/config_store_test.cpp,1,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/environmental_sensor_test.cpp,19,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/environmental_stubs/Arduino.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/environmental_stubs/Wire.h,10,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/file_seek_counter.h,2,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/history_flush_test.cpp,5,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/history_stubs/LittleFS.h,2,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/live_acquisition_test.cpp,7,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/live_stubs/Arduino.h,2,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/live_stubs/environmental_sensor.h,6,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/live_stubs/esp_timer.h,1,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/live_stubs/freertos/task.h,1,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/lsm6dsox_test.cpp,2,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/motion_feedback_test.cpp,1,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/ota_client_test.cpp,5,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/ota_stubs/Preferences.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/ota_stubs/esp_app_desc.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/ota_stubs/esp_ota_ops.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/ota_stubs/esp_random.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/ota_stubs/esp_timer.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/ota_stubs/espnow_transport.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/ota_stubs/hardware_profile.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/ota_stubs/mbedtls/sha256.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/ota_stubs/ota_client.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/ota_stubs/ota_test_platform.h,40,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/paged_history_test.cpp,5,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/power_and_upload_test.cpp,2,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/power_pins_test.cpp,2,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/power_stubs/Arduino.h,2,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/power_stubs/driver/gpio.h,3,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/precision_sensors_test.cpp,2,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/precision_stubs/Wire.h,8,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/pulse_signal_test.cpp,7,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/recording_archive_test.cpp,2,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/recording_json_test.cpp,2,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/recording_store_test.cpp,2,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/recording_stubs/Preferences.h,9,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/recording_stubs/esp_partition.h,4,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/recording_stubs/esp_random.h,1,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/recording_stubs/esp_timer.h,1,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/recording_test.cpp,6,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/registry_test.cpp,21,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/run_tests.py,1,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/sensor_config_stubs/Preferences.h,5,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/sensor_config_stubs/esp_app_desc.h,1,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/sensor_config_test.cpp,5,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/station_stubs/Arduino.h,18,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/station_stubs/LittleFS.h,13,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/station_stubs/Preferences.h,7,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/station_stubs/esp_partition.h,2,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/stubs/Arduino.h,12,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/stubs/Preferences.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/stubs/WiFi.h,5,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/stubs/Wire.h,6,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/stubs/esp_attr.h,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/stubs/esp_heap_caps.h,3,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/stubs/esp_now.h,8,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/stubs/esp_random.h,1,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/stubs/esp_timer.h,1,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/stubs/esp_wifi.h,1,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/stubs/freertos/FreeRTOS.h,1,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/stubs/freertos/queue.h,4,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/stubs/freertos/semphr.h,3,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/test_chart_readability.cjs,38,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/test_compact_dashboard.cjs,22,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/test_dashboard_performance.cjs,13,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/test_history_priority.cjs,16,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/test_interaction_stress.cjs,41,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/test_library_patches.py,5,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/test_motion_dashboard.cjs,32,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/test_ota_package.py,7,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/test_ota_status_page.cjs,19,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/test_publication.py,10,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/test_recording_dashboard.cjs,61,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/test_sensor_settings_dashboard.cjs,20,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/test_station_upload.py,9,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/test_ui_reliability.cjs,26,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/test_web_scripts.py,0,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/transport_test.cpp,9,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tests/web_input_test.cpp,1,Harness inventoried; relevant suites executed; no per-function execution-coverage claim,26 C++ suites; 10 browser programs; 5 Python checks; selected test-source review
+Firmware/tools/check_publication.py,9,Source-level review,Build/patch/package/upload/publication tests or direct inventory/ELF tool execution
+Firmware/tools/elf_metrics.py,4,Source-level review,Build/patch/package/upload/publication tests or direct inventory/ELF tool execution
+Firmware/tools/firmware_inventory.py,7,Source-level review,Build/patch/package/upload/publication tests or direct inventory/ELF tool execution
+Firmware/upload.py,3,Source-level review,Build/patch/package/upload/publication tests or direct inventory/ELF tool execution

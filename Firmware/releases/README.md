@@ -1,6 +1,32 @@
 # Firmware packages
 
-## Current full release 4.4.3
+## Current full release 4.4.4
+
+Station and PCB V3/V4 use **4.4.4 / 40404**, protocol V5. This release includes
+all three efficiency audit passes: sensor arithmetic/FIFO work, main/radio
+preparation, OTA flash reads, station copies/history and packed-data correctness.
+Existing partitions, settings, recording semantics and signing identity remain.
+
+| File | Target | Installation |
+| --- | --- | --- |
+| [Complete update bundle](w-charger-4.4.4.zip) | All three targets | Applications, sensor OTA, instructions, notes and checksums |
+| [sensor-v3-4.4.4.ota](sensor-v3-4.4.4.ota) | Sensor PCB V3 | Signed OTA through the station |
+| [sensor-v4-4.4.4.ota](sensor-v4-4.4.4.ota) | Sensor PCB V4 | Signed OTA through the station |
+| [station-4.4.4.bin](station-4.4.4.bin) | ESP32-S3 station | USB application at `0x10000`, without full erasure |
+| [Installation instructions](INSTALL-4.4.4.txt) | Compatible installed layouts | Station first, matching sensor OTA next |
+| [Release notes](RELEASE-NOTES-4.4.4.txt) | All three targets | Improvements, preservation and limits |
+| [Checksums](SHA256SUMS-4.4.4.txt) | All six download assets | SHA-256 |
+
+Final target builds, 30 sanitized host suites and package checks pass. Both new
+signatures match the trusted public header and existing installation key; prior
+packages still verify and retain their bytes. New payloads match the final
+builds. ZIP contents and all manifests were checked. See the
+[release evidence](../audit/2026-11-07-release/README.md) and
+[main/radio/OTA review](../FLOW_TRANSFER_REVIEW.md), with links to earlier passes.
+No device was flashed or physically measured. Fewer API calls and smaller
+native frames do not establish MCU timing, RF throughput or energy savings.
+
+## Previous full release 4.4.3
 
 Station and PCB V3/V4 use **4.4.3 / 40403**, protocol V5. This full release
 includes the 4.4.2 recovery improvements, faster storage reads, prioritized

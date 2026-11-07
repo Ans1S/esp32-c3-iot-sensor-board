@@ -17,6 +17,11 @@ class String {
  public:
   String(const char* value = "") : value_(value) {}
   String(std::string value) : value_(value) {}
+  template <typename Number, typename = std::enable_if_t<std::is_arithmetic_v<Number>>>
+  String(Number value) : value_(std::to_string(value)) {}
+  friend String operator+(const String& left, const String& right) {
+    return String(left.value_ + right.value_);
+  }
   String substring(size_t start, size_t end = std::string::npos) const {
     return value_.substr(start, end == std::string::npos ? end : end - start);
   }

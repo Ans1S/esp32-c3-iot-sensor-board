@@ -6,8 +6,12 @@ commit, board revision, power source and measurement equipment.
 
 ## 1. Station only
 
-1. Upload the station target. Confirm that the upload erases the old flash/NVS
-   state and that the `W-Charger-XXXXXX` setup network appears.
+1. For a new station, install the normal target and confirm that the
+   `W-Charger-XXXXXX` setup network appears. On an existing compatible layout,
+   first export important data, then verify that a normal/application-only
+   update preserves NVS, pairing and archives. Only the explicit factory-reset
+   target may erase the complete flash; run that separate destructive test
+   only with authorization and a disposable backup.
 2. Connect with `W-Charger-Setup`, open `http://192.168.4.1/` and complete the
    unconfigured portal without a website login. Confirm that its ThingSpeak
    step only asks for the optional User API Key; channel IDs and Read/Write API
@@ -23,10 +27,10 @@ commit, board revision, power source and measurement equipment.
    that CSRF or cross-origin state-changing requests are rejected and that the
    dashboard, API and Wi-Fi-scan responses include the configured no-cache,
    frame, MIME-sniffing and content-security headers.
-6. Log in from two clients. Five failed attempts from one client must trigger a
-   30-second block without blocking the other client. Signing out one client
-   must invalidate only its server-side session; the other session must remain
-   valid. Confirm that an idle session expires after 30 minutes.
+6. Log in from two clients. Five failed attempts must trigger the device-wide
+   30-second login block while existing authenticated sessions remain usable.
+   Signing out one client must invalidate only its server-side session. Confirm
+   the absolute 30-minute session lifetime, including continuous activity.
 7. Restart the station and confirm that settings and local history persist,
    while all previous session cookies no longer authenticate.
 8. Generate several simultaneous sensor reports while exercising history and
@@ -75,9 +79,9 @@ commit, board revision, power source and measurement equipment.
    `provisioned=false`. The sensor must clear the station identity, wake again
    after one second and reappear as an unprovisioned sensor using a complete
    13-channel discovery scan.
-10. Upload a new sensor firmware image without erasing NVS manually. The ELF SHA
-   change must clear the old station assignment once; another restart with the
-   same image must not clear it again.
+10. Update a sensor application without erasing NVS. The ELF SHA change must
+    invalidate its RTC configuration cache while retaining durable assignment
+    and compatible calibration. Repeat a restart with the same image.
 11. With diagnostic logging enabled for this test only, force a failed unicast
     send and confirm that the next attempt starts without the additional
     260 ms configuration-response timeout. Repeat with broadcast discovery and
@@ -152,20 +156,21 @@ commit, board revision, power source and measurement equipment.
 
 ## 5. Local station history
 
-1. Set one BME280 sensor to a 10-minute measurement interval. Confirm that the
-   dashboard and `/api/history` report 10-minute steps while retaining at most
-   the rolling last 24 hours.
-2. Change the same sensor to 20 minutes. Existing recent history should remain,
-   be rebucketed to 20-minute steps and survive a station restart.
+1. Set one BME280 sensor to a 10-minute measurement interval. Confirm those
+   reception timestamps in `/api/history`, inspect saved/buffered/capacity
+   counts, and verify that retention follows the shared adaptive page budget.
+2. Change the same sensor to 20 minutes. Earlier typed pages must remain
+   readable with their original samples; new points use the new interval and
+   survive a station restart after their batch is durable.
 3. After collecting several 10-minute points, change the interval to two
    minutes. The existing line must remain plotted while new two-minute points
    are appended; cursor inspection alone is not sufficient.
 4. Repeat with a second sensor at a different interval and confirm that each
    chart keeps its own step size. Missing measurements must create a visible
    line gap instead of being connected as continuous data.
-5. With website protection enabled, confirm that the protected-access banner
-   disappears automatically after its initial display. The unprotected warning
-   must remain visible when no password is set.
+5. Verify selected-node-only pagination, fixed until/oldest bounds, visible
+   storage errors and complete raw CSV export. Automatic password/cloud setup
+   notices must remain absent; actual connection/storage faults stay visible.
 
 ## 6. Sensor energy profile
 
@@ -181,7 +186,8 @@ Before measuring current, verify the configured-mode radio policy:
 3. Repeat with a reporting interval longer than five minutes on a BME680. The
    node may wake every five minutes for BSEC ULP, but ESP-NOW must remain off on
    intermediate wakes and transmit only when the configured report is due.
-   On PCB V4, GPIO6 must remain low throughout those intermediate wakes.
+   On default PCB V4, capture the battery-protection ADC preflight on every
+   intermediate wake, then verify that GPIO6 is low during acquisition/sleep.
 4. Delete the sensor or complete its factory reset and verify the opposite:
    ten-second discovery and complete 13-channel scans must resume.
 5. Observe `/api/status` for a strong, stationary V4 link. The
@@ -227,9 +233,9 @@ acceptance values.
    GPIO10/`SENSOR_PWR_EN` against both schematic and PCB.
 2. During sleep, GPIO6 must be low and the battery divider must draw no
    measurable continuous current.
-   With a BME680 report interval longer than five minutes, confirm the same on
-   every intermediate measurement wake and confirm that a due report still
-   contains a valid battery value.
+   With a BME680 report interval longer than five minutes, verify the battery
+   preflight before sensor startup on every intermediate wake, followed by
+   divider shutdown. A due report must reuse a valid preflight battery value.
 3. GPIO10 is active low on V4: low enables the PMOS sensor rail and high
    disables it.
 4. Compare battery voltage near 4.2 V, 3.7 V and 3.2 V. V4 uses 100 kOhm over
@@ -271,10 +277,10 @@ BME680 and disabled environmental sensing.
    the sensor's 260-ms response window. Under artificial persistence overload,
    verify `espnow.persistenceDrops` counts discarded oldest events and radio
    replies continue. Confirm no unexpected loss at the supported normal load.
-8. Add/delete more than 20 distinct MAC addresses over time (maximum 16 at once).
+8. Add/delete more than 20 distinct MAC addresses over time (maximum 19 at once).
    Confirm responses continue and inspect `espnow.peerFailures`. Delete and
    re-add a MAC with queued samples; old generations must not repopulate history.
-9. Verify interval-dependent 24-hour history, reception-time buckets, restart
+9. Verify adaptive paged history, original reception times, restart
    persistence, interval changes and exclusion of stale fallback IAQ. Exercise
    memory pressure and confirm history failure is reported without consuming
    the internal heap reserve needed by radio/TLS.
@@ -302,11 +308,22 @@ BME680 and disabled environmental sensing.
     starts. Exercise BSEC and poor RF before selecting another default. Do not
     infer an energy reduction from image size or CPU clock alone.
 
-Keep the existing fresh-install behavior in mind: flashing a new sensor image
-clears its assignment/learning state, and station USB uploads erase settings.
+Normal application updates retain durable sensor assignment and compatible
+learning state, and normal station USB updates preserve settings and files.
+Explicit factory reset and layout migration are separate authorized workflows.
 Record build environment, battery voltage, sensor, RF conditions, sample count,
 mean/tail wake duration and charge for each comparison.
 # OTA hardware acceptance
+
+The 2026-11-07 main/radio/OTA follow-up still requires authorized physical
+acceptance. Capture the complete before/after update duration, first-block and
+normal-telemetry reply tails while the station prefetches up to 1536 bytes.
+Repeat with RF loss, resume offsets, short final blocks, allocation/read faults,
+power interruption and old/new firmware combinations. Verify unchanged signed
+image validation, durable checkpoints, battery thresholds and rollback.
+Measure task watermarks, queue/cache heap release across repeated jobs and
+sensor sampling at the poll/snapshot boundary under simultaneous flash/RF load.
+Host full-slot transfers and reduced API counts do not pass these physical tests.
 
 The signed ESP-NOW update implementation requires the V3/V4 fault-injection
 checks in [OTA.md](OTA.md#verification), including actual flash identification,
@@ -318,14 +335,16 @@ Host tests and successful builds do not mark these physical checks as passed.
 On both PCB revisions, verify I2C identity at 0x6A and 0x6B, axis signs and scale
 with known stationary orientations and controlled rotation. Check interval
 peaks, FIFO overflow indication and stale-data faults after disconnection.
-Exercise 1 s and 5 s reports, short graph windows and CSV summaries; verify the
-900-entry RAM limit and restart behavior without subminute history flash writes.
+Exercise 1 s and 5 s normal windows with rail shutdown, then a separate SW2
+recording. Verify the 1201-slot one-minute motion ring, independent persistent
+normal pages, complete saved sessions and original CSV samples after restart.
 
 Compare BME280/BME680 charge per reporting cycle and deep-sleep current with
 the preceding release under identical supply, interval and RF conditions.
 Measure maintenance-only BME680 wakes separately. Confirm sensor rail and V4
 ADC shutdown, no normal diagnostic serial activity, and no trial-boot retry
 extension after acceptance. Account separately for the added OTA offer query.
-A provisioned LSM6DSOX intentionally stays awake; do not apply environmental
-battery-life expectations to continuous motion mode. See
+SW2 motion acquisition keeps the sensor active; normal precision windows turn
+the rail off between measurements. Manual-mode waiting uses short light sleep
+for GPIO9 wake, so environmental deep-sleep battery expectations do not apply. See
 [power management](POWER_MANAGEMENT.md) for the audit scope.

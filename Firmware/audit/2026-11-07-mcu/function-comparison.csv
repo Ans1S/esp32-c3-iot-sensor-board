@@ -1,0 +1,27 @@
+phase,target,name,bytes,instructions,software_arithmetic_sites,division_remainder_sites,frame_bytes,elf_frame_bytes
+before,sensor_pcb_v3,"lil::protocol::validatePacket(void const*, unsigned int, lil::protocol::MessageType, unsigned short)",204,67,0,0,,272
+before,sensor_pcb_v3,sensor::Lsm6dsoxDriver::read(),542,169,4,2,,48
+before,sensor_pcb_v3,sensor::Lsm6dsoxDriver::poll(),914,310,18,0,,96
+before,sensor_pcb_v3,sensor::PrecisionSensors::poll(),934,297,4,1,,64
+before,sensor_pcb_v3,sensor::Bme280Driver::read(),2484,769,103,0,,432
+after,sensor_pcb_v3,"lil::protocol::validatePacket(void const*, unsigned int, lil::protocol::MessageType, unsigned short)",184,63,0,0,,32
+after,sensor_pcb_v3,sensor::Lsm6dsoxDriver::read(),560,175,4,2,,48
+after,sensor_pcb_v3,sensor::Lsm6dsoxDriver::poll(),914,310,18,0,,96
+after,sensor_pcb_v3,sensor::PrecisionSensors::poll(),1060,343,4,0,,144
+after,sensor_pcb_v3,sensor::Bme280Driver::read(),2264,702,95,0,,384
+before,sensor_pcb_v4,"lil::protocol::validatePacket(void const*, unsigned int, lil::protocol::MessageType, unsigned short)",204,67,0,0,272,272
+before,sensor_pcb_v4,sensor::Lsm6dsoxDriver::read(),542,169,4,2,48,48
+before,sensor_pcb_v4,sensor::Lsm6dsoxDriver::poll(),914,310,18,0,96,96
+before,sensor_pcb_v4,sensor::PrecisionSensors::poll(),934,297,4,1,64,64
+before,sensor_pcb_v4,sensor::Bme280Driver::read(),2484,769,103,0,432,432
+after,sensor_pcb_v4,"lil::protocol::validatePacket(void const*, unsigned int, lil::protocol::MessageType, unsigned short)",184,63,0,0,32,32
+after,sensor_pcb_v4,sensor::Lsm6dsoxDriver::read(),560,175,4,2,48,48
+after,sensor_pcb_v4,sensor::Lsm6dsoxDriver::poll(),914,310,18,0,96,96
+after,sensor_pcb_v4,sensor::PrecisionSensors::poll(),1060,343,4,0,144,144
+after,sensor_pcb_v4,sensor::Bme280Driver::read(),2264,702,95,0,384,384
+before,station_s3,"lil::protocol::validatePacket(void const*, unsigned int, lil::protocol::MessageType, unsigned short)",212,76,0,0,288,288
+before,station_s3,"station::SensorRegistry::liveHistory(unsigned char const*, station::LiveSample*, unsigned int) const",272,104,0,1,64,64
+before,station_s3,"station::SensorRegistry::registerTelemetry(unsigned char const*, unsigned long, lil::protocol::TelemetryPayload const&, signed char, station::SensorConfig&, signed char&, bool&, unsigned long&)",1516,572,0,2,464,464
+after,station_s3,"lil::protocol::validatePacket(void const*, unsigned int, lil::protocol::MessageType, unsigned short)",175,64,0,0,48,48
+after,station_s3,"station::SensorRegistry::liveHistory(unsigned char const*, station::LiveSample*, unsigned int) const",374,145,0,0,80,80
+after,station_s3,"station::SensorRegistry::registerTelemetry(unsigned char const*, unsigned long, lil::protocol::TelemetryPayload const&, signed char, station::SensorConfig&, signed char&, bool&, unsigned long&)",1532,572,0,1,464,464

@@ -6,10 +6,13 @@
 #include <vector>
 #include "espnow_transport.h"
 #include "WiFi.h"
+#include "protocol_counter.h"
 
 struct Event { uint32_t due; std::function<void()> callback; };
 std::vector<Event> events;
 std::vector<uint8_t> channels;
+std::vector<std::vector<uint8_t>> telemetryFrames;
+std::vector<uint32_t> telemetryFrameTimes;
 unsigned sends = 0;
 bool pending = false;
 int completionDelay = 2;
@@ -35,6 +38,12 @@ esp_err_t esp_wifi_set_channel(uint8_t channel, int) {
 }
 esp_err_t esp_now_send(const uint8_t*, const uint8_t* bytes, size_t length) {
   assert(!pending); pending = true; ++sends;
+  lil::protocol::PacketHeader wireHeader{};
+  memcpy(&wireHeader, bytes, sizeof(wireHeader));
+  if (wireHeader.type == lil::protocol::MessageType::kTelemetry) {
+    assert(lil::protocol::validatePacket(bytes, length, wireHeader.type, wireHeader.payloadSize));
+    telemetryFrames.emplace_back(bytes, bytes + length); telemetryFrameTimes.push_back(testMillis);
+  }
   if (completionDelay >= 0) {
     events.push_back({testMillis + uint32_t(completionDelay), [] {
       pending = false;
@@ -97,6 +106,7 @@ esp_err_t esp_now_send(const uint8_t*, const uint8_t* bytes, size_t length) {
 }
 void reset() {
   events.clear(); channels.clear(); sends = 0; pending = false; testMillis = 0;
+  telemetryFrames.clear(); telemetryFrameTimes.clear();
   completionDelay = 2; responseDelay = -1; deliverySuccess = true;
   badOtaReplies = 0; wrongOtaSource = false; legacyStation = false; lastTelemetrySize = 0;
   config = sensor::SensorRuntimeConfig{};
@@ -106,6 +116,74 @@ void reset() {
   wrongRecordingSequence = false;
 }
 int main() {
+  {
+    reset();
+    sensor::EspNowTransport radio;
+    const auto queues = testQueueCreates;
+    const auto queueBytes = testQueueDataBytes;
+    assert(radio.begin());
+    assert(testQueueCreates - queues == (FLOW_OPTIMIZED ? 1 : 2));
+    assert(testQueueDataBytes - queueBytes == (FLOW_OPTIMIZED ? 220 : 1124));
+    lil::protocol::TelemetryPacket telemetry{};
+    telemetry.header.sequence = 700;
+    telemetry.payload.sensorType = lil::protocol::EnvironmentalSensorType::kBme280;
+    testTelemetryFinalizations = testTelemetryCrcBytes = 0;
+    assert(!radio.exchangeLpChannel(telemetry, config, 6, true).configReceived);
+    const size_t wireBytes = sizeof(lil::protocol::PacketHeader) + lil::protocol::kLegacyTelemetryPayloadSize;
+    assert(sends == 1 && testTelemetryFinalizations == (FLOW_OPTIMIZED ? 1 : 2));
+    assert(testTelemetryCrcBytes == wireBytes * (FLOW_OPTIMIZED ? 1 : 2));
+    printf("Radio one-attempt telemetry: %zu CRC finalizations / %zu bytes, %zu queues / %zu queue data bytes at begin\n",
+           testTelemetryFinalizations, testTelemetryCrcBytes, testQueueCreates - queues, testQueueDataBytes - queueBytes);
+    radio.end();
+  }
+  if (FLOW_OPTIMIZED) {
+    reset();
+    sensor::EspNowTransport radio;
+    const auto queues = testQueueCreates;
+    testQueueCreateFailAt = queues + 2;
+    assert(radio.begin()); // OTA memory pressure cannot disable base telemetry.
+    lil::ota::Packet request{}, response{};
+    request.payload.nonce = 42; request.payload.op = lil::ota::Op::Read; request.payload.offset = 192;
+    lil::protocol::finalize(request, lil::ota::kMessageType, 123);
+    assert(!radio.otaExchange(config.stationMac, request, response) && sends == 0);
+    testQueueCreateFailAt = 0; responseDelay = 4;
+    assert(radio.otaExchange(config.stationMac, request, response) && sends == 1);
+    const auto allocated = testQueueCreates;
+    assert(radio.otaExchange(config.stationMac, request, response) && testQueueCreates == allocated);
+    radio.end();
+  }
+  for (const auto type : {lil::protocol::EnvironmentalSensorType::kBme280,
+                         lil::protocol::EnvironmentalSensorType::kAutoDetect,
+                         lil::protocol::EnvironmentalSensorType::kMax30102}) {
+    reset(); sensor::EspNowTransport radio;
+    lil::protocol::TelemetryPacket original{};
+    original.header.sequence = 991; original.payload.sensorType = type;
+    if (type == lil::protocol::EnvironmentalSensorType::kAutoDetect)
+      original.payload.capabilities = lil::protocol::kMotion;
+    original.payload.live.count = 2; original.payload.live.acquisitionAgeMs = 100;
+    original.payload.live.estimateAgeMs = UINT16_MAX;
+    original.payload.live.optical[0] = {12345, 23456, 65530};
+    original.payload.live.optical[1] = {34567, 45678, UINT16_MAX};
+    original.payload.live.optical[2].ageMs = 42; // An unused slot is immutable.
+    assert(radio.begin());
+    assert(!radio.exchangeLpChannel(original, config, 6).configReceived && telemetryFrames.size() == 2);
+    for (size_t i = 0; i < telemetryFrames.size(); ++i) {
+      auto expected = original;
+      const auto addAge = [&](uint16_t age) { return age == UINT16_MAX ? age :
+          uint16_t(std::min(uint32_t(65534), uint32_t(age) + telemetryFrameTimes[i])); };
+      expected.payload.live.acquisitionAgeMs = addAge(original.payload.live.acquisitionAgeMs);
+      expected.payload.live.estimateAgeMs = addAge(original.payload.live.estimateAgeMs);
+      for (size_t frame = 0; frame < original.payload.live.count; ++frame)
+        expected.payload.live.optical[frame].ageMs = addAge(original.payload.live.optical[frame].ageMs);
+      const size_t length = telemetryFrames[i].size();
+      lil::protocol::finalizePacket(&expected, length, lil::protocol::MessageType::kTelemetry,
+                                  original.header.sequence, length - sizeof(lil::protocol::PacketHeader));
+      assert(!memcmp(&expected, telemetryFrames[i].data(), length));
+    }
+    assert(original.payload.live.acquisitionAgeMs == 100 && original.payload.live.optical[0].ageMs == 65530);
+    radio.end();
+  }
+  puts("Radio wire: exact short, motion-prefix and full packet bytes across retries, saturated/unknown ages and unused slots passed");
   {
     sensor::EspNowTransport radio;
     lil::recording::StatusPacket request{};

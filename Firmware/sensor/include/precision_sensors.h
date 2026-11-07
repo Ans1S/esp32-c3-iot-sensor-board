@@ -8,7 +8,7 @@ class PrecisionSensors {
   static bool probe(lil::protocol::EnvironmentalSensorType type, uint8_t& address);
   bool begin(lil::protocol::EnvironmentalSensorType type, uint8_t address);
   bool poll();
-  EnvironmentalReading read();
+  EnvironmentalReading read(bool pollFirst = true);
   bool freshTemperature() const { return freshTemperature_; }
  private:
   bool readBytes(uint8_t reg, uint8_t* bytes, uint8_t count);

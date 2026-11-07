@@ -1,0 +1,198 @@
+{
+  "phase": "after",
+  "target": "sensor_pcb_v4",
+  "elf_sha256": "a052c23b11bd3becbe48a813a4e48e29ed3ff8f3fc5be8220649f10a48f8732d",
+  "project_symbols": 165,
+  "sections": [
+    {
+      "name": ".rtc.text",
+      "size": 20,
+      "address": 1342177280
+    },
+    {
+      "name": ".rtc.force_fast",
+      "size": 0,
+      "address": 1342177300
+    },
+    {
+      "name": ".rtc.data",
+      "size": 636,
+      "address": 1342177304
+    },
+    {
+      "name": ".rtc_noinit",
+      "size": 0,
+      "address": 1342177940
+    },
+    {
+      "name": ".rtc.force_slow",
+      "size": 32,
+      "address": 1342177940
+    },
+    {
+      "name": ".rtc_reserved",
+      "size": 40,
+      "address": 1342185432
+    },
+    {
+      "name": ".iram0.text",
+      "size": 64186,
+      "address": 1077411840
+    },
+    {
+      "name": ".iram0.text_end",
+      "size": 326,
+      "address": 1077476026
+    },
+    {
+      "name": ".iram0.data",
+      "size": 0,
+      "address": 1077476352
+    },
+    {
+      "name": ".iram0.bss",
+      "size": 0,
+      "address": 1077476352
+    },
+    {
+      "name": ".iram0.end",
+      "size": 0,
+      "address": 1077476352
+    },
+    {
+      "name": ".dram0.dummy",
+      "size": 64512,
+      "address": 1070071808
+    },
+    {
+      "name": ".dram0.data",
+      "size": 13769,
+      "address": 1070136320
+    },
+    {
+      "name": ".noinit",
+      "size": 3,
+      "address": 1070150089
+    },
+    {
+      "name": ".dram0.bss",
+      "size": 32136,
+      "address": 1070150096
+    },
+    {
+      "name": ".flash.text",
+      "size": 870730,
+      "address": 1107296288
+    },
+    {
+      "name": ".flash_rodata_dummy",
+      "size": 917504,
+      "address": 1006632992
+    },
+    {
+      "name": ".flash.appdesc",
+      "size": 256,
+      "address": 1007550496
+    },
+    {
+      "name": ".flash.rodata",
+      "size": 128984,
+      "address": 1007550752
+    },
+    {
+      "name": ".flash.init_array",
+      "size": 312,
+      "address": 1007679736
+    },
+    {
+      "name": ".eh_frame_hdr",
+      "size": 0,
+      "address": 1007680048
+    },
+    {
+      "name": ".eh_frame",
+      "size": 28468,
+      "address": 1007680048
+    },
+    {
+      "name": ".flash.tdata",
+      "size": 0,
+      "address": 1007708516
+    },
+    {
+      "name": ".flash.rodata_noload",
+      "size": 25899,
+      "address": 1007708516
+    },
+    {
+      "name": ".dram0.heap_start",
+      "size": 8,
+      "address": 1070182232
+    },
+    {
+      "name": ".debug_aranges",
+      "size": 75544,
+      "address": 0
+    },
+    {
+      "name": ".debug_info",
+      "size": 5504589,
+      "address": 0
+    },
+    {
+      "name": ".debug_abbrev",
+      "size": 622223,
+      "address": 0
+    },
+    {
+      "name": ".debug_line",
+      "size": 3031413,
+      "address": 0
+    },
+    {
+      "name": ".debug_frame",
+      "size": 207836,
+      "address": 0
+    },
+    {
+      "name": ".debug_str",
+      "size": 810768,
+      "address": 0
+    },
+    {
+      "name": ".debug_loc",
+      "size": 1637415,
+      "address": 0
+    },
+    {
+      "name": ".debug_ranges",
+      "size": 179216,
+      "address": 0
+    },
+    {
+      "name": ".debug_line_str",
+      "size": 16706,
+      "address": 0
+    },
+    {
+      "name": ".debug_loclists",
+      "size": 145993,
+      "address": 0
+    },
+    {
+      "name": ".debug_rnglists",
+      "size": 14556,
+      "address": 0
+    },
+    {
+      "name": ".comment",
+      "size": 176,
+      "address": 0
+    },
+    {
+      "name": ".riscv.attributes",
+      "size": 72,
+      "address": 0
+    }
+  ]
+}

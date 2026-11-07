@@ -1,6 +1,6 @@
 # W-Charger Sensor Firmware
 
-Firmware 4.4.3 / 40403 supports LSM6DSOX, TMP117 and MAX30102 acquisition on PCB V3/V4.
+Firmware 4.4.4 / 40404 supports LSM6DSOX, TMP117 and MAX30102 acquisition on PCB V3/V4.
 See [precision sensor operation and timing](../PRECISION_SENSORS.md).
 
 One shared firmware codebase supports PCB V3 and V4. The only differences are
@@ -227,10 +227,10 @@ voltage-divider tolerance and the remaining measurement error:
 The permitted range of 0.7 to 1.3 prevents accidental extreme values. The
 calibration corrects gain under the reasonable assumption of a zero point at
 0 V; a true two-point characteristic would require two precise reference
-voltages. The ADC and voltage-divider paths remain enabled only for a due
-report. On V4, the required settling time overlaps the environmental conversion
-where possible, and intermediate BME680 maintenance wakes leave the divider
-off.
+voltages. Default V4 protection reads the battery before every sensor wake,
+including BME680 maintenance-only wakes, and disables the divider afterward.
+A due report reuses that preflight result. With protection disabled, the ADC
+path is needed only for a due report and its settling can overlap acquisition.
 
 Release builds compile sensor serial logging out and do not initialize UART.
 For hardware diagnosis, add `-DSENSOR_DIAGNOSTIC_LOGGING=1` to the desired
@@ -258,7 +258,7 @@ the normal interval and starts durable replay. See
 
 ## Current release and publication checks
 
-Firmware **4.4.3 / 40403** includes bounded sensor reinitialization, durable
+Firmware **4.4.4 / 40404** includes bounded sensor reinitialization, durable
 recording recovery and the latest sensor reliability and storage improvements.
 See [the complete change inventory](../CHANGELOG.md),
 [release artifacts](../releases/README.md) and

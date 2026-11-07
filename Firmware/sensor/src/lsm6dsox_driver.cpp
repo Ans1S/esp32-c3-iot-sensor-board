@@ -8,6 +8,7 @@ void Lsm6dsoxDriver::discardWindow() {
   accelCount_ = gyroCount_ = 0;
   for (auto& axes : sums_) for (auto& value : axes) value = 0;
   motion_ = {};
+  gyroPeakSquared_ = 0;
   feedback_.restartFilter();
 }
 bool Lsm6dsoxDriver::writeRegister(uint8_t reg, uint8_t value) {
@@ -97,25 +98,28 @@ bool Lsm6dsoxDriver::poll() {
       else motion_.angularRateDps[axis] = scaled;
       magnitudeSquared += scaled * scaled;
     }
-    const float magnitude = sqrtf(magnitudeSquared);
     if (tag == 2) {
+      const float magnitude = sqrtf(magnitudeSquared);
       feedback_.observe(magnitude);
       motion_.peakAccelerationG = fmaxf(motion_.peakAccelerationG, magnitude);
       ++accelCount_; lastAccelMs_ = millis();
     } else {
-      motion_.peakAngularRateDps = fmaxf(motion_.peakAngularRateDps, magnitude);
+      // No gyro filter needs individual magnitudes. sqrtf is monotonic for
+      // these finite, nonnegative inputs, so take it once at window readout.
+      gyroPeakSquared_ = fmaxf(gyroPeakSquared_, magnitudeSquared);
       ++gyroCount_; lastGyroMs_ = millis();
     }
   }
   return true;
 }
-EnvironmentalReading Lsm6dsoxDriver::read() {
-  poll();
+EnvironmentalReading Lsm6dsoxDriver::read(bool pollFirst) {
+  if (pollFirst) poll();
   EnvironmentalReading result{};
   result.sensorType = lil::protocol::EnvironmentalSensorType::kLsm6dsox;
   result.valid = initialized_ && !failed_ && accelCount_ && gyroCount_ &&
                  millis() - lastAccelMs_ < 200 && millis() - lastGyroMs_ < 200;
   result.motion = motion_;
+  result.motion.peakAngularRateDps = gyroCount_ ? sqrtf(gyroPeakSquared_) : 0;
   result.motionFeedback = feedback_.value();
   for (uint8_t axis = 0; axis < 3; ++axis) {
     if (accelCount_) result.motion.accelerationG[axis] = sums_[0][axis] / accelCount_;
@@ -132,6 +136,7 @@ EnvironmentalReading Lsm6dsoxDriver::read() {
   result.motion.fifoOverrun = overflow_;
   if (result.valid) result.capabilities = lil::protocol::kMotion;
   motion_.peakAccelerationG = motion_.peakAngularRateDps = 0;
+  gyroPeakSquared_ = 0;
   accelCount_ = gyroCount_ = 0;
   gap_ = overflow_ = failed_ = false;
   return result;

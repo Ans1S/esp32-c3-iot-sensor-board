@@ -1,0 +1,118 @@
+{
+  "baseline_commit": "ff7afa30032221ec961f2bc939c1dbba4c90a0c2",
+  "baseline_archive_sha256": "73199a2912daaed4e72d3b40618dc462ea33eeeeac3358a2cd472fdd752d1127",
+  "date": "2026-11-07",
+  "hardware_access": false,
+  "flashed_devices": 0,
+  "published": false,
+  "artifacts": {
+    "before/sensor_pcb_v3": {
+      "firmware.elf": {
+        "bytes": 14801644,
+        "sha256": "dddb30ad8649cd8a860ff4db2304dd50a1149e14211d62e266b2503ab5d70e87"
+      },
+      "firmware.bin": {
+        "bytes": 1106416,
+        "sha256": "4278ec10e5b09643bfc94dbbec63aee4bd2b5ab8df6a3788c4fec4a9396d35e6"
+      },
+      "firmware.map": {
+        "bytes": 12639505,
+        "sha256": "9e55f8eb564b518afe8e6f64adfe120fb70f9a70b1d5fd852d806a4e6649dd43"
+      },
+      "partitions.bin": {
+        "bytes": 3072,
+        "sha256": "a20b91fc99f8b96c8026a6bce63c7b475610aff5b4ff1d1b48fd4940e9a57791"
+      }
+    },
+    "before/sensor_pcb_v4": {
+      "firmware.elf": {
+        "bytes": 14805296,
+        "sha256": "1cc3b8869a0969343fdce4ee1ab23ba092d8062d53bda928b25077244e857a34"
+      },
+      "firmware.bin": {
+        "bytes": 1107488,
+        "sha256": "ef3a135da8a9a63496c34934d1c8396a09104d393799276d9435bcaa9ea19654"
+      },
+      "firmware.map": {
+        "bytes": 12640793,
+        "sha256": "f19665322c2b5c861bbf4ee5b22d0f39f3b22c99761a0964bd67847abb56a58e"
+      },
+      "partitions.bin": {
+        "bytes": 3072,
+        "sha256": "a20b91fc99f8b96c8026a6bce63c7b475610aff5b4ff1d1b48fd4940e9a57791"
+      }
+    },
+    "before/station_s3": {
+      "firmware.elf": {
+        "bytes": 18747016,
+        "sha256": "f9c1004d004a362649fb8bdd10acd43c6aaa1a2240b913b89862f6ddc303362c"
+      },
+      "firmware.bin": {
+        "bytes": 1617136,
+        "sha256": "38040e54b89d080ce3b8eea5910498802b52ffc74ce9bb52dd575f4b4bdf8b25"
+      },
+      "firmware.map": {
+        "bytes": 17011374,
+        "sha256": "6a9b7663104048a63d2bc2087a99de79927d84ae23ba7013b0a276eb441c2135"
+      },
+      "partitions.bin": {
+        "bytes": 3072,
+        "sha256": "c1527d1a8e40ab72a8c68546a846aa3324872eb63abf5cb0a312ad64373cf7e7"
+      }
+    },
+    "after/sensor_pcb_v3": {
+      "firmware.elf": {
+        "bytes": 14802524,
+        "sha256": "b0871e847e7b0c0ffa605fbf1e75d5b03a3054718f05c06e737cce9db5e14da0"
+      },
+      "firmware.bin": {
+        "bytes": 1106448,
+        "sha256": "7d1e857b75a562e4ae4b6a8148a6c0be71c6a468c710c1f2f565cf85826ce5bd"
+      },
+      "firmware.map": {
+        "bytes": 12639505,
+        "sha256": "2ed21b35a4e78cf46cd07e0d4f836dc459ed12e3edd8988d9a6921f2b73b9591"
+      },
+      "partitions.bin": {
+        "bytes": 3072,
+        "sha256": "a20b91fc99f8b96c8026a6bce63c7b475610aff5b4ff1d1b48fd4940e9a57791"
+      }
+    },
+    "after/sensor_pcb_v4": {
+      "firmware.elf": {
+        "bytes": 14806180,
+        "sha256": "a052c23b11bd3becbe48a813a4e48e29ed3ff8f3fc5be8220649f10a48f8732d"
+      },
+      "firmware.bin": {
+        "bytes": 1107520,
+        "sha256": "e11699c8053ec5bbbdb143b298e0d58ca6ba6eef74e814e2f4d0a1650a96302c"
+      },
+      "firmware.map": {
+        "bytes": 12640793,
+        "sha256": "d9396c812becbb18aa71efad5a505c952d2a47b333d9ad9b6842408640dfbec1"
+      },
+      "partitions.bin": {
+        "bytes": 3072,
+        "sha256": "a20b91fc99f8b96c8026a6bce63c7b475610aff5b4ff1d1b48fd4940e9a57791"
+      }
+    },
+    "after/station_s3": {
+      "firmware.elf": {
+        "bytes": 18748936,
+        "sha256": "1e51b3de4fce1675d8fdab7365b620c6b3485788599166457ffd86770789aa58"
+      },
+      "firmware.bin": {
+        "bytes": 1617888,
+        "sha256": "41710862fbbcd5406992e98a0b3fc41be23d63014639336b37e4a1a9a4650350"
+      },
+      "firmware.map": {
+        "bytes": 17011531,
+        "sha256": "003f1d48050d70e64affba6df2abdc833b90bb21860b7feda3376c932f7df143"
+      },
+      "partitions.bin": {
+        "bytes": 3072,
+        "sha256": "c1527d1a8e40ab72a8c68546a846aa3324872eb63abf5cb0a312ad64373cf7e7"
+      }
+    }
+  }
+}

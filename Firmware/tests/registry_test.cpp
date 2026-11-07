@@ -6,6 +6,9 @@
 #include <functional>
 #include <limits>
 #include <vector>
+#include <algorithm>
+#include <chrono>
+#include <deque>
 #include "sensor_registry.h"
 #include "normal_history_policy.h"
 #include "esp_heap_caps.h"
@@ -73,7 +76,108 @@ bool ConfigStore::saveLatestTelemetry(size_t, const void*, size_t) { onStorage()
 bool ConfigStore::deleteLatestTelemetry(size_t) { onStorage(); return true; }
 }
 
-int main() {
+void liveRingRegression(bool benchmark) {
+  using namespace lil::protocol;
+  for (const auto type : {EnvironmentalSensorType::kLsm6dsox,
+                         EnvironmentalSensorType::kTmp117, EnvironmentalSensorType::kMax30102}) {
+    for (auto& config : saved) config = {};
+    for (auto& history : histories) history.clear();
+    const uint8_t mac[6] = {2, 4, 6, 8, 10, 12};
+    saved[0].occupied = saved[0].provisioned = true;
+    memcpy(saved[0].mac, mac, 6); saved[0].sleepSeconds = 1;
+    saved[0].environmentalSensorType = type;
+    station::ConfigStore store;
+    station::SensorRegistry registry;
+    assert(registry.begin(store, 1));
+    const size_t interval = liveHistoryIntervalMs(type), ringCapacity = 60000 / interval + 1;
+    std::vector<station::LiveSample> output(ringCapacity + 1);
+    std::deque<station::LiveSample> expected;
+    TelemetryPayload value{};
+    value.sensorType = type; value.bootCount = 1;
+    value.capabilities = type == EnvironmentalSensorType::kLsm6dsox ? kMotion :
+        type == EnvironmentalSensorType::kTmp117 ? kTemperature : kOptical;
+    value.live.flags = kLiveTimingKnown | kLiveSampleFresh;
+    assert(!registry.liveHistory(mac, output.data(), output.size()));
+    assert(!registry.liveHistory(mac, nullptr, output.size()));
+    for (size_t i = 0; i < 2 * ringCapacity + 19; ++i) {
+      const uint64_t monotonic = uint64_t(UINT32_MAX) - 10000 + i * interval;
+      testTimeUs = int64_t(monotonic * 1000); testMillis = uint32_t(monotonic);
+      value.temperatureC = 20 + float(i) / 1000;
+      value.batteryMillivolts = 3800 + i % 100;
+      value.live.processingMs = uint16_t(i);
+      station::SensorConfig response;
+      int8_t txPower; bool duplicate; uint32_t generation;
+      assert(registry.registerTelemetry(mac, i + 1, value, -60, response, txPower, duplicate, generation));
+      expected.push_back({testMillis, value});
+      while (expected.size() > ringCapacity || testMillis - expected.front().receivedMs > 60000) expected.pop_front();
+      if (i % 97 == 0 || i + 1 == ringCapacity || i + 1 == 2 * ringCapacity) {
+        for (const size_t limit : {size_t(0), size_t(1), ringCapacity - 1, ringCapacity, ringCapacity + 1}) {
+          const size_t count = registry.liveHistory(mac, output.data(), limit);
+          assert(count == std::min(limit, expected.size()));
+          for (size_t j = 0; j < count; ++j) {
+            assert(output[j].receivedMs == expected[j].receivedMs);
+            assert(!memcmp(&output[j].telemetry, &expected[j].telemetry, sizeof(value)));
+          }
+        }
+      }
+    }
+    if (benchmark) {
+      constexpr size_t runs = 9, iterations = 1000;
+      double times[runs]; size_t checksum = 0;
+      for (size_t run = 0; run < runs; ++run) {
+        const auto start = std::chrono::steady_clock::now();
+        for (size_t i = 0; i < iterations; ++i)
+          checksum += registry.liveHistory(mac, output.data(), output.size());
+        times[run] = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count() / iterations;
+      }
+      std::sort(times, times + runs);
+      printf("Live ring host type=%u rows=%zu runs=%zu iterations=%zu median=%.6f us/read range=%.6f..%.6f checksum=%zu\n",
+             unsigned(type), expected.size(), runs, iterations, times[runs / 2], times[0], times[runs - 1], checksum);
+    }
+    testMillis += 20000; testTimeUs += 20000000;
+    while (!expected.empty() && testMillis - expected.front().receivedMs > 60000) expected.pop_front();
+    assert(registry.liveHistory(mac, output.data(), output.size()) == expected.size());
+    for (size_t j = 0; j < expected.size(); ++j) assert(output[j].receivedMs == expected[j].receivedMs);
+  }
+  puts("Live ring: all three capacities, empty/partial/full/wrapped/truncated/expired reads and millis rollover preserve exact sample order/bytes");
+}
+
+void registrationBenchmark() {
+  using namespace lil::protocol;
+  for (const auto type : {EnvironmentalSensorType::kBme280, EnvironmentalSensorType::kBme680}) {
+    for (auto& config : saved) config = {};
+    for (auto& history : histories) history.clear();
+    const uint8_t mac[6] = {2, 5, 8, 11, 14, 17};
+    saved[0].occupied = saved[0].provisioned = true;
+    memcpy(saved[0].mac, mac, 6); saved[0].environmentalSensorType = type;
+    station::ConfigStore store; station::SensorRegistry registry;
+    assert(registry.begin(store, 600));
+    TelemetryPayload value{};
+    value.sensorType = type; value.bootCount = 1; value.temperatureC = 21.5F;
+    value.capabilities = kTemperature | kIaq; value.iaqAccuracy = 2;
+    station::SensorConfig response; int8_t power; bool duplicate; uint32_t generation;
+    constexpr size_t runs = 9, iterations = 20000;
+    double times[runs]; uint32_t sequence = 0;
+    testMillis = 1000; testTimeUs = 1000000;
+    for (size_t run = 0; run < runs; ++run) {
+      const auto start = std::chrono::steady_clock::now();
+      for (size_t i = 0; i < iterations; ++i) {
+        const bool fallback = type == EnvironmentalSensorType::kBme680 && (i & 1);
+        value.flags = fallback ? kBme680RawFallback : 0; value.iaq = fallback ? 0 : 42;
+        assert(registry.registerTelemetry(mac, ++sequence, value, -60, response, power, duplicate, generation));
+        assert(!duplicate);
+      }
+      times[run] = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count() / iterations;
+    }
+    station::SensorView view; assert(registry.findView(mac, view));
+    assert(view.runtime.receivedPackets == runs * iterations && view.runtime.telemetry.iaq == 42 && view.runtime.telemetry.temperatureC == 21.5F);
+    std::sort(times, times + runs);
+    printf("Registration host type=%u runs=%zu iterations=%zu median=%.6f us/packet range=%.6f..%.6f packets=%lu\n",
+           unsigned(type), runs, iterations, times[runs / 2], times[0], times[runs - 1], static_cast<unsigned long>(sequence));
+  }
+}
+
+int main(int argc, char** argv) {
   {
     uint8_t parsed[6] = {9,9,9,9,9,9};
     assert(station::SensorRegistry::parseMac("a:BC:03:04:05:ff", parsed));
@@ -361,6 +465,21 @@ int main() {
   assert(migrated.persistTelemetry(mac, 3, telemetry, -60, generation, recent + 2400));
   count = migrated.history(mac, samples, 200);
   assert(samples[count - 1].temperatureCentiC == INT16_MIN);
+  // Even unsupported gas placeholders reach the legacy compact encoder.
+  // Bound before float-to-integer conversion; preserve ordinary truncation.
+  for (const float gas : {1234.75F, std::numeric_limits<float>::max(),
+                         -1.0F, std::numeric_limits<float>::quiet_NaN(),
+                         std::numeric_limits<float>::infinity()}) {
+    telemetry.gasResistanceOhms = gas;
+    static uint32_t gasSequence = 4;
+    const uint32_t gasTime = recent + 3000 + (gasSequence - 4) * 600;
+    assert(migrated.registerTelemetry(mac, gasSequence, telemetry, -60, response, txPower, duplicate, generation));
+    assert(migrated.persistTelemetry(mac, gasSequence++, telemetry, -60, generation, gasTime));
+    count = migrated.history(mac, samples, 200);
+    const uint32_t expectedGas = gas == 1234.75F ? 1234 :
+        gas == std::numeric_limits<float>::max() ? UINT32_MAX : 0;
+    assert(samples[count - 1].gasResistanceOhms == expectedGas);
+  }
   #pragma pack(push, 1)
   struct LegacyV2Sample {
     uint32_t timestamp; uint16_t capabilities;
@@ -457,5 +576,7 @@ int main() {
   assert(longRunning.registerTelemetry(mac, 3, longLived, -60, response, txPower, duplicate, generation));
   assert(longRunning.liveHistory(mac, motionSamples, station::kLiveCapacity) == 1);
   assert(motionSamples[0].receivedMs == testMillis && motionSamples[0].telemetry.temperatureC == 22.5F);
+  liveRingRegression(argc == 2 && !strcmp(argv[1], "--benchmark"));
+  if (argc == 2 && !strcmp(argv[1], "--benchmark")) registrationBenchmark();
   puts("Registry: radio/storage interleaving, durable settings, cloud cancellation, semantic validation and bounded history passed");
 }

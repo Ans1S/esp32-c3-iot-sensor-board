@@ -1,5 +1,38 @@
 # Firmware change inventory
 
+## 4.4.4 / 40404 - firmware efficiency release, 2026-11-07
+
+- Main/radio/OTA follow-up: finalize telemetry only at actual send, copy only
+  the compatible wire prefix, allocate OTA queues on demand with atomic
+  callback publication, reuse checked acquisition snapshots, reuse the sensor
+  sector buffer for resume hashing, prefetch station OTA reads with direct-read
+  fallbacks, and remove a full registration payload temporary. Add full-slot,
+  fault, exact-wire and operation-count checks. See
+  [the flow/transfer review](FLOW_TRANSFER_REVIEW.md) for measured scope and costs.
+
+- Follow-up MCU work preserves exact BME280 compensation while reducing
+  software-double operations; defers gyro square root to window readout;
+  copies contiguous station live-history runs; validates CRC without a payload
+  copy; and drains MAX30102 snapshots in bounded complete-frame bursts.
+  See [the MCU follow-up](MCU_OPTIMIZATION_REVIEW.md) for target machine code,
+  unchanged numerical outputs, stack/code tradeoffs and hardware acceptance.
+
+- Reuse an exact integer sliding sum for the MAX30102 centered mean. Preserve
+  float residuals, energy accumulation, pulse decisions and recording cadence.
+- Read normal-history flush verification sequentially while retaining durable
+  synchronization, exact row comparison, CRC/value checks and retryable batches.
+- Bound legacy-history gas conversion before narrowing finite extremes or
+  unavailable placeholders; retain normal integer truncation.
+- Pass packed numeric fields to ArduinoJson as values, avoiding unaligned
+  scalar references in recording, status, history and OTA JSON conversion.
+- Add numerical equivalence, file-operation/fault and unaligned-record tests,
+  reproducible source/ELF inventory tools and a scoped before/after audit.
+  See [the audit](EFFICIENCY_AUDIT.md) for evidence and hardware limitations.
+
+Release 4.4.4 packages include these changes. Earlier packages, protocol V5,
+persisted layouts, signing identity, intervals and protection thresholds remain
+unchanged. See releases/README.md for installation and validation limits.
+
 ## 4.4.3 / 40403 — station and sensor release, 2026-11-06
 
 - Read contiguous normal-history and saved-recording rows sequentially on the
