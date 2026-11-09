@@ -48,11 +48,14 @@ class Journal {
   bool clearBit(size_t page, size_t field, uint8_t slot);
   bool readHeader(size_t page, Header& header);
   bool initialize(size_t page, size_t width);
-  bool locate(size_t& page, uint8_t& slot);
+  bool locate(size_t& page, uint8_t& slot, Header& header);
+  bool reconcileAcknowledgement();
   Flash* flash_ = nullptr;
   std::vector<Page> pages_;
   uint32_t generation_ = 0, pending_ = 0;
   uint32_t lastSampleMs_ = 0;
+  size_t ackOffset_ = 0;
+  uint32_t ackBefore_ = 0, ackAfter_ = 0;
   bool fault_ = false;
 };
 }  // namespace lil::recording

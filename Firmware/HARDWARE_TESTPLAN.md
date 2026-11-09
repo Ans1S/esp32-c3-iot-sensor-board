@@ -4,6 +4,58 @@ Successful compiler builds validate interfaces and memory limits, but they do
 not replace tests on real hardware. Record each result with the date, firmware
 commit, board revision, power source and measurement equipment.
 
+## Repeatable station captures
+
+Run the same capture from the same client and network for the reference and
+the candidate. Use a new output file for each run. For a comparable history
+load, use the same test sensor and verify that the returned page contains the
+same number of points. Omit `--sensor` for a status-only run.
+
+```sh
+python Firmware/tools/capture_station_bench.py http://w-charger.local \
+  --firmware-bin /path/to/installed-station.bin --output .tools/reference.json \
+  --samples 600 --interval 1 --sensor 02:00:00:00:00:11
+```
+
+Use the actual installed application's image as the hash input. The capture
+records that supplied image's SHA-256. For a login-protected station, provide
+the existing session cookie through `WCHARGER_BENCH_COOKIE` in the local
+environment. The client issues only status and optional history GETs. It
+does not follow redirects and captures selected numeric fields only.
+
+Compare p50/p95/p99 response-header and complete-body times, request errors,
+counter changes and the internal heap minimum. Each probe opens a new HTTP
+connection. Slow rounds delay the next probe rather than causing a burst of
+catch-up requests. A missing counter, observed reboot or counter decrease
+leaves the affected delta empty. Keep separate sender-side ACK/attempt
+records and bench measurements for radio success, I²C timing and current.
+
+## Sensor radio captures
+
+Build a separate diagnostic image for each PCB revision with
+`SENSOR_DIAGNOSTIC_LOGGING=1` and `SENSOR_RADIO_BENCHMARK=1`. Use the same
+instrumentation for both firmware versions. Capture one board at a time at
+115200 baud and retain the entire capture, including failed contacts. In
+each pair of runs use the same sensor, reporting interval, channel plan,
+power source and station workload.
+
+```sh
+python Firmware/tools/summarize_radio_bench.py .tools/sensor-v4.log \
+  --pcb 4 --firmware-bin /path/to/sensor-v4-benchmark.bin \
+  --output .tools/sensor-v4-radio.json
+```
+
+Compare counts and p50/p95/p99 for each operating mode. A row represents one
+logical telemetry contact after Wi-Fi initialization. The accepted-frame
+count includes retransmissions and recovery channels that the ESP-NOW
+driver accepted for transmission. An application ACK means the sensor
+accepted the matching station configuration response. Contact timing
+includes attempts and channel recovery and ends before the diagnostic
+print. The serial run cannot account for lost log lines, initialization
+failures before contact, or whether an acknowledged sample reached flash.
+Compare the station capture and history checks for the receiver side. Use
+ordinary builds for current, charge and absolute wake-time measurements.
+
 ## 1. Station only
 
 1. For a new station, install the normal target and confirm that the

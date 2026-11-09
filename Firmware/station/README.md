@@ -1,6 +1,6 @@
 # W-Charger Station Firmware
 
-Firmware **4.4.4 / 40404** uses the existing green light/dark design and a
+The station uses the existing green light/dark design and a
 compact overview of sensor names and current readings. Click or tap anywhere
 on a sensor card for details, or anywhere on a measurement tile for that
 measurement's chart. **Arrange** saves order, visibility, spacing and column
@@ -235,11 +235,14 @@ names erased by an older station upload cannot be recovered from the node.
 Normal USB and OTA firmware updates preserve this data and the recording archive.
 
 
-## Current release and publication checks
+## Firmware changes and verification
 
-Firmware **4.4.4 / 40404** includes bounded sensor reinitialization, long-uptime
-corrections, adaptive normal history and the compact configurable dashboard.
+The **4.4.5 / 40405** source keeps ESP-NOW receive and storage work moving
+during delayed reply callbacks, reads only the requested history window and
+coalesces writes for large HTTP responses. The station also retains previously
+stored recordings when a flash read fails during an append.
 See [the complete change inventory](../CHANGELOG.md),
+[software verification](../PERFORMANCE_FOLLOWUP_2026-11-09.md),
 [release artifacts](../releases/README.md) and
 [publication review](../PUBLICATION_REVIEW.md). Build diagnostics use relative
 paths; installation keys and device data must stay local. Software tests do not

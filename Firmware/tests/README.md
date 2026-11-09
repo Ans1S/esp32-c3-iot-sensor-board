@@ -2,7 +2,7 @@
 
 The [2026-10-07 reliability review](../RELIABILITY_REVIEW.md) documents the
 current fixes, energy behavior and remaining hardware acceptance. The runner
-now includes 30 production C++ suites.
+includes 35 production C++ suites.
 
 Run from the repository root after resolving/building the sensor dependencies:
 
@@ -14,7 +14,7 @@ python Firmware/tests/test_library_patches.py
 
 Add `--sanitize` to the C++ runner for undefined-behavior, alignment and
 float-to-integer overflow checks. `--suite NAME` selects a suite and can be
-repeated; omitting it runs all 30 suites. `--benchmark` additionally runs the
+repeated; omitting it runs all 35 suites. `--benchmark` additionally runs the
 optional host benchmarks in selected `pulse_signal` and `registry` suites.
 For example:
 

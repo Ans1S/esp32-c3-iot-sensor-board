@@ -1,6 +1,7 @@
 #pragma once
 constexpr int WIFI_OFF = 0;
 constexpr int WIFI_STA = 1;
+enum wl_status_t { WL_NO_SHIELD };
 struct TestWifi {
   int currentMode = WIFI_OFF;
   unsigned shutdowns = 0;

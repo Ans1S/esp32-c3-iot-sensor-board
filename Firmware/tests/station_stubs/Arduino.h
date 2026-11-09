@@ -13,12 +13,14 @@ template <typename T, typename U> auto max(T a, U b) { return a > b ? a : b; }
 template <typename T, typename U, typename V> auto constrain(T a, U b, V c) {
   return a < b ? b : a > c ? c : a;
 }
+#if !defined(__GLIBC__) || __GLIBC__ < 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ < 38)
 inline size_t strlcpy(char* destination, const char* source, size_t capacity) {
   const size_t length = std::strlen(source);
   if (capacity) { const size_t copied = std::min(length, capacity - 1);
     std::memcpy(destination, source, copied); destination[copied] = 0; }
   return length;
 }
+#endif
 class String {
  public:
   String(const char* value = "") : value_(value) {}

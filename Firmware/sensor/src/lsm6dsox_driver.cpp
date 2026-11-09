@@ -4,9 +4,16 @@
 #include <math.h>
 
 namespace sensor {
+namespace {
+constexpr uint8_t kFifoWordBytes = 7;
+constexpr uint8_t kFifoBurstWords = 8;  // 56 bytes, within the ESP32 Wire buffer.
+constexpr float kAccelerationScale = 0.000122F;
+constexpr float kGyroscopeScale = 0.0175F;
+}
+
 void Lsm6dsoxDriver::discardWindow() {
   accelCount_ = gyroCount_ = 0;
-  for (auto& axes : sums_) for (auto& value : axes) value = 0;
+  for (auto& axes : rawSums_) for (auto& value : axes) value = 0;
   motion_ = {};
   gyroPeakSquared_ = 0;
   feedback_.restartFilter();
@@ -80,35 +87,46 @@ bool Lsm6dsoxDriver::poll() {
     }
     return !failed_;
   }
-  // Bound each drain to the FIFO snapshot; new samples wait for the next poll.
-  for (uint16_t i = 0; i < count; ++i) {
-    uint8_t data[7];
-    if (!readRegisters(0x78, data, sizeof(data))) {
+  // The LSM6DSOX wraps 0x7E back to the tag at 0x78 (ST AN5272 §4.7.1).
+  // Read complete words and drain only the original snapshot.
+  for (uint16_t remaining = count; remaining;) {
+    const uint8_t words = min(remaining, uint16_t(kFifoBurstWords));
+    uint8_t bytes[kFifoBurstWords * kFifoWordBytes];
+    if (!readRegisters(0x78, bytes, words * kFifoWordBytes)) {
+      // A short burst may already have consumed words from the FIFO.
       failed_ = true; initialized_ = false; discardWindow(); return false;
     }
-    const uint8_t tag = data[0] >> 3;
-    if (tag != 1 && tag != 2) continue;
-    float magnitudeSquared = 0;
-    for (uint8_t axis = 0; axis < 3; ++axis) {
-      const int16_t raw = static_cast<int16_t>(uint16_t(data[1 + axis * 2]) |
-                                             uint16_t(data[2 + axis * 2]) << 8);
-      const float scaled = raw * (tag == 2 ? 0.000122F : 0.0175F);
-      sums_[tag == 2 ? 0 : 1][axis] += scaled;
-      if (tag == 2) motion_.accelerationG[axis] = scaled;
-      else motion_.angularRateDps[axis] = scaled;
-      magnitudeSquared += scaled * scaled;
+    const uint32_t readAt = millis();
+    for (uint8_t i = 0; i < words; ++i) {
+      const uint8_t* data = bytes + i * kFifoWordBytes;
+      const uint8_t tag = data[0] >> 3;
+      if (tag != 1 && tag != 2) continue;
+      const bool acceleration = tag == 2;
+      const float scale = acceleration ? kAccelerationScale : kGyroscopeScale;
+      auto& rawSums = rawSums_[acceleration ? 0 : 1];
+      float magnitudeSquared = 0;
+      for (uint8_t axis = 0; axis < 3; ++axis) {
+        const int16_t raw = static_cast<int16_t>(uint16_t(data[1 + axis * 2]) |
+                                               uint16_t(data[2 + axis * 2]) << 8);
+        const float scaled = raw * scale;
+        rawSums[axis] += raw;
+        if (acceleration) motion_.accelerationG[axis] = scaled;
+        else motion_.angularRateDps[axis] = scaled;
+        magnitudeSquared += scaled * scaled;
+      }
+      if (acceleration) {
+        const float magnitude = sqrtf(magnitudeSquared);
+        feedback_.observe(magnitude);
+        motion_.peakAccelerationG = fmaxf(motion_.peakAccelerationG, magnitude);
+        ++accelCount_; lastAccelMs_ = readAt;
+      } else {
+        // sqrtf is monotonic for these finite, nonnegative inputs, so take
+        // it once at window readout.
+        gyroPeakSquared_ = fmaxf(gyroPeakSquared_, magnitudeSquared);
+        ++gyroCount_; lastGyroMs_ = readAt;
+      }
     }
-    if (tag == 2) {
-      const float magnitude = sqrtf(magnitudeSquared);
-      feedback_.observe(magnitude);
-      motion_.peakAccelerationG = fmaxf(motion_.peakAccelerationG, magnitude);
-      ++accelCount_; lastAccelMs_ = millis();
-    } else {
-      // No gyro filter needs individual magnitudes. sqrtf is monotonic for
-      // these finite, nonnegative inputs, so take it once at window readout.
-      gyroPeakSquared_ = fmaxf(gyroPeakSquared_, magnitudeSquared);
-      ++gyroCount_; lastGyroMs_ = millis();
-    }
+    remaining -= words;
   }
   return true;
 }
@@ -116,22 +134,25 @@ EnvironmentalReading Lsm6dsoxDriver::read(bool pollFirst) {
   if (pollFirst) poll();
   EnvironmentalReading result{};
   result.sensorType = lil::protocol::EnvironmentalSensorType::kLsm6dsox;
-  result.valid = initialized_ && !failed_ && accelCount_ && gyroCount_ &&
-                 millis() - lastAccelMs_ < 200 && millis() - lastGyroMs_ < 200;
+  const uint32_t now = millis();
+  const uint32_t age = max(now - lastAccelMs_, now - lastGyroMs_);
+  result.valid = initialized_ && !failed_ && accelCount_ && gyroCount_ && age < 200;
   result.motion = motion_;
   result.motion.peakAngularRateDps = gyroCount_ ? sqrtf(gyroPeakSquared_) : 0;
   result.motionFeedback = feedback_.value();
   for (uint8_t axis = 0; axis < 3; ++axis) {
-    if (accelCount_) result.motion.accelerationG[axis] = sums_[0][axis] / accelCount_;
-    if (gyroCount_) result.motion.angularRateDps[axis] = sums_[1][axis] / gyroCount_;
-    sums_[0][axis] = sums_[1][axis] = 0;
+    // Scale the exact sum at readout. The C3 has no floating-point unit;
+    // summing scaled values would use a software add for every FIFO axis.
+    if (accelCount_) result.motion.accelerationG[axis] = float(rawSums_[0][axis]) / accelCount_ * kAccelerationScale;
+    if (gyroCount_) result.motion.angularRateDps[axis] = float(rawSums_[1][axis]) / gyroCount_ * kGyroscopeScale;
+    rawSums_[0][axis] = rawSums_[1][axis] = 0;
   }
   result.live.flags = lil::protocol::kLiveTimingKnown | (result.valid ? lil::protocol::kLiveSampleFresh : 0);
   result.live.flags |= lil::protocol::kMotionFeedbackPresent;
   if (gap_ || overflow_ || failed_) result.live.flags |= lil::protocol::kLiveGap;
   result.live.samplePeriodUs = 1000000UL / lil::timing::kImuHz;
   result.live.windowMs = min(uint32_t(65534), max(accelCount_, gyroCount_) * 1000UL / lil::timing::kImuHz);
-  result.live.acquisitionAgeMs = min(uint32_t(65534), max(millis() - lastAccelMs_, millis() - lastGyroMs_));
+  result.live.acquisitionAgeMs = min(uint32_t(65534), age);
   result.motion.sampleCount = static_cast<uint16_t>(min(accelCount_, uint32_t(UINT16_MAX)));
   result.motion.fifoOverrun = overflow_;
   if (result.valid) result.capabilities = lil::protocol::kMotion;

@@ -3,6 +3,9 @@
 #include <Wire.h>
 #include <cstring>
 #include "bme280_driver.h"
+#ifndef EXPECT_BME280_MEASUREMENT_READS
+#define EXPECT_BME280_MEASUREMENT_READS 2
+#endif
 void testRadioTick() { ++testMillis; }
 bool expired = false;
 namespace sensor {
@@ -88,8 +91,12 @@ int main() {
   assert(!driver.read().valid);
   assert(driver.begin(0x76));
   assert(Wire.forcedWrites == 0); // Initialization must stay asleep.
+  const unsigned previousReads = Wire.readRequests;
   auto r = driver.read();
   assert(r.valid && Wire.forcedWrites == 1 && Wire.dataBursts == 1);
+  const unsigned measurementReads = Wire.readRequests - previousReads;
+  printf("BME280 ready conversion: %u I2C read requests\n", measurementReads);
+  assert(measurementReads == EXPECT_BME280_MEASUREMENT_READS);
   // Bosch reference T/P trimming and ADC example, double-precision results.
   assert(fabs(r.temperatureC - 25.0824779) < 0.0001);
   assert(fabs(r.pressureHpa - 1006.5326678) < 0.001);
@@ -114,6 +121,13 @@ int main() {
     Wire = BmeWire{}; assert(driver.begin(0x76));
     Wire.failRead = reg; assert(!driver.read().valid);
   }
+  Wire = BmeWire{}; assert(driver.begin(0x76));
+  Wire.conversionDurationMs = 15;
+  auto delayed = millis();
+  assert(driver.read().valid && millis() - delayed == 15);
+  Wire = BmeWire{}; assert(driver.begin(0x76));
+  Wire.finishedControl = 0x20;
+  assert(!driver.read().valid && Wire.dataBursts == 0);
   Wire = BmeWire{}; assert(driver.begin(0x76));
   Wire.failWrite = 0xF4; assert(!driver.read().valid);
   Wire.failWrite = -1; Wire.stuck = true; start = millis();

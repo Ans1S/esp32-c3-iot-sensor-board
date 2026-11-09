@@ -21,6 +21,21 @@ constexpr TickType_t kResponseCompletionWait = pdMS_TO_TICKS(80);
 // A permanently missing driver callback otherwise blocks every later reply.
 // Allow substantial flash/Wi-Fi latency before recovering the whole radio.
 constexpr uint32_t kSendStallRestartMs = 10000;
+
+bool supportedRequest(const uint8_t* data, size_t length) {
+  using namespace lil::protocol;
+  MessageType type;
+  if (length > kStationReceiveCapacity || !readPacketType(data, length, type)) return false;
+  if (type == MessageType::kTelemetry) {
+    const size_t payloadSize = length - sizeof(PacketHeader);
+    return payloadSize == sizeof(TelemetryPayload) || payloadSize == kLegacyTelemetryPayloadSize ||
+        payloadSize == kMotionTelemetryPayloadSize || payloadSize == kPrecisionTelemetryPayloadSize ||
+        payloadSize == kTimedTelemetryPayloadSize;
+  }
+  return (type == lil::recording::kStatusMessage && length == sizeof(lil::recording::StatusPacket)) ||
+      (type == lil::recording::kRecordMessage && length == sizeof(lil::recording::UploadPacket)) ||
+      (type == lil::ota::kMessageType && lil::ota::requestSizeSupported(length));
+}
 }
 
 bool EspNowGateway::begin(SensorRegistry& registry,
@@ -55,8 +70,7 @@ bool EspNowGateway::begin(SensorRegistry& registry,
 void EspNowGateway::receiveCallback(const esp_now_recv_info_t* info,
                                     const uint8_t* data, int length) {
   if (instance_ == nullptr || info == nullptr || info->src_addr == nullptr ||
-      data == nullptr || length <= 0 ||
-      length > static_cast<int>(lil::protocol::kMaxPacketSize)) {
+      !supportedRequest(data, length)) {
     if (instance_ != nullptr) {
       instance_->invalidPackets_.fetch_add(1, std::memory_order_relaxed);
     }
@@ -78,8 +92,10 @@ void EspNowGateway::receiveCallback(const esp_now_recv_info_t* info,
 void EspNowGateway::sendCallback(const wifi_tx_info_t* info,
                                  esp_now_send_status_t status) {
   (void)info;
-  (void)status;
   if (instance_ != nullptr && instance_->task_ != nullptr) {
+    if (status != ESP_NOW_SEND_SUCCESS) {
+      instance_->replyMacFailures_.fetch_add(1, std::memory_order_relaxed);
+    }
     instance_->sendGuard_.complete();
     xTaskNotifyGive(instance_->task_);
   }
@@ -163,15 +179,18 @@ void EspNowGateway::persist(const EspNowPersistenceEvent& event) {
 }
 
 void EspNowGateway::handle(const EspNowRxEvent& event) {
-  if (event.archiveReply || event.length == sizeof(lil::recording::StatusPacket) ||
-      event.length == sizeof(lil::recording::UploadPacket)) {
+  // The callback has checked the header shape and exact size for this type.
+  const auto type = static_cast<lil::protocol::MessageType>(
+      event.data[offsetof(lil::protocol::PacketHeader, type)]);
+  if (event.archiveReply || type == lil::recording::kStatusMessage ||
+      type == lil::recording::kRecordMessage) {
     SensorConfig config{};
     uint32_t generation = 0;
     if (!registry_->findConfig(event.sourceMac, config, &generation) || !config.provisioned ||
         (event.archiveReply && event.generation != generation)) return;
     lil::recording::AckPacket ack{};
     if (event.archiveReply) memcpy(&ack, event.data, sizeof(ack));
-    else if (event.length == sizeof(lil::recording::UploadPacket)) {
+    else if (type == lil::recording::kRecordMessage) {
       lil::recording::UploadPacket request{}; memcpy(&request, event.data, sizeof(request));
       if (!lil::protocol::validate(request, event.length, lil::recording::kRecordMessage) ||
           !lil::recording::valid(request.payload.record)) return;
@@ -192,63 +211,35 @@ void EspNowGateway::handle(const EspNowRxEvent& event) {
       if (now.tv_sec >= 1577836800) ack.payload.stationEpochMs = uint64_t(now.tv_sec)*1000 + now.tv_usec/1000;
       lil::protocol::finalize(ack, lil::recording::kAckMessage, request.header.sequence);
     }
-    if (sendGuard_.pending()) ulTaskNotifyTake(pdTRUE, kResponseCompletionWait);
-    if (sendGuard_.pending() || !ensurePeer(event.sourceMac)) return;
-    ulTaskNotifyTake(pdTRUE, 0); sendGuard_.start(millis());
-    if (esp_now_send(event.sourceMac, reinterpret_cast<const uint8_t*>(&ack), sizeof(ack)) == ESP_OK)
-      ulTaskNotifyTake(pdTRUE, kResponseCompletionWait);
-    else sendGuard_.complete();
+    sendResponse(event.sourceMac, &ack, sizeof(ack));
     return;
   }
-  if (event.length == sizeof(lil::ota::Packet)) {
+  if (type == lil::ota::kMessageType) {
     lil::ota::Packet request{}, response{};
-    memcpy(&request, event.data, sizeof(request));
     SensorConfig config{};
-    if (!lil::protocol::validate(request, event.length, lil::ota::kMessageType) ||
+    if (!lil::ota::decodeRequest(event.data, event.length, request) ||
         !registry_->findConfig(event.sourceMac, config) || !config.provisioned) return;
     if (sendGuard_.pending()) {
-      ulTaskNotifyTake(pdTRUE, kResponseCompletionWait);
-      if (sendGuard_.pending()) return;
+      replyBusyDrops_.fetch_add(1, std::memory_order_relaxed);
+      return;
     }
-    if (otaService.respond(event.sourceMac, request, response) && ensurePeer(event.sourceMac)) {
-      ulTaskNotifyTake(pdTRUE, 0);
-      sendGuard_.start(millis());
-      if (esp_now_send(event.sourceMac, reinterpret_cast<const uint8_t*>(&response), sizeof(response)) == ESP_OK)
-        ulTaskNotifyTake(pdTRUE, kResponseCompletionWait);
-      else sendGuard_.complete();
+    if (otaService.respond(event.sourceMac, request, response)) {
+      sendResponse(event.sourceMac, &response, sizeof(response));
     }
     return;
   }
-  const bool legacy = event.length == sizeof(lil::protocol::PacketHeader) +
-      lil::protocol::kLegacyTelemetryPayloadSize;
-  const bool motionLegacy = event.length == sizeof(lil::protocol::PacketHeader) + lil::protocol::kMotionTelemetryPayloadSize;
-  const bool precisionLegacy = event.length == sizeof(lil::protocol::PacketHeader) + lil::protocol::kPrecisionTelemetryPayloadSize;
-  const bool timedLegacy = event.length == sizeof(lil::protocol::PacketHeader) + lil::protocol::kTimedTelemetryPayloadSize;
-  if (!legacy && !motionLegacy && !precisionLegacy && !timedLegacy && event.length != sizeof(lil::protocol::TelemetryPacket)) {
-    invalidPackets_.fetch_add(1, std::memory_order_relaxed);
-    return;
-  }
-
   lil::protocol::TelemetryPacket packet{};
-  memcpy(&packet, event.data, event.length);
-  if (!lil::protocol::validatePacket(event.data, event.length,
-          lil::protocol::MessageType::kTelemetry,
-          legacy ? lil::protocol::kLegacyTelemetryPayloadSize : motionLegacy ? lil::protocol::kMotionTelemetryPayloadSize : precisionLegacy ? lil::protocol::kPrecisionTelemetryPayloadSize : timedLegacy ? lil::protocol::kTimedTelemetryPayloadSize : sizeof(packet.payload))) {
+  if (event.length > sizeof(packet) || !lil::protocol::validatePacket(event.data, event.length,
+          lil::protocol::MessageType::kTelemetry, event.length - sizeof(lil::protocol::PacketHeader))) {
     invalidPackets_.fetch_add(1, std::memory_order_relaxed);
     return;
   }
+  memcpy(&packet, event.data, event.length);
   if (!lil::protocol::validTelemetryValues(packet.payload)) {
     invalidPackets_.fetch_add(1, std::memory_order_relaxed);
     return;
   }
 
-  if (sendGuard_.pending()) {
-    ulTaskNotifyTake(pdTRUE, kResponseCompletionWait);
-    if (sendGuard_.pending()) {
-      droppedPackets_.fetch_add(1, std::memory_order_relaxed);
-      return;
-    }
-  }
   uint32_t generation = 0;
   SensorConfig responseConfig{};
   int8_t txPowerQuarterDbm = 52;
@@ -284,20 +275,7 @@ void EspNowGateway::handle(const EspNowRxEvent& event) {
                           lil::protocol::MessageType::kConfigResponse,
                           packet.header.sequence);
 
-  if (ensurePeer(event.sourceMac)) {
-    // Wait only on the mains-powered station. Flash persistence starts after
-    // the Wi-Fi task has completed the response, so filesystem latency can no
-    // longer consume the sensor's application-ack window.
-    ulTaskNotifyTake(pdTRUE, 0);
-    sendGuard_.start(millis());
-    if (esp_now_send(event.sourceMac, reinterpret_cast<uint8_t*>(&response),
-                     sizeof(response)) == ESP_OK) {
-      ulTaskNotifyTake(pdTRUE, kResponseCompletionWait);
-    } else {
-      sendGuard_.complete();
-      peerFailures_.fetch_add(1, std::memory_order_relaxed);
-    }
-  }
+  sendResponse(event.sourceMac, &response, sizeof(response));
 
   const bool liveTelemetry = lil::protocol::isLiveSensor(packet.payload.sensorType) &&
       !(packet.payload.flags & lil::protocol::kBatteryProtectionActive) &&
@@ -327,6 +305,31 @@ void EspNowGateway::handle(const EspNowRxEvent& event) {
         persistenceDrops_.fetch_add(1, std::memory_order_relaxed);
       }
     }
+  }
+}
+
+void EspNowGateway::sendResponse(const uint8_t mac[6], const void* packet, size_t size) {
+  // If the preceding send outlived its wait, keep receiving and persisting
+  // data. Sensors can retry a missing application ACK with the same sequence.
+  if (sendGuard_.pending()) {
+    replyBusyDrops_.fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+  if (!ensurePeer(mac)) return;
+  ulTaskNotifyTake(pdTRUE, 0);
+  sendGuard_.start(millis());
+  if (esp_now_send(mac, static_cast<const uint8_t*>(packet), size) != ESP_OK) {
+    sendGuard_.complete();
+    peerFailures_.fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+  // Normally finish the reply before enqueueing flash work. A stale task
+  // notification can wake this wait, so completion is always checked itself.
+  const TickType_t started = xTaskGetTickCount();
+  while (sendGuard_.pending()) {
+    const TickType_t elapsed = xTaskGetTickCount() - started;
+    if (elapsed >= kResponseCompletionWait) break;
+    ulTaskNotifyTake(pdTRUE, kResponseCompletionWait - elapsed);
   }
 }
 

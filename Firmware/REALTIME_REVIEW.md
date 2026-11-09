@@ -51,12 +51,13 @@ Watchdogs detect certain blocked interrupt and task conditions, but do not prove
 individual measurement deadlines or application progress. See the
 [ESP32-S3 watchdog documentation](https://docs.espressif.com/projects/esp-idf/en/v5.5/esp32s3/api-reference/system/wdts.html).
 
-ThingSpeak account operations still run synchronously in the web handler and
-the HTTP client reads responses into a `String`. Large or slow remote responses
-can delay web requests and consume heap; the radio and sensor acquisition use
-separate tasks. A bounded, deadline-aware response reader and asynchronous
-account requests require separate integration tests against identity and
-chunked HTTP responses before changing this behavior.
+The dashboard's ThingSpeak list and channel mutations use the cloud worker,
+leaving the web task available during the network request. The web task
+applies a confirmed mutation to the local configuration, independently of
+browser polling. The legacy API remains available in synchronous mode, where
+TLS, response headers and a pending cloud upload can still delay local web
+requests. See the
+[background mutation comparison](PERFORMANCE_FOLLOWUP_2026-11-09.md#background-thingspeak-channel-mutations).
 
 The sensor waits for its acquisition task to release the rail before battery
 protection, OTA or sleep, and restarts if cooperative waiting exceeds ten
