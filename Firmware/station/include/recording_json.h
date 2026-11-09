@@ -1,28 +1,51 @@
 #pragma once
 
+#include <algorithm>
+#include <cstring>
 #include <ArduinoJson.h>
 #include "recording_archive.h"
 
 namespace station {
-// ArduinoJson's String/std::string serializers clear their destination. A
-// writer appends instead, preserving the page header and preceding points.
+// Append directly to the response chunk. Buffer small serializer writes so
+// the chunk only needs a length update and copy once per block of JSON.
 template <typename Text>
 class JsonAppendWriter {
  public:
   explicit JsonAppendWriter(Text& text) : text_(text) {}
-  size_t write(uint8_t byte) { text_ += static_cast<char>(byte); return 1; }
+  size_t write(uint8_t byte) {
+    if (failed_) return 0;
+    buffer_[used_++] = static_cast<char>(byte);
+    return used_ != sizeof(buffer_) || flush();
+  }
   size_t write(const uint8_t* bytes, size_t size) {
-    for (size_t i = 0; i < size; ++i) write(bytes[i]);
-    return size;
+    size_t written = 0;
+    while (!failed_ && written < size) {
+      const size_t count = std::min(size - written, sizeof(buffer_) - used_);
+      memcpy(buffer_ + used_, bytes + written, count);
+      used_ += count;
+      if (used_ == sizeof(buffer_) && !flush()) break;
+      written += count;
+    }
+    return written;
+  }
+  bool flush() {
+    if (used_ != 0 && !failed_) failed_ = !text_.concat(buffer_, used_);
+    used_ = 0;
+    return !failed_;
   }
  private:
   Text& text_;
+  char buffer_[64];
+  size_t used_ = 0;
+  bool failed_ = false;
 };
 
 template <typename Text>
-void appendRecordingJson(const JsonDocument& document, Text& text) {
+bool appendJson(const JsonDocument& document, Text& text) {
+  if (document.overflowed()) return false;
   JsonAppendWriter<Text> writer(text);
   serializeJson(document, writer);
+  return writer.flush();
 }
 
 inline void recordingInfoJson(JsonObject object, const RecordingInfo& info) {
@@ -30,7 +53,8 @@ inline void recordingInfoJson(JsonObject object, const RecordingInfo& info) {
   snprintf(session, sizeof(session), "%016llx", static_cast<unsigned long long>(info.session));
   object["session"] = session; object["epochMs"] = info.epochMs;
   object["durationMs"] = info.durationMs; object["expected"] = info.expected;
-  object["stored"] = info.stored; object["complete"] = info.stored == info.expected;
+  object["stored"] = info.stored; object["complete"] = !info.readError && info.stored == info.expected;
+  if (info.readError) object["readError"] = true;
   object["sensorType"] = static_cast<uint8_t>(info.type);
   object["availableMs"] = info.availableMs;
 }

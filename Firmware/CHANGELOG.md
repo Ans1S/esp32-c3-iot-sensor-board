@@ -1,5 +1,20 @@
 # Firmware change inventory
 
+## 4.4.5 / 40405 - station and sensor efficiency, 2026-11-09
+
+- Reuse discovery frames across channels, wait for send completion by
+  notification and separate station reply dispatch from receive and
+  persistence work. Preserve sequence matching and lost-ACK replay.
+- Reduce MAX30102 autocorrelation work and battery ADC waits. Invalidate stale
+  TMP117 data on I²C failures and wait for a fresh conversion after recovery.
+- Stop history reads at the requested snapshot window, use the full pending
+  capacity after a sensor type change and preserve archive rows on transient
+  I/O errors. Keep OTA state and recording recovery bounded on failure.
+- Coalesce streamed dashboard responses, copy only the new live sample suffix
+  and expire ThingSpeak jobs with a single queue pass.
+- Preserve ESP-NOW protocol V5 and existing partition and data formats. See
+  [software tests, target builds and machine-code comparisons](PERFORMANCE_FOLLOWUP_2026-11-09.md).
+
 ## 4.4.4 / 40404 - firmware efficiency release, 2026-11-07
 
 - Main/radio/OTA follow-up: finalize telemetry only at actual send, copy only

@@ -23,6 +23,7 @@ bool Journal::clearBit(size_t page, size_t field, uint8_t slot) {
 }
 bool Journal::begin(Flash& flash, uint64_t sessionFilter) {
   flash_ = &flash; fault_ = false; pending_ = generation_ = lastSampleMs_ = 0;
+  ackOffset_ = 0;
   pages_.assign(flash.bytes() / kPageBytes, {});
   if (pages_.empty()) return false;
   for (size_t page = 0; page < pages_.size(); ++page) {
@@ -125,12 +126,26 @@ bool Journal::append(const Record& record) {
   }
   ++page.pending; ++pending_; lastSampleMs_ = record.sampleMs; return true;
 }
-bool Journal::locate(size_t& page, uint8_t& slot) {
+bool Journal::reconcileAcknowledgement() {
+  if (!ackOffset_) return true;
+  uint32_t word;
+  if (!flash_->read(ackOffset_, &word, sizeof(word))) return false;
+  if (word == ackAfter_) {
+    --pages_[ackOffset_ / kPageBytes].pending;
+    --pending_;
+  } else if (word != ackBefore_) {
+    fault_ = true;
+    return false;
+  }
+  ackOffset_ = 0;
+  return true;
+}
+bool Journal::locate(size_t& page, uint8_t& slot, Header& header) {
+  if (!reconcileAcknowledgement()) return false;
   page = pages_.size(); uint32_t oldest = UINT32_MAX;
   for (size_t i = 0; i < pages_.size(); ++i)
     if (pages_[i].pending && pages_[i].generation < oldest) { page = i; oldest = pages_[i].generation; }
   if (page == pages_.size()) return false;
-  Header header;
   if (!readHeader(page, header)) { fault_ = true; return false; }
   for (slot = 0; slot < pages_[page].next; ++slot)
     if (!bit(header.committed, slot) && bit(header.acknowledged, slot)) return true;
@@ -138,15 +153,17 @@ bool Journal::locate(size_t& page, uint8_t& slot) {
 }
 bool Journal::peek(Record& record) {
   size_t page; uint8_t slot;
+  Header header;
   record = {};
-  if (!locate(page, slot)) return false;
+  if (!locate(page, slot, header)) return false;
   if (!flash_->read(page * kPageBytes + kHeaderBytes + slot * pages_[page].width, &record, pages_[page].width) ||
       size(record.type) != pages_[page].width || !valid(record)) { fault_ = true; return false; }
   return true;
 }
 bool Journal::acknowledge(const Record& record) {
   size_t page; uint8_t slot;
-  if (!locate(page, slot)) return false;
+  Header header;
+  if (!locate(page, slot, header)) return false;
   Record oldest{};
   if (!flash_->read(page * kPageBytes + kHeaderBytes + slot * pages_[page].width,
                     &oldest, pages_[page].width) ||
@@ -154,8 +171,15 @@ bool Journal::acknowledge(const Record& record) {
     fault_ = true; return false;
   }
   if (record.session != oldest.session || record.sampleMs != oldest.sampleMs ||
-      checksum(record) != checksum(oldest) ||
-      !clearBit(page, offsetof(Header, acknowledged), slot)) return false;
-  --pages_[page].pending; --pending_; return true;
+      checksum(record) != checksum(oldest)) return false;
+  const size_t wordOffset = (slot / 32) * sizeof(uint32_t);
+  memcpy(&ackBefore_, header.acknowledged + wordOffset, sizeof(ackBefore_));
+  ackAfter_ = ackBefore_ & ~(uint32_t(1) << (slot % 32));
+  ackOffset_ = page * kPageBytes + offsetof(Header, acknowledged) + wordOffset;
+  const uint32_t before = pending_;
+  // The bit can reach flash even if the write or its readback reports an
+  // error. Resolve that word before advancing to another record.
+  flash_->write(ackOffset_, &ackAfter_, sizeof(ackAfter_));
+  return reconcileAcknowledgement() && pending_ < before;
 }
 }  // namespace lil::recording

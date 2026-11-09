@@ -33,7 +33,10 @@ class String {
  private:
   std::string value_;
 };
-struct SerialStub { template<typename... Args> void printf(const char*, Args...) {} };
+struct SerialStub {
+  template<typename... Args> void printf(const char*, Args...) {}
+  void println(const char*) {}
+};
 inline SerialStub Serial;
 inline uint32_t testMillis = 100;
 inline uint32_t millis() { return testMillis; }

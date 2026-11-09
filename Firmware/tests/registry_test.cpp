@@ -119,6 +119,15 @@ void liveRingRegression(bool benchmark) {
             assert(!memcmp(&output[j].telemetry, &expected[j].telemetry, sizeof(value)));
           }
         }
+        const size_t cursorPosition = expected.size() / 2;
+        const uint32_t cursor = expected[cursorPosition].receivedMs;
+        const size_t count = registry.liveHistory(mac, output.data(), output.size(), &cursor);
+        assert(count == expected.size() - cursorPosition - 1);
+        for (size_t j = 0; j < count; ++j) {
+          const auto& row = expected[cursorPosition + j + 1];
+          assert(output[j].receivedMs == row.receivedMs);
+          assert(!memcmp(&output[j].telemetry, &row.telemetry, sizeof(value)));
+        }
       }
     }
     if (benchmark) {

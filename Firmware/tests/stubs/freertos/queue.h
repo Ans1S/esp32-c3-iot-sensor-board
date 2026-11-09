@@ -8,6 +8,7 @@ struct TestQueue { size_t capacity, itemSize; std::deque<std::vector<uint8_t>> d
 using QueueHandle_t = TestQueue*;
 inline size_t testQueueCreates = 0, testQueueCreateFailAt = 0;
 inline size_t testQueueDataBytes = 0;
+inline size_t testQueueTimedReceives = 0;
 inline QueueHandle_t xQueueCreate(size_t capacity, size_t itemSize) {
   if (++testQueueCreates == testQueueCreateFailAt) return nullptr;
   testQueueDataBytes += capacity * itemSize;
@@ -20,6 +21,7 @@ inline bool xQueueSend(QueueHandle_t queue, const void* item, TickType_t) {
   return true;
 }
 inline bool xQueueReceive(QueueHandle_t queue, void* item, TickType_t wait) {
+  if (wait != 0) ++testQueueTimedReceives;
   while (queue->data.empty() && wait-- > 0) testRadioTick();
   if (queue->data.empty()) return false;
   memcpy(item, queue->data.front().data(), queue->itemSize);

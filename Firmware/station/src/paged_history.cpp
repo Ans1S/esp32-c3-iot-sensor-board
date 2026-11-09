@@ -19,6 +19,10 @@ PagedHistory pagedHistory;
 namespace {
 constexpr uint32_t kMagic = 0x32545348;
 constexpr uint8_t kEnvironment = 1, kTemperature = 2, kMotion = 3;
+constexpr uint16_t kMaxRowWidth = 64;
+constexpr size_t kReadBatchRows = 8;
+constexpr size_t kHistoryFilenameLength = sizeof("hist2-000000000000-00000000.bin") - 1;
+constexpr size_t kHistoryPathCapacity = sizeof(NORMAL_HISTORY_MOUNT_PATH) + 1 + kHistoryFilenameLength;
 #pragma pack(push, 1)
 struct Header {
   uint32_t magic = kMagic;
@@ -36,13 +40,38 @@ struct Guard {
   explicit Guard(SemaphoreHandle_t value) : mutex(value) { xSemaphoreTake(mutex, portMAX_DELAY); }
   ~Guard() { xSemaphoreGive(mutex); }
 };
+class PageRows {
+ public:
+  PageRows(FILE* file, uint16_t width, size_t rows)
+      : file_(file), remaining_(rows), width_(width) {}
+
+  const uint8_t* next() {
+    if (offset_ == available_) {
+      if (remaining_ == 0) return nullptr;
+      const size_t requested = std::min(remaining_, kReadBatchRows);
+      available_ = fread(bytes_, width_, requested, file_);
+      offset_ = 0;
+      // Consume the complete prefix of a short batch without retrying a torn
+      // row. The caller decides whether an early end is a read error.
+      remaining_ = available_ == requested ? remaining_ - requested : 0;
+      if (available_ == 0) return nullptr;
+    }
+    return bytes_ + offset_++ * width_;
+  }
+
+ private:
+  FILE* file_;
+  size_t remaining_, offset_ = 0, available_ = 0;
+  uint16_t width_;
+  uint8_t bytes_[kReadBatchRows * kMaxRowWidth];
+};
 uint8_t kindFor(lil::protocol::EnvironmentalSensorType type) {
   return type == lil::protocol::EnvironmentalSensorType::kTmp117 ? kTemperature :
     type == lil::protocol::EnvironmentalSensorType::kLsm6dsox ? kMotion : kEnvironment;
 }
-uint16_t widthFor(uint8_t kind) { return kind == kEnvironment ? 44 : kind == kTemperature ? 32 : kind == kMotion ? 64 : 0; }
-void pathFor(const uint8_t mac[6], uint32_t generation, char* path, size_t length) {
-  snprintf(path, length, NORMAL_HISTORY_MOUNT_PATH "/hist2-%02x%02x%02x%02x%02x%02x-%08lx.bin",
+uint16_t widthFor(uint8_t kind) { return kind == kEnvironment ? 44 : kind == kTemperature ? 32 : kind == kMotion ? kMaxRowWidth : 0; }
+void pathFor(const uint8_t mac[6], uint32_t generation, char (&path)[kHistoryPathCapacity]) {
+  snprintf(path, sizeof(path), NORMAL_HISTORY_MOUNT_PATH "/hist2-%02x%02x%02x%02x%02x%02x-%08lx.bin",
     mac[0],mac[1],mac[2],mac[3],mac[4],mac[5],static_cast<unsigned long>(generation));
 }
 bool validHeader(const Header& h) {
@@ -100,16 +129,18 @@ bool PagedHistory::begin(bool mounted) {
   DIR* directory=opendir(NORMAL_HISTORY_MOUNT_PATH);
   if (!directory) { mounted_=false; return true; }
   while (auto* entry=readdir(directory)) {
-    if (strncmp(entry->d_name,"hist2-",6) || strlen(entry->d_name)!=31 || strcmp(entry->d_name+27,".bin")) continue;
-    char path[384]; snprintf(path,sizeof(path),NORMAL_HISTORY_MOUNT_PATH "/%s",entry->d_name);
+    if (strncmp(entry->d_name,"hist2-",6) || strlen(entry->d_name)!=kHistoryFilenameLength ||
+        strcmp(entry->d_name+kHistoryFilenameLength-4,".bin")) continue;
+    char path[kHistoryPathCapacity];
+    snprintf(path, sizeof(path), NORMAL_HISTORY_MOUNT_PATH "/%.*s", int(kHistoryFilenameLength), entry->d_name);
     FILE* file=fopen(path,"rb"); if (!file) continue;
     Header h{}; const bool headerOk=fread(&h,1,sizeof(h),file)==sizeof(h)&&validHeader(h);
-    char expected[384]; if (headerOk) pathFor(h.mac,h.generation,expected,sizeof(expected));
+    char expected[kHistoryPathCapacity]; if (headerOk) pathFor(h.mac,h.generation,expected);
     if (!headerOk || strcmp(expected,path) || pageCount_==kMaxPages) { fclose(file); continue; }
     Page page{}; memcpy(page.mac,h.mac,6);page.generation=h.generation;page.interval=h.interval;page.width=h.width;page.kind=h.kind;
-    uint8_t row[128];NormalHistoryPoint point{};
-    const size_t capacity=(kPageBytes-kHeaderBytes)/h.width;
-    while (page.count<capacity&&fread(row,1,h.width,file)==h.width) {
+    NormalHistoryPoint point{};
+    PageRows rows(file, h.width, (kPageBytes - kHeaderBytes) / h.width);
+    while (const auto* row = rows.next()) {
       if (!decode(row,h.kind,point) || (page.last&&point.timestamp<=page.last)) break;
       if (!page.first) page.first=point.timestamp;
       page.last=point.timestamp;++page.count;
@@ -137,8 +168,10 @@ void PagedHistory::configure(const SensorConfig* configs,size_t count) {
       n.enabled=true;memcpy(n.mac,c.mac,6);
       // Keep the interval associated with buffered rows until they are flushed.
       if (!n.pending) n.interval=c.sleepSeconds;
-      if (restored) for(size_t j=0;j<pageCount_;++j)
-        if(!memcmp(pages_[j].mac,n.mac,6))n.lastTimestamp=std::max(n.lastTimestamp,pages_[j].last);
+      if (restored) {
+        rebuildDurable(n);
+        n.lastTimestamp = n.durableNewest;
+      }
     }
   }
   size_t active=0;for(const auto& n:nodes_)if(n.enabled)++active;
@@ -163,11 +196,44 @@ bool PagedHistory::appendLegacy(const uint8_t mac[6],const HistorySample& sample
   NormalHistoryPoint point{};return decode(reinterpret_cast<const uint8_t*>(&row),kEnvironment,point)&&append(mac,point.timestamp,point.telemetry,interval,true);
 }
 size_t PagedHistory::pagesFor(const uint8_t mac[6]) const {size_t count=0;for(size_t i=0;i<pageCount_;++i)if(!memcmp(pages_[i].mac,mac,6))++count;return count;}
+size_t PagedHistory::largestHistoryVictim() const {
+  static_assert(kMaxPages <= size_t(UINT8_MAX) + 1);
+  // Sort indices only. The page array stays in generation order and includes
+  // files of retired sensors that no longer have a configured node.
+  std::array<uint8_t, kMaxPages> byOwner;
+  for (size_t i = 0; i < pageCount_; ++i) byOwner[i] = static_cast<uint8_t>(i);
+  std::sort(byOwner.begin(), byOwner.begin() + pageCount_, [this](uint8_t a, uint8_t b) {
+    return memcmp(pages_[a].mac, pages_[b].mac, 6) < 0;
+  });
+
+  size_t chosen = pageCount_;
+  size_t largest = 0;
+  for (size_t first = 0; first < pageCount_;) {
+    const auto* mac = pages_[byOwner[first]].mac;
+    uint8_t oldest = byOwner[first];
+    size_t end = first + 1;
+    for (; end < pageCount_ && !memcmp(pages_[byOwner[end]].mac, mac, 6); ++end)
+      oldest = std::min(oldest, byOwner[end]);
+    const size_t count = end - first;
+    if (count > largest || (count == largest && oldest < chosen)) {
+      largest = count;
+      chosen = oldest;
+    }
+    first = end;
+  }
+  return chosen;
+}
+
 bool PagedHistory::erasePage(size_t index){
   if(index>=pageCount_)return false;
-  char path[384];pathFor(pages_[index].mac,pages_[index].generation,path,sizeof(path));
+  char path[kHistoryPathCapacity];pathFor(pages_[index].mac,pages_[index].generation,path);
   if(::remove(path))return false;
-  const int owner=nodeIndex(pages_[index].mac);if(owner>=0&&++nodes_[owner].revision==0)++nodes_[owner].revision;
+  const int owner = nodeIndex(pages_[index].mac);
+  if (owner >= 0) {
+    auto& node = nodes_[owner];
+    node.durableStale = true;
+    if (++node.revision == 0) ++node.revision;
+  }
   for(size_t i=index+1;i<pageCount_;++i)pages_[i-1]=pages_[i];
   --pageCount_;return true;
 }
@@ -175,9 +241,7 @@ bool PagedHistory::makeSpace(const uint8_t mac[6],bool newPage){
   const size_t quota=quotaPages();if(!quota)return false;
   while(newPage&&pagesFor(mac)>=quota){size_t i=0;while(i<pageCount_&&memcmp(pages_[i].mac,mac,6))++i;if(!erasePage(i))return false;}
   while(pageCount_>=kMaxPages || rawFreeBytes()<historyWorkspaceReserve()+2*kPageBytes){
-    size_t chosen=pageCount_;size_t largest=0;
-    for(size_t i=0;i<pageCount_;++i){const size_t count=pagesFor(pages_[i].mac);if(count>largest){largest=count;chosen=i;}}
-    if(chosen==pageCount_||!erasePage(chosen))return false;
+    if (!erasePage(largestHistoryVictim())) return false;
   }
   return true;
 }
@@ -192,23 +256,28 @@ bool PagedHistory::append(const uint8_t mac[6],uint32_t timestamp,const lil::pro
     const size_t bytes=kPageBytes-kHeaderBytes;
     if(heap_caps_get_free_size(MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)>bytes+1024U*1024U)
       n.buffer=static_cast<uint8_t*>(heap_caps_calloc(bytes,1,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
-    if(n.buffer)n.bufferRows=bytes/width;
+    if(n.buffer)n.bufferBytes=bytes;
     else if(heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT)>128U*1024U+8*64){
-      n.buffer=static_cast<uint8_t*>(heap_caps_calloc(8*64,1,MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));n.bufferRows=n.buffer?8:0;
+      n.buffer=static_cast<uint8_t*>(heap_caps_calloc(8*64,1,MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
+      if(n.buffer)n.bufferBytes=8*64;
     }
     if(!n.buffer){n.writeFailed=true;++n.dropped;return false;}
   }
-  // A type change may need wider rows in an existing buffer.
-  n.bufferRows=std::min<uint16_t>(n.bufferRows,(kPageBytes-kHeaderBytes)/width);
-  if(n.pending>=n.bufferRows&&!flushNode(n)){++n.dropped;return false;}
+  // Recalculate from the allocation so narrower rows recover the full PSRAM
+  // capacity after a type change. Keep internal-RAM writes at eight rows.
+  const size_t bufferRows = n.bufferBytes == kPageBytes-kHeaderBytes ? n.bufferBytes/width : 8;
+  if(n.pending>=bufferRows&&!flushNode(n)){++n.dropped;return false;}
   uint8_t* output=n.buffer+size_t(n.pending)*width;
-  auto validTelemetry=telemetry;
-  if(telemetry.flags&lil::protocol::kBatteryReadFailed)validTelemetry.capabilities&=~lil::protocol::kBattery;
-  if(kind==kEnvironment){EnvironmentRow row{};encodeEnvironment(row,timestamp,validTelemetry);memcpy(output,&row,sizeof(row));}
-  else {const auto record=lil::recording::encode(1,timestamp,validTelemetry);memcpy(output,&record,width);}
+  if(kind==kEnvironment){EnvironmentRow row{};encodeEnvironment(row,timestamp,telemetry);memcpy(output,&row,sizeof(row));}
+  else {
+    auto validTelemetry=telemetry;
+    if(telemetry.flags&lil::protocol::kBatteryReadFailed)validTelemetry.capabilities&=~lil::protocol::kBattery;
+    const auto record=lil::recording::encode(1,timestamp,validTelemetry);
+    memcpy(output,&record,width);
+  }
   if(!n.pending)n.startedMs=millis();
   ++n.pending;n.lastTimestamp=timestamp;if(++n.revision==0)++n.revision;
-  if(n.pending==n.bufferRows||(!batchImport&&interval>=60))return flushNode(n);
+  if(n.pending==bufferRows||(!batchImport&&interval>=60))return flushNode(n);
   return true;
 }
 bool PagedHistory::flushNode(Node& n){
@@ -223,7 +292,7 @@ bool PagedHistory::flushNode(Node& n){
     if(index==pageCount_){
       if(!makeSpace(n.mac,true)||generation_==UINT32_MAX){n.writeFailed=true;return false;}
       Page p{};memcpy(p.mac,n.mac,6);p.width=n.width;p.kind=n.kind;p.interval=n.interval;p.generation=++generation_;
-      char path[384];pathFor(p.mac,p.generation,path,sizeof(path));FILE* file=fopen(path,"wb");if(!file){n.writeFailed=true;return false;}
+      char path[kHistoryPathCapacity];pathFor(p.mac,p.generation,path);FILE* file=fopen(path,"wb");if(!file){n.writeFailed=true;return false;}
       Header h{};memcpy(h.mac,p.mac,6);h.width=p.width;h.kind=p.kind;h.interval=p.interval;h.generation=p.generation;
       h.crc=lil::protocol::crc32(reinterpret_cast<const uint8_t*>(&h),offsetof(Header,crc));
       const bool ok=fwrite(&h,1,sizeof(h),file)==sizeof(h)&&!fflush(file)&&!fsync(fileno(file));
@@ -236,19 +305,25 @@ bool PagedHistory::flushNode(Node& n){
       continue;
     }
     auto& page=pages_[index];const size_t count=std::min<size_t>(n.pending,(kPageBytes-kHeaderBytes)/n.width-page.count);
-    const size_t position=kHeaderBytes+size_t(page.count)*n.width;char path[384];pathFor(page.mac,page.generation,path,sizeof(path));
+    const size_t position=kHeaderBytes+size_t(page.count)*n.width;char path[kHistoryPathCapacity];pathFor(page.mac,page.generation,path);
     FILE* file=fopen(path,"r+b");if(!file){n.writeFailed=true;return false;}
     bool ok=!ftruncate(fileno(file),position)&&!fseek(file,position,SEEK_SET)&&
       fwrite(n.buffer,n.width,count,file)==count&&!fflush(file)&&!fsync(fileno(file));
-    uint8_t check[128];NormalHistoryPoint point{};
+    NormalHistoryPoint point{};
+    uint32_t firstTimestamp = 0;
     // Read back the contiguous batch sequentially after the durable flush.
     // Every row still requires exact bytes and successful CRC/value checks.
     if(ok)ok=!fseek(file,position,SEEK_SET);
-    for(size_t i=0;ok&&i<count;++i)ok=fread(check,1,n.width,file)==n.width&&
-      !memcmp(check,n.buffer+i*n.width,n.width)&&decode(check,n.kind,point);
+    PageRows rows(file, n.width, count);
+    for (size_t i = 0; ok && i < count; ++i) {
+      const auto* row = rows.next();
+      ok = row && !memcmp(row, n.buffer + i*n.width, n.width) && decode(row, n.kind, point);
+      if (ok && i == 0) firstTimestamp = point.timestamp;
+    }
     const bool closed=fclose(file)==0;if(!ok||!closed){n.writeFailed=true;return false;}
-    NormalHistoryPoint first{};decode(n.buffer,n.kind,first);if(!page.count)page.first=first.timestamp;
+    if(!page.count)page.first=firstTimestamp;
     page.last=point.timestamp;page.count+=count;n.pending-=count;
+    if (!n.durableStale) includeDurable(n, page, count);
     memmove(n.buffer,n.buffer+count*n.width,size_t(n.pending)*n.width);
   }
   n.writeFailed=false;return true;
@@ -273,11 +348,29 @@ bool PagedHistory::clear(const uint8_t mac[6]){
   const int index=nodeIndex(mac);if(index>=0){auto& n=nodes_[index];n.pending=0;n.lastTimestamp=0;n.writeFailed=false;if(++n.revision==0)++n.revision;}
   return true;
 }
-NormalHistoryInfo PagedHistory::infoLocked(const Node& n)const{
+void PagedHistory::includeDurable(Node& node, const Page& page, size_t points) {
+  if (!points) return;
+  node.durablePoints += points;
+  if (!node.durableOldest || page.first < node.durableOldest) node.durableOldest = page.first;
+  node.durableNewest = std::max(node.durableNewest, page.last);
+}
+
+void PagedHistory::rebuildDurable(Node& node) const {
+  node.durablePoints = node.durableOldest = node.durableNewest = 0;
+  for (size_t i = 0; i < pageCount_; ++i) {
+    const auto& page = pages_[i];
+    if (!memcmp(page.mac, node.mac, 6)) includeDurable(node, page, page.count);
+  }
+  node.durableStale = false;
+}
+
+NormalHistoryInfo PagedHistory::infoLocked(Node& n)const{
+  if (n.durableStale) rebuildDurable(n);
   NormalHistoryInfo info{};info.available=mounted_;info.revision=n.revision;info.pendingPoints=n.pending;info.intervalSeconds=n.interval;
   info.dropped=n.dropped;info.writeFailed=n.writeFailed;
-  for(size_t i=0;i<pageCount_;++i)if(!memcmp(pages_[i].mac,n.mac,6)){const auto& p=pages_[i];info.durablePoints+=p.count;
-    if(p.count){if(!info.oldest||p.first<info.oldest)info.oldest=p.first;info.newest=std::max(info.newest,p.last);}}
+  info.durablePoints = n.durablePoints;
+  info.oldest = n.durableOldest;
+  info.newest = n.durableNewest;
   if(n.pending){NormalHistoryPoint p{};if(decode(n.buffer,n.kind,p)){if(!info.oldest||p.timestamp<info.oldest)info.oldest=p.timestamp;}info.newest=n.lastTimestamp;}
   info.points=info.durablePoints+n.pending;
   info.capacityPoints=cachedQuota_*((kPageBytes-kHeaderBytes)/(n.width?n.width:44));return info;
@@ -285,18 +378,26 @@ NormalHistoryInfo PagedHistory::infoLocked(const Node& n)const{
 NormalHistoryInfo PagedHistory::info(const uint8_t mac[6]){if(!mutex_)return {};Guard lock(mutex_);const int i=nodeIndex(mac);return i<0?NormalHistoryInfo{}:infoLocked(nodes_[i]);}
 size_t PagedHistory::read(const uint8_t mac[6],uint32_t after,uint32_t until,uint32_t oldest,NormalHistoryPoint* output,size_t capacity,bool& stale,bool& error){
   stale=error=false;if(!mutex_||!output)return 0;Guard lock(mutex_);FilesystemGuard fs;
-  const int index=nodeIndex(mac);if(index<0)return 0;const auto& n=nodes_[index];const auto info=infoLocked(n);
+  const int index=nodeIndex(mac);if(index<0)return 0;auto& n=nodes_[index];const auto info=infoLocked(n);
   if(oldest&&info.oldest>oldest){stale=true;return 0;}if(!until)until=info.newest;
-  size_t copied=0;uint8_t bytes[128];NormalHistoryPoint p{};
+  size_t copied=0;NormalHistoryPoint p{};
   for(size_t i=0;i<pageCount_&&copied<capacity;++i){const auto& page=pages_[i];if(memcmp(page.mac,mac,6)||page.last<=after||page.first>until)continue;
-    char path[384];pathFor(page.mac,page.generation,path,sizeof(path));FILE* file=fopen(path,"rb");if(!file){error=true;break;}
+    char path[kHistoryPathCapacity];pathFor(page.mac,page.generation,path);FILE* file=fopen(path,"rb");if(!file){error=true;break;}
     if(fseek(file,kHeaderBytes,SEEK_SET)){fclose(file);error=true;break;}
+    PageRows rows(file, page.width, page.count);
     for(size_t row=0;row<page.count&&copied<capacity;++row){
-      if(fread(bytes,1,page.width,file)!=page.width||!decode(bytes,page.kind,p)){error=true;break;}
+      const auto* bytes = rows.next();
+      if (!bytes || !decode(bytes, page.kind, p)) { error=true; break; }
       if(p.timestamp>after&&p.timestamp<=until)output[copied++]=p;
+      // Committed rows within a page are strictly chronological.
+      if(p.timestamp>=until)break;
     }fclose(file);if(error)break;
   }
-  for(size_t i=0;i<n.pending&&copied<capacity;++i){if(!decode(n.buffer+i*n.width,n.kind,p)){error=true;break;}if(p.timestamp>after&&p.timestamp<=until)output[copied++]=p;}
+  for(size_t i=0;!error&&i<n.pending&&copied<capacity;++i){
+    if(!decode(n.buffer+i*n.width,n.kind,p)){error=true;break;}
+    if(p.timestamp>after&&p.timestamp<=until)output[copied++]=p;
+    if(p.timestamp>=until)break;
+  }
   return copied;
 }
 }

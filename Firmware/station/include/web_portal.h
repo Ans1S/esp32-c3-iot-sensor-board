@@ -62,6 +62,21 @@ class WebPortal {
   void deleteChannelProfile();
   void createThingSpeakChannel();
   void listThingSpeakChannels();
+  void startThingSpeakChannelList();
+  void sendThingSpeakChannels(const ThingSpeakApiResult& result);
+  bool thingSpeakJobOwner(String& owner);
+  void sendThingSpeakTicket(uint32_t ticket);
+  void pollThingSpeakMutation();
+  void runThingSpeakMutation(ThingSpeakAccountJob::Request request);
+  void finishThingSpeakMutation();
+  void sendThingSpeakMutation(const ThingSpeakMutationResult& result, bool polled = false);
+  ThingSpeakMutationResult applyThingSpeakMutation(const ThingSpeakAccountJob::Request& request,
+                                                   const ThingSpeakApiResult& result);
+  ThingSpeakMutationResult importThingSpeakChannel(const ThingSpeakAccountJob::Request& request,
+                                                   const ThingSpeakApiResult& result);
+  ThingSpeakMutationResult applyThingSpeakUpdate(const ThingSpeakAccountJob::Request& request,
+                                                 const ThingSpeakApiResult& result);
+  ThingSpeakMutationResult applyThingSpeakDelete(uint32_t channelId);
   void createManagedThingSpeakChannel();
   void updateManagedThingSpeakChannel();
   void clearManagedThingSpeakChannel();
@@ -84,6 +99,7 @@ class WebPortal {
   EspNowGateway* gateway_ = nullptr;
   lil::timing::RetryBackoff restartDelay_{};
   bool restartPending_ = false;
+  uint32_t configResetGeneration_ = 0;
   AuthSession authSessions_[4]{};
   LoginThrottle loginThrottle_{};
   char csrfToken_[33]{};

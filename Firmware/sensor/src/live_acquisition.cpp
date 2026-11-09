@@ -95,14 +95,17 @@ void LiveAcquisition::loop() {
       now = millis(); active_.store(true); lastReport = now; failures = 0;
       if (!sessionStarted) sessionStarted = lastReport;
     }
-    sensor_->pollLive();
+    const bool motion = type_ == lil::protocol::EnvironmentalSensorType::kLsm6dsox;
     const bool temperature = type_ == lil::protocol::EnvironmentalSensorType::kTmp117;
-    const uint32_t interval = type_ == lil::protocol::EnvironmentalSensorType::kLsm6dsox ?
+    const uint32_t interval = motion ?
         (normal ? lil::timing::kImuReportMs : lil::timing::imuRecordingIntervalMs(now - sessionStarted)) :
-        lil::protocol::liveReportIntervalMs(type_);
-    if (temperature ? (!sensor_->freshTemperature() && now - lastReport < 1500) :
-        now - lastReport < interval) { delay(5); continue; }
-    lastReport = millis();
+        (temperature ? 1500 : lil::protocol::liveReportIntervalMs(type_));
+    const bool reportDue = now - lastReport >= interval;
+    // At 104 Hz per sensor a 100 ms report window fills at most 22 of the
+    // LSM6DSOX's 512 FIFO words. Keep the fast button loop, drain at report time.
+    if (!motion || reportDue) sensor_->pollLive();
+    if (!reportDue && !(temperature && sensor_->freshTemperature())) { delay(5); continue; }
+    lastReport = motion ? now : millis();
     // pollLive() just drained/checked the driver under this task's ownership.
     // Read that snapshot without issuing a second status/FIFO transaction.
     LiveCapture capture{}; capture.reading = sensor_->read(false);

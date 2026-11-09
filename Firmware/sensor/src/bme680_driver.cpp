@@ -323,11 +323,13 @@ EnvironmentalReading Bme680Driver::readBsec() {
       return reading;
     }
     const int64_t nextCallNs = bsec_.getNextCallNs();
-    if (nextCallNs > 0) {
+    // Round the absolute schedule once. Subtracting an integer millisecond
+    // time afterwards gives the same ceiling for the remaining delay.
+    const uint64_t nextCallMs = nextCallNs > 0 ?
+        (static_cast<uint64_t>(nextCallNs) + 999999ULL) / 1000000ULL : 0;
+    if (nextCallMs != 0) {
       scheduleUpdated_ = true;
-      rtcBsecState.nextBsecCallLogicalMs =
-          static_cast<uint64_t>(nextCallNs / 1000000LL) +
-          (nextCallNs % 1000000LL != 0);
+      rtcBsecState.nextBsecCallLogicalMs = nextCallMs;
     }
     if (bsec_.status > BSEC_OK || bsec_.sensor.status > BME68X_OK) {
       SENSOR_LOG_PRINTF("[BME680] BSEC warning %d, sensor warning %d\n",
@@ -365,18 +367,15 @@ EnvironmentalReading Bme680Driver::readBsec() {
     // output.  Poll for a bounded time while the rail is still powered.
     uint32_t waitMs = kBsecOutputPollMs;
     const int64_t nowMs = bsec_.getTimeMs();
-    if (nowMs >= 0 && nowMs <= INT64_MAX / 1000000LL &&
-        nextCallNs > nowMs * 1000000LL) {
-      const int64_t remainingNs = nextCallNs - nowMs * 1000000LL;
-      const uint64_t untilNextMs = static_cast<uint64_t>(remainingNs / 1000000LL) +
-          (remainingNs % 1000000LL != 0);
+    if (nowMs >= 0 && nextCallMs > static_cast<uint64_t>(nowMs)) {
+      const uint64_t untilNextMs = nextCallMs - static_cast<uint64_t>(nowMs);
       if (untilNextMs > kBsecOutputTimeoutMs - elapsedMs) {
         // Do not burn energy waiting for a future ULP slot. The absolute
         // next_call is retained so the caller can power the rail down and
         // deep-sleep for only the remaining time.
         break;
       }
-      waitMs = static_cast<uint32_t>(max<uint64_t>(1, untilNextMs));
+      waitMs = static_cast<uint32_t>(untilNextMs);
     }
     measurementWaitUs(
         min(waitMs, kBsecOutputTimeoutMs - elapsedMs) * 1000UL);

@@ -1,4 +1,5 @@
 #include "thingspeak_service.h"
+#include "http_response_body.h"
 #include "sensor_registry.h"
 
 #include <ArduinoJson.h>
@@ -11,6 +12,15 @@ namespace station {
 
 namespace {
 constexpr uint32_t kHttpTimeoutMs = 7000;
+constexpr size_t kAccountResponseBytes = 64 * 1024;
+constexpr size_t kUploadResponseBytes = 1024;
+const char* kBodyHeaders[] = {"Transfer-Encoding"};
+
+HttpBodyStatus readThingSpeakResponse(HTTPClient& https, WiFiClientSecure& client,
+                                     String& output, size_t limit) {
+  const bool chunked = https.header(kBodyHeaders[0]).equalsIgnoreCase("chunked");
+  return HttpResponseBody(client, output, limit, kHttpTimeoutMs).read(https.getSize(), chunked);
+}
 
 // DigiCert Global Root G2, valid until 2038-01-15.
 constexpr char kThingSpeakRootCa[] PROGMEM = R"CERT(
@@ -43,8 +53,7 @@ bool ThingSpeakService::begin(SensorRegistry& registry) {
   if (queueMutex_ == nullptr || tlsMutex_ == nullptr) {
     return false;
   }
-  // An installation without cloud uploads needs no upload task or its stack.
-  // Account-management requests use the TLS mutex independently of this task.
+  // Start the shared worker only when an upload or account job needs it.
   return true;
 }
 
@@ -72,7 +81,7 @@ bool ThingSpeakService::queue(
   job.telemetry = telemetry;
 
   xSemaphoreTake(queueMutex_, portMAX_DELAY);
-  if (!task_ && xTaskCreate(taskEntry, "thingspeak", 10240, this, 1, &task_) != pdPASS) {
+  if (!ensureTask()) {
     xSemaphoreGive(queueMutex_);
     return false;
   }
@@ -88,20 +97,73 @@ void ThingSpeakService::taskEntry(void* context) {
   static_cast<ThingSpeakService*>(context)->taskLoop();
 }
 
+bool ThingSpeakService::ensureTask() {
+  return task_ || xTaskCreate(taskEntry, "thingspeak", 10240, this, 1, &task_) == pdPASS;
+}
+
+uint32_t ThingSpeakService::startAccountJob(ThingSpeakAccountJob::Request request, const char* owner) {
+  if (!queueMutex_ || request.account[0] == '\0') return 0;
+  xSemaphoreTake(queueMutex_, portMAX_DELAY);
+  const uint32_t ticket = ensureTask() ? accountJob_.start(std::move(request), owner, millis()) : 0;
+  if (ticket) xTaskNotifyGive(task_);
+  xSemaphoreGive(queueMutex_);
+  return ticket;
+}
+
+bool ThingSpeakService::takeMutation(ThingSpeakAccountJob::Request& request, ThingSpeakApiResult& result) {
+  if (!mutationReady_.load(std::memory_order_acquire)) return false;
+  xSemaphoreTake(queueMutex_, portMAX_DELAY);
+  const bool taken = accountJob_.takeForApply(request, result);
+  mutationReady_.store(false, std::memory_order_relaxed);
+  xSemaphoreGive(queueMutex_);
+  return taken;
+}
+
+void ThingSpeakService::finishMutation(ThingSpeakMutationResult result) {
+  xSemaphoreTake(queueMutex_, portMAX_DELAY);
+  accountJob_.finish(std::move(result), millis());
+  xTaskNotifyGive(task_);  // Schedule reclamation even when uploads are idle.
+  xSemaphoreGive(queueMutex_);
+}
+
+bool ThingSpeakService::mutationPending() {
+  xSemaphoreTake(queueMutex_, portMAX_DELAY);
+  const bool pending = accountJob_.mutationPending();
+  xSemaphoreGive(queueMutex_);
+  return pending;
+}
+
 void ThingSpeakService::taskLoop() {
   for (;;) {
     lil::UploadScheduler<CloudUploadJob, 64>::Entry entry{};
+    const bool connected = WiFi.status() == WL_CONNECTED;
     xSemaphoreTake(queueMutex_, portMAX_DELAY);
-    scheduler_.expire(millis());
-    const bool ready = WiFi.status() == WL_CONNECTED &&
-                       scheduler_.take(millis(), entry);
+    const uint32_t now = millis();
+    const uint32_t resultExpiryMs = accountJob_.expireAndWait(now);
+    ThingSpeakAccountJob::Request request;
+    if (accountJob_.take(request)) {
+      xSemaphoreGive(queueMutex_);
+      auto result = executeAccount(request);
+      xSemaphoreTake(queueMutex_, portMAX_DELAY);
+      accountJob_.complete(std::move(result), millis());
+      if (request.operation != ThingSpeakAccountJob::Operation::List)
+        mutationReady_.store(true, std::memory_order_release);
+      xSemaphoreGive(queueMutex_);
+      continue;
+    }
+    uint32_t nextWaitMs = 250;
+    const bool ready = connected && scheduler_.take(now, entry, &nextWaitMs);
+    if (!connected) scheduler_.expire(now);
     const bool pending = scheduler_.size() != 0;
     droppedJobs_.store(scheduler_.dropped(), std::memory_order_relaxed);
     xSemaphoreGive(queueMutex_);
     if (!ready) {
-      // Only queued work needs timed network/rate-limit checks. An empty
-      // worker sleeps until queue() publishes a new valid upload.
-      ulTaskNotifyTake(pdTRUE, pending ? pdMS_TO_TICKS(250) : portMAX_DELAY);
+      // A connected worker can wait for eligibility or expiry. While offline
+      // keep checking for reconnects. queue() wakes either wait for a new job.
+      const uint32_t waitMs = std::min(pending ? nextWaitMs : UINT32_MAX, resultExpiryMs);
+      const TickType_t wait = waitMs == UINT32_MAX ? portMAX_DELAY :
+          std::max(TickType_t{1}, pdMS_TO_TICKS(waitMs));
+      ulTaskNotifyTake(pdTRUE, wait);
       continue;
     }
     const bool success = upload(entry.job);
@@ -136,6 +198,8 @@ bool ThingSpeakService::upload(const CloudUploadJob& job) {
 
   bool success = false;
   if (https.begin(client, "https://api.thingspeak.com/update.json")) {
+    https.setReuse(false);
+    https.collectHeaders(kBodyHeaders, 1);
     https.addHeader("Content-Type", "application/x-www-form-urlencoded");
     https.addHeader("THINGSPEAKAPIKEY", job.writeKey);
 
@@ -212,16 +276,16 @@ bool ThingSpeakService::upload(const CloudUploadJob& job) {
       }
     }
     const int status = https.POST(body);
-    const String response = https.getString();
     lastHttpStatus_.store(status, std::memory_order_relaxed);
     int entryId = 0;
     if (status == HTTP_CODE_OK) {
-      JsonDocument responseDocument;
-      if (!deserializeJson(responseDocument, response)) {
-        entryId = responseDocument["entry_id"] | 0;
-      }
-      if (entryId == 0) {
-        entryId = response.toInt();
+      String response;
+      if (readThingSpeakResponse(https, client, response, kUploadResponseBytes) == HttpBodyStatus::Ok) {
+        JsonDocument responseDocument;
+        if (!deserializeJson(responseDocument, response)) {
+          entryId = responseDocument["entry_id"] | 0;
+        }
+        if (entryId == 0) entryId = response.toInt();
       }
     }
     lastEntryId_.store(entryId, std::memory_order_relaxed);
@@ -232,6 +296,7 @@ bool ThingSpeakService::upload(const CloudUploadJob& job) {
     } else {
       failedUploads_.fetch_add(1, std::memory_order_relaxed);
     }
+    client.stop();
     https.end();
   } else {
     lastHttpStatus_.store(-1, std::memory_order_relaxed);
@@ -242,80 +307,34 @@ bool ThingSpeakService::upload(const CloudUploadJob& job) {
   return success;
 }
 
-ChannelCreationResult ThingSpeakService::createChannel(
-    const String& userApiKey, const String& sensorName) {
-  ChannelCreationResult result{};
-  String settings = "name=" + urlEncode("W-Charger Sensor - " + sensorName);
-  settings += "&description=" +
-              urlEncode("Automatisch von der W-Charger Station erstellt");
-  settings += "&field1=Temperatur+C&field2=Luftfeuchte+Prozent";
-  settings += "&field3=Luftdruck+hPa&field4=Static+IAQ";
-  settings += "&field5=Batteriespannung+V&field6=Gaswiderstand+Ohm";
-  settings += "&public_flag=false";
-  const ThingSpeakApiResult api =
-      createManagedChannel(userApiKey, settings);
-  result.httpStatus = api.httpStatus;
-  if (!api.success) {
-    result.error = api.error;
-    return result;
-  }
-
-  JsonDocument document;
-  if (deserializeJson(document, api.response)) {
-    result.error = "Ungueltige ThingSpeak-Antwort";
-    return result;
-  }
-  result.channelId = document["id"] | 0U;
-  for (JsonObject key : document["api_keys"].as<JsonArray>()) {
-    if (key["write_flag"] | false) {
-      result.writeKey = key["api_key"].as<String>();
-    } else {
-      result.readKey = key["api_key"].as<String>();
+ThingSpeakApiResult ThingSpeakService::executeAccount(const ThingSpeakAccountJob::Request& request) {
+  using Operation = ThingSpeakAccountJob::Operation;
+  const String account(request.account);
+  switch (request.operation) {
+    case Operation::List:
+      return accountRequest("GET", "https://api.thingspeak.com/channels.json?api_key=" +
+                            urlEncode(account), account);
+    case Operation::QuickCreate: {
+      String settings = "name=" + urlEncode("W-Charger Sensor - " + String(request.name));
+      settings += "&description=" + urlEncode("Automatisch von der W-Charger Station erstellt");
+      settings += "&field1=Temperatur+C&field2=Luftfeuchte+Prozent";
+      settings += "&field3=Luftdruck+hPa&field4=Static+IAQ";
+      settings += "&field5=Batteriespannung+V&field6=Gaswiderstand+Ohm&public_flag=false";
+      return accountRequest("POST", "https://api.thingspeak.com/channels.json", account, settings);
     }
+    case Operation::Create:
+      return accountRequest("POST", "https://api.thingspeak.com/channels.json", account, request.settings);
+    case Operation::Update:
+      return accountRequest("PUT", "https://api.thingspeak.com/channels/" + String(request.channelId) +
+                            ".json", account, request.settings);
+    case Operation::Clear:
+      return accountRequest("DELETE", "https://api.thingspeak.com/channels/" + String(request.channelId) +
+                            "/feeds.json", account);
+    case Operation::Delete:
+      return accountRequest("DELETE", "https://api.thingspeak.com/channels/" + String(request.channelId) +
+                            ".json", account);
   }
-  result.success = result.channelId != 0 && !result.writeKey.isEmpty();
-  if (!result.success) {
-    result.error = "Channel-ID oder Write-Key fehlt in der Antwort";
-  }
-  return result;
-}
-
-ThingSpeakApiResult ThingSpeakService::listChannels(
-    const String& userApiKey) {
-  const String url = "https://api.thingspeak.com/channels.json?api_key=" +
-                     urlEncode(userApiKey);
-  return accountRequest("GET", url, userApiKey);
-}
-
-ThingSpeakApiResult ThingSpeakService::createManagedChannel(
-    const String& userApiKey, const String& encodedSettings) {
-  return accountRequest("POST", "https://api.thingspeak.com/channels.json",
-                        userApiKey, encodedSettings);
-}
-
-ThingSpeakApiResult ThingSpeakService::updateChannel(
-    const String& userApiKey, uint32_t channelId,
-    const String& encodedSettings) {
-  return accountRequest(
-      "PUT", "https://api.thingspeak.com/channels/" + String(channelId) +
-                 ".json",
-      userApiKey, encodedSettings);
-}
-
-ThingSpeakApiResult ThingSpeakService::clearChannel(
-    const String& userApiKey, uint32_t channelId) {
-  return accountRequest(
-      "DELETE", "https://api.thingspeak.com/channels/" + String(channelId) +
-                    "/feeds.json",
-      userApiKey);
-}
-
-ThingSpeakApiResult ThingSpeakService::deleteChannel(
-    const String& userApiKey, uint32_t channelId) {
-  return accountRequest(
-      "DELETE", "https://api.thingspeak.com/channels/" + String(channelId) +
-                    ".json",
-      userApiKey);
+  return {};
 }
 
 ThingSpeakApiResult ThingSpeakService::accountRequest(
@@ -342,30 +361,46 @@ ThingSpeakApiResult ThingSpeakService::accountRequest(
     xSemaphoreGive(tlsMutex_);
     return result;
   }
+  https.setReuse(false);
+  https.collectHeaders(kBodyHeaders, 1);
   https.addHeader("Content-Type", "application/x-www-form-urlencoded");
+  const bool get = strcmp(method, "GET") == 0;
   String body;
-  if (strcmp(method, "GET") != 0) {
+  if (!get) {
     body = "api_key=" + urlEncode(userApiKey);
     if (!encodedSettings.isEmpty()) {
       body += '&';
       body += encodedSettings;
     }
   }
-  if (strcmp(method, "GET") == 0) {
+  if (get) {
     result.httpStatus = https.GET();
   } else {
     result.httpStatus = https.sendRequest(method, body);
   }
-  result.response = https.getString();
+  result.success = result.httpStatus >= 200 && result.httpStatus < 300;
+  HttpBodyStatus bodyStatus = HttpBodyStatus::Ok;
+  // Delete/clear callers only use the HTTP status. Error bodies are likewise
+  // unnecessary and may contain account data or large upstream error pages.
+  if (result.success && strcmp(method, "DELETE") != 0 &&
+      result.httpStatus != 204 && result.httpStatus != 205) {
+    bodyStatus = readThingSpeakResponse(https, client, result.response, kAccountResponseBytes);
+  }
+  client.stop();
   https.end();
   xSemaphoreGive(tlsMutex_);
 
-  result.success = result.httpStatus >= 200 && result.httpStatus < 300;
   if (!result.success) {
     result.error = "ThingSpeak HTTP " + String(result.httpStatus);
-    if (!result.response.isEmpty() && result.response.length() < 180) {
-      result.error += ": " + result.response;
+  } else if (bodyStatus != HttpBodyStatus::Ok) {
+    result.success = false;
+    switch (bodyStatus) {
+      case HttpBodyStatus::TooLarge: result.error = "ThingSpeak response exceeded the 64 KiB limit"; break;
+      case HttpBodyStatus::Timeout: result.error = "ThingSpeak response timed out"; break;
+      case HttpBodyStatus::NoMemory: result.error = "Not enough memory for the ThingSpeak response"; break;
+      default: result.error = "ThingSpeak returned an incomplete or invalid response"; break;
     }
+    if (!get) result.error += ". Reload account channels before retrying changes.";
   }
   return result;
 }

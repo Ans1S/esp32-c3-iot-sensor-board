@@ -4,9 +4,41 @@
 #include <vector>
 #include <new>
 
+struct CountedAppend {
+  std::string& text;
+  size_t calls = 0, failAt = 0;
+  bool concat(const char* data, size_t size) {
+    if (++calls == failAt) return false;
+    text.append(data, size);
+    return true;
+  }
+};
+
 void testRadioTick() { ++testMillis; }
 int main() {
   using namespace lil;
+  {
+    JsonDocument doc;
+    doc["escaped"] = std::string(132, '"') + "\n\\";
+    std::string expected;
+    serializeJson(doc, expected);
+    std::string output = "prefix";
+    CountedAppend append{output};
+    assert(station::appendJson(doc, append));
+    assert(output == "prefix" + expected && append.calls == (expected.size() + 63) / 64);
+    output = "prefix";
+    append.calls = 0; append.failAt = 2;
+    assert(!station::appendJson(doc, append));
+    assert(output == "prefix" + expected.substr(0, 64) && append.calls == 2);
+  }
+  {
+    station::RecordingInfo info{};
+    info.stored = info.expected = 10;
+    info.readError = true;
+    JsonDocument doc;
+    station::recordingInfoJson(doc.to<JsonObject>(), info);
+    assert(doc["readError"].as<bool>() && !doc["complete"].as<bool>());
+  }
   for (auto type : {protocol::EnvironmentalSensorType::kTmp117,
                    protocol::EnvironmentalSensorType::kLsm6dsox,
                    protocol::EnvironmentalSensorType::kMax30102}) {
@@ -15,7 +47,9 @@ int main() {
       JsonDocument metadata; station::recordingInfoJson(metadata.to<JsonObject>(), info);
       metadata["nextOffset"] = count;
       std::string chunk; serializeJson(metadata, chunk); chunk.pop_back(); chunk += ",\"points\":[";
+      CountedAppend append{chunk};
       std::string response; unsigned flushes = 0;
+      size_t pointBytes = 0;
       for (unsigned i = 0; i < count; ++i) {
         protocol::TelemetryPayload payload{};
         payload.sensorType = type; payload.batteryMillivolts = 3900;
@@ -44,7 +78,12 @@ int main() {
           assert(point["sampleMs"].as<unsigned>() == i * 1000);
         }
         if (i) chunk += ',';
-        station::appendRecordingJson(point, chunk);
+        std::string expected;
+        serializeJson(point, expected);
+        const size_t start = chunk.size();
+        assert(station::appendJson(point, append));
+        assert(chunk.compare(start, expected.size(), expected) == 0 && chunk.size() - start == expected.size());
+        pointBytes += expected.size();
         if (chunk.size() >= 4096) { response += chunk; chunk.clear(); ++flushes; }
       }
       chunk += "]}"; response += chunk;
@@ -52,7 +91,11 @@ int main() {
       assert(parsed["session"] == "000000000000002a");
       assert(parsed["nextOffset"].as<unsigned>() == count);
       assert(parsed["points"].size() == count);
-      if (count == 128) assert(flushes > 1);
+      if (count == 128) {
+        assert(flushes > 1 && append.calls < pointBytes / 32);
+        printf("Recording type %u: %zu bytewise string appends reduced to %zu buffered appends\n",
+               unsigned(type), pointBytes, append.calls);
+      }
       for (unsigned i = 0; i < count; ++i) {
         auto point = parsed["points"][i];
         assert(point["sampleMs"].as<unsigned>() == i*1000);

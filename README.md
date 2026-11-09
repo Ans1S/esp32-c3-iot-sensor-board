@@ -177,9 +177,13 @@ python Firmware/upload.py sensor-v3
 4. Open **Find sensors**, name the node, select its sensor and save.
 5. Use the dashboard for measurements, settings, recordings and signed updates.
 
-**Current release: [4.4.4 / 40404](Firmware/releases/README.md)** — faster
-sensor processing, leaner radio preparation and OTA flash reads with preserved recovery checks.
-The [complete bundle](Firmware/releases/w-charger-4.4.4.zip) includes the station
+The **4.4.5 / 40405** source improves V3/V4 acquisition and ESP-NOW delivery,
+station data handling and dashboard response streaming. See the
+[firmware change inventory](Firmware/CHANGELOG.md) and
+[software verification](Firmware/PERFORMANCE_FOLLOWUP_2026-11-09.md).
+
+The latest complete download is [4.4.4 / 40404](Firmware/releases/README.md).
+Its [bundle](Firmware/releases/w-charger-4.4.4.zip) includes the station
 application, both sensor packages, installation instructions and checksums.
 Published sensor packages require the signing identity trusted by the installed
 base firmware; new builders use their own key and matching packages.

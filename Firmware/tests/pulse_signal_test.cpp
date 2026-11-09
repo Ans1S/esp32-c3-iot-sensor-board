@@ -3,6 +3,7 @@
 #endif
 #include "pulse_signal.h"
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <chrono>
 #include <cmath>
@@ -36,10 +37,22 @@ double reference(const Input& signal, size_t head, float* ac) {
 [[gnu::noinline]] double optimized(const uint32_t* signal, size_t head, float* ac) {
   return sensor::pulse::detrend(signal, head, ac);
 }
+void referenceCorrelation(const float* ac, float* result) {
+  for (int lag = 6; lag <= 51; ++lag) {
+    double xy = 0, xx = 0, yy = 0;
+    for (size_t i = 0; i < analyzed - lag; ++i) {
+      xy += ac[i] * ac[i + lag];
+      xx += ac[i] * ac[i];
+      yy += ac[i + lag] * ac[i + lag];
+    }
+    result[lag] = xx > 0 && yy > 0 ? xy / sqrt(xx * yy) : 0;
+  }
+}
 void verify() {
   CountedSamples input;
   uint32_t random = 0x743921;
   size_t cases = 0, beforeReads = 0, afterReads = 0;
+  size_t equalCorrelations = 0, correlations = 0;
   for (size_t pattern = 0; pattern < 96; ++pattern) {
     for (size_t i = 0; i < samples; ++i) {
       random = random * 1664525U + 1013904223U;
@@ -61,11 +74,21 @@ void verify() {
       assert(!memcmp(expected, actual, sizeof(actual)));
       assert(!memcmp(&before, &after, sizeof(before)));
       assert(beforeReads == 4576 && afterReads == 551);
+      float expectedLags[52], actualLags[52];
+      referenceCorrelation(expected, expectedLags);
+      sensor::pulse::correlate(actual, actualLags);
+      for (int lag = 6; lag <= 51; ++lag) {
+        assert(fabs(actualLags[lag] - expectedLags[lag]) <= 0.00000012F);
+        equalCorrelations += !memcmp(&actualLags[lag], &expectedLags[lag], sizeof(float));
+        ++correlations;
+      }
       ++cases;
     }
   }
   printf("Pulse detrending: %zu bit-identical windows, %zu -> %zu sample reads per window\n",
          cases, beforeReads, afterReads);
+  printf("Pulse autocorrelation: %zu/%zu bit-identical lags against 4.4.4\n",
+         equalCorrelations, correlations);
 }
 void benchmark() {
   constexpr size_t runs = 9, iterations = 20000;
@@ -93,6 +116,33 @@ void benchmark() {
     printf("%s host detrending: runs=%zu iterations=%zu median=%.6f us/window range=%.6f..%.6f us/window checksum=%.17g\n",
            version ? "After" : "Before", runs, iterations, timings[version][runs / 2],
            timings[version][0], timings[version][runs - 1], sums[version][0]);
+  }
+
+  constexpr size_t correlationIterations = 1000;
+  const auto correlationFunctions = std::array{referenceCorrelation, sensor::pulse::correlate};
+  for (size_t run = 0; run < runs; ++run) {
+    for (size_t order = 0; order < correlationFunctions.size(); ++order) {
+      const size_t version = (run + order) % correlationFunctions.size();
+      float ac[analyzed], correlations[52];
+      for (size_t i = 0; i < analyzed; ++i) ac[i] = 1000 * sin(i * 0.42);
+      double checksum = 0;
+      const auto start = std::chrono::steady_clock::now();
+      for (size_t i = 0; i < correlationIterations; ++i) {
+        ac[i % analyzed] += 1;
+        correlationFunctions[version](ac, correlations);
+        checksum += correlations[6 + i % 46];
+      }
+      timings[version][run] = std::chrono::duration<double, std::micro>(
+          std::chrono::steady_clock::now() - start).count() / correlationIterations;
+      sums[version][run] = checksum;
+    }
+    assert(fabs(sums[0][run] - sums[1][run]) < 0.00001);
+  }
+  for (size_t version = 0; version < 2; ++version) {
+    std::sort(timings[version], timings[version] + runs);
+    printf("%s host autocorrelation: runs=%zu iterations=%zu median=%.6f us/window range=%.6f..%.6f\n",
+           version ? "After" : "Before", runs, correlationIterations,
+           timings[version][runs / 2], timings[version][0], timings[version][runs - 1]);
   }
 }
 }  // namespace

@@ -74,24 +74,35 @@ bool RecordingStore::append(uint64_t capturedMs, const lil::protocol::TelemetryP
   }
   const auto record = lil::recording::encode(session_, capturedMs - startedMs_, payload);
   if (journal_.append(record)) return true;
-  stop(!journal_.fault());
-  if (journal_.fault()) state_ = State::Fault;
+  if (journal_.fault()) {
+    // The final write may already be durable. Keep the persistent state as
+    // Recording so startup derives the final count and duration from flash.
+    durationMs_ = journal_.lastSampleMs();
+    state_ = State::Fault;
+  } else {
+    stop(true);
+  }
   return false;
 }
 bool RecordingStore::next(lil::recording::Upload& upload) {
-  if (recording() || !available_ || state_ == State::Fault || !journal_.peek(upload.record)) return false;
+  if (recording() || !available_ || state_ == State::Fault) return false;
+  if (!journal_.peek(upload.record)) {
+    // A deferred ACK readback can retire the last record during peek().
+    if (!journal_.pending() && (state_ == State::Pending || state_ == State::Full)) markSynced();
+    return false;
+  }
   if (upload.record.session != session_) { state_ = State::Fault; return false; }
   upload.sessionEpochMs = epochMs_; upload.totalRecords = total_; upload.durationMs = durationMs_;
   return true;
 }
 bool RecordingStore::acknowledge(const lil::recording::Record& record) {
   if (!journal_.acknowledge(record)) return false;
-  if (!journal_.pending()) {
-    state_ = State::Synced;
-    if (prefs_.putUChar("state", static_cast<uint8_t>(state_)) != 1) { state_ = State::Fault; return false; }
-    // ACK bits make pages reusable. Lazy erasure avoids a long idle flash stall.
-  }
-  return true;
+  return journal_.pending() || markSynced();
+}
+bool RecordingStore::markSynced() {
+  state_ = State::Synced;
+  if (prefs_.putUChar("state", static_cast<uint8_t>(state_)) != 1) { state_ = State::Fault; return false; }
+  return true; // ACK bits make pages reusable without an immediate erase.
 }
 void RecordingStore::anchor(uint64_t stationEpochMs, uint32_t elapsedAtRequestMs, uint32_t roundTripMs) {
   if (!sameBoot_ || epochMs_ || stationEpochMs < 1577836800000ULL || roundTripMs > 500) return;

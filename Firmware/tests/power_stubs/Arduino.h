@@ -5,6 +5,12 @@ using gpio_num_t = int;
 constexpr int GPIO_NUM_NC = -1, GPIO_NUM_3 = 3, GPIO_NUM_4 = 4, GPIO_NUM_5 = 5,
     GPIO_NUM_6 = 6, GPIO_NUM_10 = 10;
 constexpr int HIGH = 1, LOW = 0, INPUT = 1, OUTPUT = 2;
+constexpr int ADC_11db = 3;
+void analogReadResolution(int bits);
+void analogSetPinAttenuation(uint8_t pin, int attenuation);
+uint32_t analogReadMilliVolts(uint8_t pin);
+uint32_t micros();
+void delayMicroseconds(uint32_t period);
 inline int padMode[22]{}, padLatch[22]{};
 inline bool expectInactiveEnable = false;
 inline void pinMode(uint8_t pin, int mode) {

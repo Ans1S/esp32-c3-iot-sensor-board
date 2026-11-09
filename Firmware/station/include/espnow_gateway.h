@@ -8,12 +8,20 @@
 #include <freertos/task.h>
 
 #include "lil_protocol.h"
+#include "ota_protocol.h"
 #include "radio_send_guard.h"
+#include "recording_protocol.h"
 #include "sensor_registry.h"
 #include "thingspeak_service.h"
 #include "wifi_service.h"
 
 namespace station {
+
+constexpr size_t kStationReceiveCapacity = sizeof(lil::ota::Packet);
+static_assert(sizeof(lil::protocol::TelemetryPacket) <= kStationReceiveCapacity &&
+              sizeof(lil::recording::StatusPacket) <= kStationReceiveCapacity &&
+              sizeof(lil::recording::UploadPacket) <= kStationReceiveCapacity &&
+              sizeof(lil::recording::AckPacket) <= kStationReceiveCapacity);
 
 struct EspNowRxEvent {
   bool archiveReply = false;
@@ -22,7 +30,7 @@ struct EspNowRxEvent {
   uint8_t sourceMac[6]{};
   int8_t rssi = 0;
   uint16_t length = 0;
-  uint8_t data[lil::protocol::kMaxPacketSize]{};
+  uint8_t data[kStationReceiveCapacity]{};
 };
 
 struct EspNowPersistenceEvent {
@@ -51,6 +59,8 @@ class EspNowGateway {
   uint32_t droppedPackets() const;
   uint32_t persistenceDrops() const { return persistenceDrops_.load(); }
   uint32_t peerFailures() const { return peerFailures_.load(); }
+  uint32_t replyBusyDrops() const { return replyBusyDrops_.load(std::memory_order_relaxed); }
+  uint32_t replyMacFailures() const { return replyMacFailures_.load(std::memory_order_relaxed); }
 
  private:
   static void receiveCallback(const esp_now_recv_info_t* info,
@@ -65,6 +75,7 @@ class EspNowGateway {
   void handle(const EspNowRxEvent& event);
   void persist(const EspNowPersistenceEvent& event);
   void persistArchive(const EspNowArchiveEvent& event);
+  void sendResponse(const uint8_t mac[6], const void* packet, size_t size);
   bool ensurePeer(const uint8_t mac[6]);
 
   static EspNowGateway* instance_;
@@ -80,6 +91,8 @@ class EspNowGateway {
   RadioSendGuard sendGuard_{};
   std::atomic<uint32_t> persistenceDrops_{0};
   std::atomic<uint32_t> peerFailures_{0};
+  std::atomic<uint32_t> replyBusyDrops_{0};
+  std::atomic<uint32_t> replyMacFailures_{0};
   std::atomic<uint32_t> receivedPackets_{0};
   std::atomic<uint32_t> invalidPackets_{0};
   std::atomic<uint32_t> droppedPackets_{0};

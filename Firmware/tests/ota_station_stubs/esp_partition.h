@@ -5,8 +5,9 @@
 #include <cstring>
 #include <functional>
 #include <vector>
+#include "esp_err.h"
 using esp_partition_subtype_t = int;
-constexpr int ESP_PARTITION_TYPE_DATA = 1, ESP_OK = 0;
+constexpr int ESP_PARTITION_TYPE_DATA = 1;
 struct esp_partition_t { uint32_t size = 0x180000; };
 inline esp_partition_t stagingPartition;
 inline std::vector<uint8_t> stagingFlash(0x180000, 0xff);

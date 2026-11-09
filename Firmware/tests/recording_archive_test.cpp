@@ -42,6 +42,10 @@ int main() {
   assert(archive.read(mac, 1, offset, points, 16, info, 5050) == 16);
   assert(points[0].sampleMs == 5100 && offset == 67 && info.epochMs == upload.sessionEpochMs);
   assert(info.availableMs == 9900);
+  testFileSeekCount = testFileReadCount = 0;
+  assert(archive.append(mac, upload)); // Immediate replay of the newest durable row.
+  printf("Latest archive retry: %zu seeks and %zu reads\n", testFileSeekCount, testFileReadCount);
+  assert(testFileSeekCount == 3 && testFileReadCount == 2);
   // An older duplicate after a station reboot must still be recognized.
   station::RecordingArchive reboot; assert(reboot.begin());
   payload.motion.accelerationG[0] = float(7)/123;
@@ -57,6 +61,29 @@ int main() {
   for (const auto& session : partial) if (session.session == 2) {
     assert(session.stored == 1 && session.expected == 100 && session.availableMs == 0);
   }
+  for (uint32_t time : {100U, 200U}) {
+    upload.record = recording::encode(2, time, payload);
+    assert(reboot.append(mac, upload));
+  }
+  upload.record = recording::encode(2, 300, payload);
+  testFileReadFailAt = testFileReadCount + 2; // Header succeeds, tail read fails.
+  assert(!reboot.append(mac, upload));
+  testFileReadFailAt = 0;
+  testFileSeekFailAt = testFileSeekCount + 3; // Header/end succeed, tail seek fails.
+  assert(!reboot.append(mac, upload));
+  testFileSeekFailAt = 0;
+  testFileFailNextOpen = true;
+  assert(!reboot.append(mac, upload));
+  testFileReadFailAt = testFileReadCount + 2;
+  offset = 0;
+  assert(reboot.read(mac, 2, offset, points, 16, info) == 0);
+  assert(offset == 0 && info.session == 2 && info.readError);
+  testFileReadFailAt = 0;
+  offset = 0;
+  assert(reboot.read(mac, 2, offset, points, 16, info) == 3);
+  assert(offset == 3 && points[2].sampleMs == 200 && !info.readError);
+  assert(reboot.append(mac, upload));
+  assert(reboot.read(mac, 2, offset, points, 16, info) == 1 && points[0].sampleMs == 300);
   assert(reboot.remove(mac, 2));
   assert(reboot.list(mac).size() == 1);
   // A torn whole tail record is not counted as complete and can be replayed.

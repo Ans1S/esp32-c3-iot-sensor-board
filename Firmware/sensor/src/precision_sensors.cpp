@@ -7,6 +7,7 @@
 namespace sensor {
 using Type = lil::protocol::EnvironmentalSensorType;
 namespace {
+constexpr size_t kWaveCapacity = lil::protocol::kOpticalBatchSize;
 uint8_t opticalCurrent(uint8_t current, uint32_t level) {
   // Separate optical paths can have very different DC levels. Use a wide
   // settling band and bounded proportional steps, not opposing shared gains.
@@ -99,29 +100,41 @@ bool PrecisionSensors::begin(Type type, uint8_t address) {
 bool PrecisionSensors::poll() {
   if (!initialized_) return false;
   if (type_ == Type::kTmp117) {
-    if (millis() - lastPollMs_ < 10) return !failed_;
-    lastPollMs_ = millis();
+    const uint32_t now = millis();
+    if (now - lastPollMs_ < 10) return !failed_;
+    lastPollMs_ = now;
     uint8_t b[2];
-    if (!readBytes(1,b,2)) { failed_ = true; freshTemperature_ = false; return false; }
+    if (!readBytes(1,b,2)) {
+      failed_ = true;
+      hasTemperature_ = freshTemperature_ = false;
+      return false;
+    }
     if (b[0] & 0x20) {
-      if (!readBytes(0,b,2)) { failed_ = true; freshTemperature_ = false; return false; }
+      if (!readBytes(0,b,2)) {
+        failed_ = true;
+        hasTemperature_ = freshTemperature_ = false;
+        return false;
+      }
       temperature_ = static_cast<int16_t>((b[0] << 8) | b[1]) / 128.0F;
       hasTemperature_ = temperature_ >= -55 && temperature_ <= 150;
       lastSampleMs_ = millis(); freshTemperature_ = hasTemperature_;
+      failed_ = false;
     }
     return true;
   }
-  uint8_t status, ptr[3];
-  if (!readBytes(0, &status, 1)) return invalidateOpticalCapture();
+  // Auto-increment covers status, interrupt enables and FIFO pointers up
+  // to 0x06. Status 2 only clears the unused die-temperature interrupt.
+  uint8_t metadata[7];
+  if (!readBytes(0, metadata, sizeof(metadata))) return invalidateOpticalCapture();
+  const uint8_t status = metadata[0];
   if (status & 0x01) {
     // Brownout resets mode, averaging and LED currents. The acquisition task
     // must reinitialize the device before any more samples are accepted.
     return invalidateOpticalCapture();
   }
-  if (!readBytes(4,ptr,3)) return invalidateOpticalCapture();
   const bool pollGap = millis() - lastPollMs_ >= 1200;
   lastPollMs_ = millis();
-  if (ptr[1] || (status & 0xA0) || pollGap) {
+  if (metadata[5] || (status & 0xA0) || pollGap) {
     // Equal read/write pointers can also mean all 32 slots are occupied.
     // A_FULL resolves that ambiguity. ALC_OVF means ambient light corrupted
     // the ADC signal even when the numerical sample range looks plausible.
@@ -129,7 +142,7 @@ bool PrecisionSensors::poll() {
     if (!clearOpticalFifo()) return invalidateOpticalCapture();
     return !failed_;
   }
-  const uint8_t count = (ptr[0] - ptr[2]) & 31;
+  const uint8_t count = (metadata[4] - metadata[6]) & 31;
   const uint32_t newestMs = millis();
   if (hasOptical_ && count == 0 && newestMs - lastSampleMs_ >= 300) {
     waveGap_ = true; waveCount_ = 0; hasOptical_ = false; resetSignal();
@@ -149,11 +162,10 @@ bool PrecisionSensors::poll() {
       // No hardware timestamp: backdate FIFO entries at the nominal 40 ms period.
       lastSampleMs_ = newestMs - uint32_t(count - 1 - i) * lil::timing::kOpticalSampleMs;
       hasOptical_ = true;
-      if (waveCount_ == lil::protocol::kOpticalBatchSize) {
-        for (size_t j = 1; j < lil::protocol::kOpticalBatchSize; ++j) { wave_[j-1] = wave_[j]; waveTimes_[j-1] = waveTimes_[j]; }
-        --waveCount_; waveGap_ = true;
-      }
-      wave_[waveCount_] = {red_, infrared_, 0}; waveTimes_[waveCount_++] = lastSampleMs_;
+      if (waveCount_ == kWaveCapacity) waveGap_ = true;
+      else ++waveCount_;
+      wave_[waveNext_] = {red_, infrared_, lastSampleMs_};
+      waveNext_ = (waveNext_ + 1) % kWaveCapacity;
       // Only IR enters the heart-rate estimator. A dim or clipped red channel
       // is not evidence that the separately sampled IR pulse is unusable.
       if (infrared_ < 10000 || infrared_ > 250000) { resetSignal(); continue; }
@@ -199,9 +211,11 @@ EnvironmentalReading PrecisionSensors::read(bool pollFirst) {
     result.live.windowMs = lil::timing::kPulseWindowMs;
     result.live.warmupMs = (lil::timing::kPulseSamples - count_) * lil::timing::kOpticalSampleMs;
     result.live.count = waveCount_;
+    const size_t oldest = (waveNext_ + kWaveCapacity - waveCount_) % kWaveCapacity;
     for (uint8_t i = 0; i < waveCount_; ++i) {
-      result.live.optical[i] = wave_[i];
-      result.live.optical[i].ageMs = static_cast<uint16_t>(min(uint32_t(65534), millis() - waveTimes_[i]));
+      const auto& sample = wave_[(oldest + i) % kWaveCapacity];
+      result.live.optical[i] = {sample.red, sample.infrared,
+          static_cast<uint16_t>(min(uint32_t(65534), millis() - sample.timestampMs))};
     }
     if (waveCount_) result.live.flags |= lil::protocol::kLiveSampleFresh;
     if (waveGap_) result.live.flags |= lil::protocol::kLiveGap;
@@ -218,14 +232,10 @@ EnvironmentalReading PrecisionSensors::read(bool pollFirst) {
       constexpr int analyzed = pulse::kAnalyzedSamples;
       float ac[analyzed];
       const double energy = pulse::detrend(signal_, head_, ac);
-      float correlations[52]{};
-      for (int lag = 6; lag <= 51; ++lag) {
-        double xy = 0, xx = 0, yy = 0;
-        for (int i = 0; i < analyzed-lag; ++i) { xy += ac[i]*ac[i+lag]; xx += ac[i]*ac[i]; yy += ac[i+lag]*ac[i+lag]; }
-        correlations[lag] = xx > 0 && yy > 0 ? xy / sqrt(xx*yy) : 0;
-      }
+      float correlations[pulse::kMaximumLag + 1];
+      pulse::correlate(ac, correlations);
       float best = 0; int lagBest = 0;
-      for (int lag = 7; lag <= 50; ++lag) {
+      for (int lag = pulse::kMinimumLag + 1; lag < pulse::kMaximumLag; ++lag) {
         if (correlations[lag] > 0.75F && correlations[lag] > correlations[lag-1] &&
             correlations[lag] >= correlations[lag+1] && correlations[lag] > best + 0.05F) {
           best = correlations[lag]; lagBest = lag;

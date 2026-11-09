@@ -21,7 +21,9 @@ bool deliverySuccess = true;
 unsigned badOtaReplies = 0;
 bool wrongOtaSource = false, legacyStation = false;
 bool wrongRecordingSequence = false;
+bool floodInvalidReplies = false;
 size_t lastTelemetrySize = 0;
+size_t lastOtaRequestSize = 0;
 unsigned droppedTelemetryReplies = 0;
 sensor::SensorRuntimeConfig config;
 
@@ -53,7 +55,9 @@ esp_err_t esp_now_send(const uint8_t*, const uint8_t* bytes, size_t length) {
   if (responseDelay >= 0) {
     lil::protocol::PacketHeader header{}; memcpy(&header, bytes, sizeof(header));
     if (header.type == lil::ota::kMessageType) {
-      lil::ota::Packet request{}; memcpy(&request, bytes, sizeof(request));
+      lil::ota::Packet request{};
+      assert(lil::ota::decodeRequest(bytes, length, request));
+      lastOtaRequestSize = length;
       events.push_back({testMillis + uint32_t(responseDelay), [request] {
         lil::ota::Packet response{};
         response.payload.nonce = request.payload.nonce;
@@ -64,6 +68,11 @@ esp_err_t esp_now_send(const uint8_t*, const uint8_t* bytes, size_t length) {
         uint8_t spoofed[6] = {8, 0, 0, 0, 0, 0};
         RxControl control;
         esp_now_recv_info_t info{wrongOtaSource ? spoofed : config.stationMac, &control};
+        if (floodInvalidReplies) {
+          lil::ota::Packet invalid{};
+          for (int i = 0; i < 4; ++i)
+            testReceiveCallback(&info, reinterpret_cast<const uint8_t*>(&invalid), sizeof(invalid));
+        }
         testReceiveCallback(&info, reinterpret_cast<const uint8_t*>(&response), sizeof(response));
       }});
       return ESP_OK;
@@ -99,6 +108,11 @@ esp_err_t esp_now_send(const uint8_t*, const uint8_t* bytes, size_t length) {
                               request.header.sequence);
       RxControl control;
       esp_now_recv_info_t info{config.stationMac, &control};
+      if (floodInvalidReplies) {
+        lil::protocol::ConfigResponsePacket invalid{};
+        for (int i = 0; i < 4; ++i)
+          testReceiveCallback(&info, reinterpret_cast<const uint8_t*>(&invalid), sizeof(invalid));
+      }
       testReceiveCallback(&info, reinterpret_cast<const uint8_t*>(&response), sizeof(response));
     }});
   }
@@ -106,14 +120,16 @@ esp_err_t esp_now_send(const uint8_t*, const uint8_t* bytes, size_t length) {
 }
 void reset() {
   events.clear(); channels.clear(); sends = 0; pending = false; testMillis = 0;
+  testQueueTimedReceives = 0;
   telemetryFrames.clear(); telemetryFrameTimes.clear();
   completionDelay = 2; responseDelay = -1; deliverySuccess = true;
-  badOtaReplies = 0; wrongOtaSource = false; legacyStation = false; lastTelemetrySize = 0;
+  badOtaReplies = 0; wrongOtaSource = false; legacyStation = false;
+  lastTelemetrySize = lastOtaRequestSize = 0;
   config = sensor::SensorRuntimeConfig{};
   config.provisioned = config.stationKnown = true;
   config.stationMac[0] = 2; config.wifiChannel = 6;
   WiFi.shutdowns = 0; droppedTelemetryReplies = 0;
-  wrongRecordingSequence = false;
+  wrongRecordingSequence = floodInvalidReplies = false;
 }
 int main() {
   {
@@ -123,7 +139,7 @@ int main() {
     const auto queueBytes = testQueueDataBytes;
     assert(radio.begin());
     assert(testQueueCreates - queues == (FLOW_OPTIMIZED ? 1 : 2));
-    assert(testQueueDataBytes - queueBytes == (FLOW_OPTIMIZED ? 220 : 1124));
+    assert(testQueueDataBytes - queueBytes == (FLOW_OPTIMIZED ? 224 : 1124));
     lil::protocol::TelemetryPacket telemetry{};
     telemetry.header.sequence = 700;
     telemetry.payload.sensorType = lil::protocol::EnvironmentalSensorType::kBme280;
@@ -198,12 +214,40 @@ int main() {
         123, 1000, 0, ack));
     assert(sends == 1 && testMillis >= 500);
     radio.end();
+    reset();
+    const uint32_t nearTickWrap = UINT32_MAX - 250;
+    testMillis = nearTickWrap;
+    assert(radio.begin());
+    assert(!radio.recordingExchange(config, &request, sizeof(request), 123, 1000, 0, ack));
+    const uint32_t elapsed = testMillis - nearTickWrap;
+    printf("Missing recording ACK across tick rollover: %zu timed queue reads in %u simulated ms\n",
+           testQueueTimedReceives, elapsed);
+    assert(sends == 1 && elapsed == 500 && testQueueTimedReceives == 1);
+    radio.end();
     reset(); responseDelay = 4;
     assert(radio.begin());
     assert(radio.recordingExchange(config, &request, sizeof(request),
         123, 1000, 0, ack) && ack.stationEpochMs == 1700000000000ULL);
     // Finish the MAC callback before shutting down the substitute.
     delay(5); radio.end();
+
+    reset(); responseDelay = 1; completionDelay = 5;
+    assert(radio.begin());
+    assert(radio.recordingExchange(config, &request, sizeof(request), 123, 1000, 0, ack));
+    assert(pending && testMillis == 1);
+    lil::protocol::finalize(request, lil::recording::kStatusMessage, 92);
+    assert(radio.recordingExchange(config, &request, sizeof(request), 123, 1000, 0, ack));
+    assert(sends == 2 && testMillis == 6);
+    printf("Recording ACK before MAC completion: next request completed at %u simulated ms\n", testMillis);
+    radio.end();
+
+    reset(); responseDelay = 1; completionDelay = -1;
+    assert(radio.begin());
+    assert(radio.recordingExchange(config, &request, sizeof(request), 123, 1000, 0, ack));
+    assert(!radio.recordingExchange(config, &request, sizeof(request), 123, 1000, 0, ack));
+    assert(!radio.recordingExchange(config, &request, sizeof(request), 123, 1000, 0, ack));
+    assert(sends == 1 && channels.size() == 1 && testMillis == 180);
+    radio.end();
   }
   {
     sensor::EspNowTransport radio;
@@ -213,7 +257,19 @@ int main() {
     reset(); responseDelay = 4; badOtaReplies = 2;
     assert(radio.begin());
     assert(radio.otaExchange(config.stationMac, q, r) && sends == 3);
-    assert(r.payload.offset == 192 && r.payload.nonce == 42);
+    assert(r.payload.offset == 192 && r.payload.nonce == 42 && lastOtaRequestSize == sizeof(q));
+    radio.end();
+    reset(); responseDelay = 4; badOtaReplies = 1;
+    lil::protocol::finalizePacket(&q, lil::ota::kCompactReadPacketSize, lil::ota::kMessageType,
+                                  124, lil::ota::kCompactReadPayloadSize);
+    assert(radio.begin());
+    assert(radio.otaExchange(config.stationMac, q, r) && sends == 2);
+    assert(lastOtaRequestSize == lil::ota::kCompactReadPacketSize && r.payload.offset == 192);
+    radio.end();
+    lil::protocol::finalize(q, lil::ota::kMessageType, 123);
+    reset(); responseDelay = 4; floodInvalidReplies = true;
+    assert(radio.begin());
+    assert(radio.otaExchange(config.stationMac, q, r) && sends == 1);
     radio.end();
     reset(); responseDelay = 4; wrongOtaSource = true;
     assert(radio.begin());
@@ -222,6 +278,12 @@ int main() {
     reset(); completionDelay = -1;
     assert(radio.begin());
     assert(!radio.otaExchange(config.stationMac, q, r) && sends == 1);
+    radio.end();
+    reset();
+    assert(radio.begin());
+    assert(!radio.otaExchange(config.stationMac, q, r) && sends == 5);
+    printf("Missing OTA response: %zu timed queue reads in %u simulated ms\n", testQueueTimedReceives, testMillis);
+    assert(testMillis == 3500 && testQueueTimedReceives == 5);
     radio.end();
   }
   lil::protocol::TelemetryPacket packet{};
@@ -232,12 +294,33 @@ int main() {
   assert(transport.exchange(packet, config).configReceived && sends == 1);
   transport.end(); assert(WiFi.shutdowns == 1);
 
+  reset(); responseDelay = 4; floodInvalidReplies = true;
+  assert(transport.begin());
+  assert(transport.exchangeLpChannel(packet, config, 6, true).configReceived && sends == 1);
+  transport.end();
+
   reset(); deliverySuccess = false; responseDelay = 25;
   assert(transport.begin());
   assert(transport.exchange(packet, config).configReceived && sends == 1);
   transport.end();
 
-  reset(); responseDelay = 275; // Arrives during the eight-ms retry backoff.
+  reset(); deliverySuccess = false;
+  assert(transport.begin());
+  assert(!transport.exchangeLpChannel(packet, config, 6, true).configReceived);
+  printf("Failed unicast callback at 2 ms: %lu simulated ms through application-ACK grace\n",
+         static_cast<unsigned long>(testMillis));
+  assert(testMillis == 32 && sends == 1);
+  transport.end();
+
+  reset(); responseDelay = 1; completionDelay = 5;
+  assert(transport.begin());
+  assert(transport.exchange(packet, config).configReceived && pending);
+  ++packet.header.sequence;
+  assert(transport.exchange(packet, config).configReceived && sends == 2);
+  assert(telemetryFrameTimes[1] == 5);
+  transport.end();
+
+  reset(); responseDelay = 267; // Arrives during the eight-ms retry backoff.
   assert(transport.begin());
   assert(transport.exchange(packet, config).configReceived && sends == 1);
   transport.end();
@@ -249,6 +332,14 @@ int main() {
   assert(channels.size() == 1 && sends == 1 && testMillis <= 440);
   transport.end();
 
+  reset(); completionDelay = -1; responseDelay = 445;
+  assert(transport.begin());
+  assert(!transport.exchange(packet, config).configReceived && sends == 1);
+  delay(5);
+  assert(transport.exchangeLpChannel(packet, config, 11, true).configReceived);
+  assert(channels.size() == 1 && sends == 1);
+  transport.end();
+
   reset(); completionDelay = 200; responseDelay = 250;
   assert(transport.begin());
   assert(transport.exchange(packet, config).configReceived && sends == 1);
@@ -256,8 +347,13 @@ int main() {
 
   reset(); config.provisioned = config.stationKnown = false;
   assert(transport.begin());
+  testTelemetryFinalizations = testTelemetryCrcBytes = 0;
   assert(!transport.exchange(packet, config).configReceived);
   assert(sends == 13 && channels.size() == 13);
+  printf("13-channel discovery: %zu CRC finalizations / %zu bytes\n",
+         testTelemetryFinalizations, testTelemetryCrcBytes);
+  assert(testTelemetryFinalizations == 1);
+  for (const auto& frame : telemetryFrames) assert(frame == telemetryFrames.front());
   for (uint8_t channel = 1; channel <= 13; ++channel) {
     assert(std::count(channels.begin(), channels.end(), channel) == 1);
   }

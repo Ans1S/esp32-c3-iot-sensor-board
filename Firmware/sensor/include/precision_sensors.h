@@ -27,9 +27,9 @@ class PrecisionSensors {
   uint32_t lastPollMs_ = 0, lastEstimateMs_ = 0, estimateSampleMs_ = 0;
   lil::protocol::PulseReading estimate_{};
   bool hasEstimate_ = false, hasCalculated_ = false, waveGap_ = false;
-  lil::protocol::OpticalFrame wave_[lil::protocol::kOpticalBatchSize]{};
-  uint32_t waveTimes_[lil::protocol::kOpticalBatchSize]{};
-  uint8_t waveCount_ = 0;
+  struct WaveSample { uint32_t red, infrared, timestampMs; };
+  WaveSample wave_[lil::protocol::kOpticalBatchSize]{};
+  uint8_t waveNext_ = 0, waveCount_ = 0;
   uint32_t signal_[200]{};
   uint16_t head_ = 0, count_ = 0;
 };

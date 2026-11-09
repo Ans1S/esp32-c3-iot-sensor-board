@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -29,32 +30,39 @@ class UploadScheduler {
   }
 
   void expire(uint32_t now) {
-    for (size_t i = 0; i < count_;) {
-      if (now - entries_[i].bornMs >= kLifetimeMs) {
-        erase(i);
-        ++dropped_;
-      } else {
-        ++i;
-      }
+    size_t retained = 0;
+    for (size_t i = 0; i < count_; ++i) {
+      if (now - entries_[i].bornMs >= kLifetimeMs) continue;
+      if (retained != i) entries_[retained] = entries_[i];
+      ++retained;
     }
+    dropped_ += count_ - retained;
+    count_ = retained;
   }
 
-  bool take(uint32_t now, Entry& output) {
+  // When no job can run, report the first time a queued job can become
+  // eligible or expire. A newly queued job can always interrupt that wait.
+  bool take(uint32_t now, Entry& output, uint32_t* waitMs = nullptr) {
     expire(now);
+    uint32_t nextWait = UINT32_MAX;
     for (size_t i = 0; i < count_; ++i) {
       const Entry& candidate = entries_[i];
-      bool earlierOnChannel = false;
-      for (size_t j = 0; j < i; ++j) {
-        earlierOnChannel |= entries_[j].job.channelId == candidate.job.channelId;
+      nextWait = std::min(nextWait, kLifetimeMs - (now - candidate.bornMs));
+      size_t earlier = 0;
+      while (earlier < i && entries_[earlier].job.channelId != candidate.job.channelId) ++earlier;
+      if (earlier != i) continue;
+      const uint32_t retryWait = remaining(now - candidate.retryStartedMs, candidate.attempts * kIntervalMs);
+      const uint32_t wait = std::max(retryWait, channelWait(candidate.job.channelId, now));
+      if (wait != 0) {
+        nextWait = std::min(nextWait, wait);
+        continue;
       }
-      if (earlierOnChannel ||
-          (candidate.attempts != 0 &&
-           now - candidate.retryStartedMs < candidate.attempts * kIntervalMs) ||
-          !channelReady(candidate.job.channelId, now)) continue;
       output = candidate;
       erase(i);
+      if (waitMs) *waitMs = 0;
       return true;
     }
+    if (waitMs) *waitMs = nextWait;
     return false;
   }
 
@@ -89,13 +97,17 @@ class UploadScheduler {
 
  private:
   struct Rate { uint32_t channel = 0; uint32_t finishedMs = 0; };
-  bool channelReady(uint32_t channel, uint32_t now) const {
-    bool freeSlot = false;
+  static uint32_t remaining(uint32_t elapsed, uint32_t duration) {
+    return elapsed < duration ? duration - elapsed : 0;
+  }
+  uint32_t channelWait(uint32_t channel, uint32_t now) const {
+    uint32_t slotWait = kIntervalMs;
     for (const auto& rate : rates_) {
-      if (rate.channel == channel) return now - rate.finishedMs >= kIntervalMs;
-      freeSlot |= rate.channel == 0 || now - rate.finishedMs >= kIntervalMs;
+      const uint32_t wait = remaining(now - rate.finishedMs, kIntervalMs);
+      if (rate.channel == channel) return wait;
+      slotWait = std::min(slotWait, rate.channel == 0 ? 0U : wait);
     }
-    return freeSlot;
+    return slotWait;
   }
   void erase(size_t index) {
     for (size_t i = index + 1; i < count_; ++i) entries_[i - 1] = entries_[i];
