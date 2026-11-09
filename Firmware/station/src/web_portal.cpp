@@ -329,6 +329,12 @@ bool WebPortal::begin(StationConfig& config, ConfigStore& store,
   server_.on("/api/thingspeak/channels", HTTP_GET, [this]() {
     if (requireAuthentication()) listThingSpeakChannels();
   });
+  server_.on("/api/thingspeak/channels", HTTP_POST, [this]() {
+    if (requireAuthentication() && verifyCsrf()) startThingSpeakChannelList();
+  });
+  server_.on("/api/thingspeak/operation", HTTP_GET, [this]() {
+    if (requireAuthentication()) pollThingSpeakMutation();
+  });
   server_.on("/api/thingspeak/channel-create", HTTP_POST, [this]() {
     if (requireAuthentication() && verifyCsrf())
       createManagedThingSpeakChannel();
@@ -654,6 +660,7 @@ bool WebPortal::verifyCsrf() {
 }
 
 void WebPortal::loop() {
+  finishThingSpeakMutation();
   server_.handleClient();
   if (restartPending_ && restartDelay_.ready(millis())) {
     ESP.restart();
@@ -689,6 +696,8 @@ void WebPortal::sendJsonStatus() {
   espnow["dropped"] = gateway_->droppedPackets();
   espnow["persistenceDrops"] = gateway_->persistenceDrops();
   espnow["peerFailures"] = gateway_->peerFailures();
+  espnow["replyBusyDrops"] = gateway_->replyBusyDrops();
+  espnow["replyMacFailures"] = gateway_->replyMacFailures();
   JsonObject cloud = document["cloud"].to<JsonObject>();
   cloud["lastHttpStatus"] = thingSpeak_->lastHttpStatus();
   cloud["lastEntryId"] = thingSpeak_->lastEntryId();
@@ -707,6 +716,8 @@ void WebPortal::sendJsonStatus() {
   // WebServer handlers are serialized; keep the enlarged snapshots off the task stack.
   static SensorView sensorViews[kMaxSensors];
   const size_t count = registry_->views(sensorViews, kMaxSensors);
+  const uint64_t snapshotMs = static_cast<uint64_t>(esp_timer_get_time()) / 1000;
+  auto* history = registry_->normalHistory();
   size_t provisionedCount = 0;
   size_t pendingCount = 0;
   size_t uploadEnabledCount = 0;
@@ -722,7 +733,7 @@ void WebPortal::sendJsonStatus() {
          view.runtime.telemetry.sensorType == lil::protocol::EnvironmentalSensorType::kTmp117) &&
         !recordingActive;
     const uint64_t ageMs = view.runtime.hasTelemetry
-                               ? static_cast<uint64_t>(esp_timer_get_time()) / 1000 - view.runtime.lastSeenMonotonicMs
+                               ? snapshotMs - view.runtime.lastSeenMonotonicMs
                                : 0;
     const uint32_t onlineLimitMs =
         batteryProtection ? 26UL * 60UL * 60UL * 1000UL :
@@ -731,8 +742,10 @@ void WebPortal::sendJsonStatus() {
     JsonObject item = sensors.add<JsonObject>();
     item["mac"] = SensorRegistry::formatMac(view.config.mac);
     item["name"] = view.config.name;
-    if(auto* history=registry_->normalHistory()){
+    uint32_t historyRevision = 0;
+    if(history){
       const auto info=history->info(view.config.mac);
+      historyRevision = info.revision;
       item["normalHistory"] = !recordingActive && view.runtime.telemetry.sensorType != lil::protocol::EnvironmentalSensorType::kMax30102;
       JsonObject retention=item["history"].to<JsonObject>();
       retention["points"]=info.points;retention["durablePoints"]=info.durablePoints;
@@ -840,7 +853,7 @@ void WebPortal::sendJsonStatus() {
             ? view.runtime.telemetry.operatingMode
             : lil::protocol::SensorOperatingMode::kUnknown);
     item["appliedRevision"] = uint32_t(view.runtime.telemetry.appliedConfigRevision);
-    item["historyRevision"] = registry_->historyRevision(view.config.mac);
+    item["historyRevision"] = history ? historyRevision : registry_->historyRevision(view.config.mac);
     if (view.config.provisioned) {
       ++provisionedCount;
       if (view.config.cloudUploadEnabled) {
@@ -908,7 +921,7 @@ void WebPortal::sendRecording() {
   RecordingInfo info{};
   const size_t count = recordingArchive.read(mac, session, offset, records, capacity, info, fromMs);
   if (!info.session) { heap_caps_free(records); sendJsonResult(false, "Recording not found"); return; }
-  if (info.readError) { heap_caps_free(records); sendJsonResult(false, "Stored recording failed CRC validation. Synchronize again before exporting."); return; }
+  if (info.readError) { heap_caps_free(records); sendJsonResult(false, "Stored recording could not be read. Retry before exporting."); return; }
   JsonDocument metadata; recordingInfoJson(metadata.to<JsonObject>(), info);
   metadata["nextOffset"] = offset;
   String opening; serializeJson(metadata, opening); opening.remove(opening.length()-1);
@@ -918,12 +931,15 @@ void WebPortal::sendRecording() {
   chunk.reserve(6144);
   for (size_t i = 0; i < count; ++i) {
     JsonDocument point; recordingPointJson(point, records[i]);
-    if (i) chunk += ',';
-    appendRecordingJson(point, chunk);
+    if ((i && !chunk.concat(',')) || !appendJson(point, chunk)) {
+      heap_caps_free(records);
+      server_.client().stop();
+      return;
+    }
     if (chunk.length() >= 4096) { server_.sendContent(chunk); chunk = ""; }
   }
   heap_caps_free(records);
-  chunk += "]}";
+  if (!chunk.concat("]}")) { server_.client().stop(); return; }
   server_.sendContent(chunk); server_.sendContent("");
 }
 void WebPortal::deleteRecording() {
@@ -975,15 +991,16 @@ void WebPortal::sendJsonHistory() {
     if (!samples && heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) > liveCapacity * sizeof(LiveSample) + 96U * 1024U)
       samples = static_cast<LiveSample*>(heap_caps_malloc(liveCapacity * sizeof(LiveSample), MALLOC_CAP_8BIT));
     if (!samples) { sendJsonResult(false, "Live history is temporarily unavailable"); return; }
-    const size_t count = registry_->liveHistory(mac, samples, liveCapacity);
+    const uint32_t* cursor = server_.hasArg("afterMs") ? &afterMs : nullptr;
+    const size_t count = registry_->liveHistory(mac, samples, liveCapacity, cursor);
     const uint32_t now = millis();
     sendNoCache(server_); server_.setContentLength(CONTENT_LENGTH_UNKNOWN);
     server_.send(200, "application/json", "");
     server_.sendContent(String("{\"live\":true,\"bucketSeconds\":") +
         String(lil::protocol::liveReportIntervalMs(liveView.runtime.telemetry.sensorType) / 1000.0F, 1) + ",\"points\":[");
-    size_t emitted = 0;
+    String chunk;
+    chunk.reserve(4096);
     for (size_t i = 0; i < count; ++i) {
-      if (server_.hasArg("afterMs") && static_cast<int32_t>(samples[i].receivedMs - afterMs) <= 0) continue;
       const auto& sample = samples[i]; const auto& t = sample.telemetry;
       JsonDocument doc;
       doc["id"] = sample.receivedMs;
@@ -1021,11 +1038,21 @@ void WebPortal::sendJsonHistory() {
         doc["activeSeconds"] = uint16_t(t.motionFeedback.activeSeconds);
       }
       if (t.capabilities & lil::protocol::kBattery) doc["battery"] = t.batteryMillivolts / 1000.0F;
-      String point; serializeJson(doc, point);
-      if (emitted++) server_.sendContent(",");
-      server_.sendContent(point);
+      if ((i && !chunk.concat(',')) || !appendJson(doc, chunk)) {
+        heap_caps_free(samples);
+        server_.client().stop();
+        return;
+      }
+      if (chunk.length() >= 3072) {
+        server_.sendContent(chunk);
+        chunk = "";
+      }
     }
-    heap_caps_free(samples); server_.sendContent("]}"); server_.sendContent(""); return;
+    heap_caps_free(samples);
+    if (!chunk.concat("]}")) { server_.client().stop(); return; }
+    server_.sendContent(chunk);
+    server_.sendContent("");
+    return;
   }
   const size_t capacity = registry_->historyCapacity(mac);
   HistorySample* samples = nullptr;
@@ -1167,10 +1194,16 @@ void WebPortal::sendPagedHistory(const uint8_t mac[6]) {
     if(t.capabilities&lil::protocol::kMotion){const char* keys[]={"ax","ay","az","gx","gy","gz"};
       for(size_t axis=0;axis<6;++axis)row[keys[axis]]=float(axis<3?t.motion.accelerationG[axis]:t.motion.angularRateDps[axis-3]);
       row["peakAcceleration"]=float(t.motion.peakAccelerationG);row["peakAngularRate"]=float(t.motion.peakAngularRateDps);}
-    String json;serializeJson(row,json);if(i)chunk+=',';chunk+=json;
+    if ((i && !chunk.concat(',')) || !appendJson(row, chunk)) {
+      heap_caps_free(points);
+      server_.client().stop();
+      return;
+    }
     if(chunk.length()>=3072){server_.sendContent(chunk);chunk="";}
   }
-  heap_caps_free(points);chunk+="]}";server_.sendContent(chunk);server_.sendContent("");server_.setContentLength(CONTENT_LENGTH_NOT_SET);
+  heap_caps_free(points);
+  if (!chunk.concat("]}")) { server_.client().stop(); return; }
+  server_.sendContent(chunk);server_.sendContent("");server_.setContentLength(CONTENT_LENGTH_NOT_SET);
 }
 
 void WebPortal::saveDashboardLayout() {
@@ -1693,48 +1726,165 @@ void WebPortal::createThingSpeakChannel() {
     sendJsonResult(false, "A maximum of six channels is supported.");
     return;
   }
-  const ChannelCreationResult result = thingSpeak_->createChannel(
-      config_->thingSpeakUserApiKey, channelName);
-  if (!result.success) {
-    sendJsonResult(false, result.error);
-    return;
-  }
-  const StationConfig previousConfig = *config_;
-  auto& profile = config_->thingSpeakChannels[profileSlot];
-  profile.occupied = true;
-  copyText(profile.name, channelName);
-  profile.channelId = result.channelId;
-  copyText(profile.readApiKey, result.readKey);
-  copyText(profile.writeApiKey, result.writeKey);
-  if (profileSlot == 0) {
-    config_->thingSpeakDefaultChannelId = result.channelId;
-    copyText(config_->thingSpeakReadApiKey, result.readKey);
-    copyText(config_->thingSpeakWriteApiKey, result.writeKey);
-  }
-  if (!store_->saveStationConfig(*config_)) {
-    *config_ = previousConfig;
-    sendJsonResult(false,
-                   "ThingSpeak channel " + String(result.channelId) +
-                   " was created, but its local profile could not be saved. Reload account channels before retrying.");
-    return;
-  }
-
-  JsonDocument document;
-  document["success"] = true;
-  document["message"] = "ThingSpeak-Channel " + String(result.channelId) +
-                        " was created. Assign its fields next.";
-  document["restart"] = false;
-  document["slot"] = profileSlot;
-  document["channelId"] = result.channelId;
-  String output;
-  serializeJson(document, output);
-  sendNoCache(server_);
-  server_.send(200, "application/json", output);
+  ThingSpeakAccountJob::Request request;
+  request.operation = ThingSpeakAccountJob::Operation::QuickCreate;
+  copyText(request.name, channelName);
+  runThingSpeakMutation(std::move(request));
 }
 
 void WebPortal::listThingSpeakChannels() {
-  const ThingSpeakApiResult result =
-      thingSpeak_->listChannels(config_->thingSpeakUserApiKey);
+  if (!server_.hasArg("ticket")) {
+    ThingSpeakAccountJob::Request request;
+    memcpy(request.account, config_->thingSpeakUserApiKey, sizeof(request.account));
+    sendThingSpeakChannels(thingSpeak_->executeAccount(request));
+    return;
+  }
+  uint32_t ticket = 0;
+  if (!readUnsignedArgument(server_, "ticket", ticket, 1)) {
+    sendJsonResult(false, "Invalid channel list ticket.");
+    return;
+  }
+  ThingSpeakApiResult result;
+  String owner;
+  if (!thingSpeakJobOwner(owner)) return;
+  switch (thingSpeak_->collectAccountJob(ticket, config_->thingSpeakUserApiKey,
+                                         owner.length() ? owner.c_str() : "", result)) {
+    case ThingSpeakAccountJob::Poll::Pending:
+      sendNoCache(server_);
+      server_.send(202, "application/json", "{\"success\":true,\"pending\":true}");
+      return;
+    case ThingSpeakAccountJob::Poll::Missing:
+      sendJsonResult(false, "Channel list request is no longer available. Load channels again.");
+      return;
+    case ThingSpeakAccountJob::Poll::Ready:
+      sendThingSpeakChannels(result);
+      return;
+  }
+}
+
+void WebPortal::startThingSpeakChannelList() {
+  ThingSpeakAccountJob::Request request;
+  memcpy(request.account, config_->thingSpeakUserApiKey, sizeof(request.account));
+  String owner;
+  if (!thingSpeakJobOwner(owner)) return;
+  sendThingSpeakTicket(thingSpeak_->startAccountJob(std::move(request), owner.length() ? owner.c_str() : ""));
+}
+
+bool WebPortal::thingSpeakJobOwner(String& owner) {
+  if (!authenticationEnabled()) return true;
+  owner = currentSessionToken();
+  if (owner.length() == 32) return true;
+  sendJsonResult(false, "ThingSpeak session is unavailable.");
+  return false;
+}
+
+void WebPortal::sendThingSpeakTicket(uint32_t ticket) {
+  if (!ticket) {
+    sendJsonResult(false, config_->thingSpeakUserApiKey[0] == '\0' ? "Save the ThingSpeak User API Key first." :
+                   "ThingSpeak account worker is busy or unavailable. Try again shortly.");
+    return;
+  }
+  sendNoCache(server_);
+  server_.send(202, "application/json", "{\"success\":true,\"ticket\":" + String(ticket) + "}");
+}
+
+void WebPortal::runThingSpeakMutation(ThingSpeakAccountJob::Request request) {
+  if (restartPending_) {
+    sendJsonResult(false, "The station is restarting. Try again when it is available.");
+    return;
+  }
+  request.configResetGeneration = configResetGeneration_;
+  memcpy(request.account, config_->thingSpeakUserApiKey, sizeof(request.account));
+  if (server_.hasArg("requestId")) {
+    if (!readUnsignedArgument(server_, "requestId", request.nonce, 1)) {
+      sendJsonResult(false, "Invalid ThingSpeak request identifier.");
+      return;
+    }
+    String owner;
+    if (!thingSpeakJobOwner(owner)) return;
+    sendThingSpeakTicket(thingSpeak_->startAccountJob(std::move(request), owner.length() ? owner.c_str() : ""));
+    return;
+  }
+  if (thingSpeak_->mutationPending()) {
+    sendJsonResult(false, "Another ThingSpeak change is in progress. Try again shortly.");
+    return;
+  }
+  sendThingSpeakMutation(applyThingSpeakMutation(request, thingSpeak_->executeAccount(request)));
+}
+
+void WebPortal::finishThingSpeakMutation() {
+  if (!thingSpeak_->mutationReady()) return;
+  ThingSpeakAccountJob::Request request;
+  ThingSpeakApiResult result;
+  if (thingSpeak_->takeMutation(request, result))
+    thingSpeak_->finishMutation(applyThingSpeakMutation(request, result));
+}
+
+void WebPortal::pollThingSpeakMutation() {
+  uint32_t ticket = 0;
+  if (!readUnsignedArgument(server_, "ticket", ticket, 1)) {
+    sendJsonResult(false, "Invalid ThingSpeak operation ticket.");
+    return;
+  }
+  String owner;
+  if (!thingSpeakJobOwner(owner)) return;
+  ThingSpeakMutationResult result;
+  switch (thingSpeak_->collectAccountJob(ticket, config_->thingSpeakUserApiKey,
+                                         owner.length() ? owner.c_str() : "", result)) {
+    case ThingSpeakAccountJob::Poll::Pending:
+      sendNoCache(server_);
+      server_.send(202, "application/json", "{\"success\":true,\"pending\":true}");
+      return;
+    case ThingSpeakAccountJob::Poll::Missing:
+      sendThingSpeakMutation({false, "ThingSpeak operation is no longer available. Reload account channels before retrying."}, true);
+      return;
+    case ThingSpeakAccountJob::Poll::Ready:
+      sendThingSpeakMutation(result, true);
+      return;
+  }
+}
+
+void WebPortal::sendThingSpeakMutation(const ThingSpeakMutationResult& result, bool polled) {
+  JsonDocument document;
+  document["success"] = result.success;
+  document["message"] = result.message;
+  document["restart"] = false;
+  document["authenticationChanged"] = false;
+  if (result.channelId) {
+    document["channelId"] = result.channelId;
+    document["slot"] = result.slot;
+  }
+  String output;
+  serializeJson(document, output);
+  sendNoCache(server_);
+  server_.send(result.success || polled ? 200 : 400, "application/json", output);
+}
+
+ThingSpeakMutationResult WebPortal::applyThingSpeakMutation(const ThingSpeakAccountJob::Request& request,
+                                                             const ThingSpeakApiResult& result) {
+  if (!result.success) return {false, result.error};
+  if (request.configResetGeneration != configResetGeneration_)
+    return {false, "The cloud request succeeded, but the station reset its settings before local completion."};
+  if (strcmp(request.account, config_->thingSpeakUserApiKey))
+    return {false, "The cloud request succeeded for the previous account. Local profiles were not changed."};
+  using Operation = ThingSpeakAccountJob::Operation;
+  switch (request.operation) {
+    case Operation::QuickCreate:
+    case Operation::Create:
+      return importThingSpeakChannel(request, result);
+    case Operation::Update:
+      return applyThingSpeakUpdate(request, result);
+    case Operation::Clear:
+      return {true, "All channel measurements were cleared."};
+    case Operation::Delete:
+      return applyThingSpeakDelete(request.channelId);
+    case Operation::List:
+      return {false, "Invalid ThingSpeak mutation."};
+  }
+  return {};
+}
+
+void WebPortal::sendThingSpeakChannels(const ThingSpeakApiResult& result) {
   if (!result.success) {
     sendJsonResult(false, result.error);
     return;
@@ -1812,27 +1962,27 @@ void WebPortal::createManagedThingSpeakChannel() {
     sendJsonResult(false, "Check the name and channel fields.");
     return;
   }
-  const ThingSpeakApiResult result = thingSpeak_->createManagedChannel(
-      config_->thingSpeakUserApiKey, managedChannelSettings(server_));
-  if (!result.success) {
-    sendJsonResult(false, result.error);
-    return;
-  }
+  ThingSpeakAccountJob::Request request;
+  request.operation = ThingSpeakAccountJob::Operation::Create;
+  copyText(request.name, server_.arg("name"));
+  request.settings = managedChannelSettings(server_);
+  runThingSpeakMutation(std::move(request));
+}
+
+ThingSpeakMutationResult WebPortal::importThingSpeakChannel(const ThingSpeakAccountJob::Request& request,
+                                                             const ThingSpeakApiResult& result) {
   JsonDocument remote;
   if (deserializeJson(remote, result.response)) {
-    sendJsonResult(false, "Channel created, but the response was invalid.");
-    return;
+    return {false, "Channel created, but the response was invalid. Reload account channels before retrying."};
   }
   const uint32_t channelId = remote["id"] | 0U;
-  if (!channelId) {
-    sendJsonResult(false,
-                   "The cloud response contained no Channel ID. Reload account channels before retrying.");
-    return;
-  }
-  const StationConfig previousConfig = *config_;
+  if (!channelId) return {false, "The cloud response contained no Channel ID. Reload account channels before retrying."};
   String readKey;
   String writeKey;
   extractApiKeys(remote.as<JsonObjectConst>(), readKey, writeKey);
+  const bool quick = request.operation == ThingSpeakAccountJob::Operation::QuickCreate;
+  if (quick && writeKey.isEmpty())
+    return {false, "Channel created without a Write API Key in the response. Reload account channels before retrying.", channelId};
   int localSlot = -1;
   for (size_t slot = 0; slot < kMaxThingSpeakChannels; ++slot) {
     if (!config_->thingSpeakChannels[slot].occupied) {
@@ -1840,10 +1990,11 @@ void WebPortal::createManagedThingSpeakChannel() {
       break;
     }
   }
-  if (localSlot >= 0 && channelId != 0) {
+  if (localSlot >= 0) {
+    const StationConfig previousConfig = *config_;
     auto& profile = config_->thingSpeakChannels[localSlot];
     profile.occupied = true;
-    copyText(profile.name, server_.arg("name"));
+    memcpy(profile.name, request.name, sizeof(profile.name));
     profile.channelId = channelId;
     copyText(profile.readApiKey, readKey);
     copyText(profile.writeApiKey, writeKey);
@@ -1854,24 +2005,14 @@ void WebPortal::createManagedThingSpeakChannel() {
     }
     if (!store_->saveStationConfig(*config_)) {
       *config_ = previousConfig;
-      sendJsonResult(false,
-                     "ThingSpeak channel " + String(channelId) +
-                     " was created, but its local profile could not be saved. Reload account channels before retrying.");
-      return;
+      return {false, "ThingSpeak channel " + String(channelId) +
+                     " was created, but its local profile could not be saved. Reload account channels before retrying.",
+              channelId};
     }
   }
-  JsonDocument document;
-  document["success"] = channelId != 0;
-  document["restart"] = false;
-  document["message"] = localSlot >= 0
-                            ? "ThingSpeak channel created and imported locally."
-                            : "ThingSpeak channel created. The local profile list is full.";
-  document["channelId"] = channelId;
-  document["slot"] = localSlot;
-  String output;
-  serializeJson(document, output);
-  sendNoCache(server_);
-  server_.send(channelId != 0 ? 200 : 400, "application/json", output);
+  if (localSlot < 0) return {!quick, "ThingSpeak channel created. The local profile list is full.", channelId};
+  if (quick) return {true, "ThingSpeak-Channel " + String(channelId) + " was created. Assign its fields next.", channelId, localSlot};
+  return {true, "ThingSpeak channel created and imported locally.", channelId, localSlot};
 }
 
 void WebPortal::updateManagedThingSpeakChannel() {
@@ -1883,13 +2024,16 @@ void WebPortal::updateManagedThingSpeakChannel() {
     sendJsonResult(false, "Check the Channel ID, name and fields.");
     return;
   }
-  const ThingSpeakApiResult result = thingSpeak_->updateChannel(
-      config_->thingSpeakUserApiKey, channelId,
-      managedChannelSettings(server_));
-  if (!result.success) {
-    sendJsonResult(false, result.error);
-    return;
-  }
+  ThingSpeakAccountJob::Request request;
+  request.operation = ThingSpeakAccountJob::Operation::Update;
+  request.channelId = channelId;
+  copyText(request.name, server_.arg("name"));
+  request.settings = managedChannelSettings(server_);
+  runThingSpeakMutation(std::move(request));
+}
+
+ThingSpeakMutationResult WebPortal::applyThingSpeakUpdate(const ThingSpeakAccountJob::Request& request,
+                                                           const ThingSpeakApiResult& result) {
   JsonDocument remote;
   String readKey;
   String writeKey;
@@ -1901,8 +2045,8 @@ void WebPortal::updateManagedThingSpeakChannel() {
   bool localChanged = false;
   for (size_t slot = 0; slot < kMaxThingSpeakChannels; ++slot) {
     auto& profile = config_->thingSpeakChannels[slot];
-    if (!profile.occupied || profile.channelId != channelId) continue;
-    copyText(profile.name, server_.arg("name"));
+    if (!profile.occupied || profile.channelId != request.channelId) continue;
+    memcpy(profile.name, request.name, sizeof(profile.name));
     if (!readKey.isEmpty()) copyText(profile.readApiKey, readKey);
     if (!writeKey.isEmpty()) copyText(profile.writeApiKey, writeKey);
     if (slot == 0) {
@@ -1933,9 +2077,8 @@ void WebPortal::updateManagedThingSpeakChannel() {
         registry_->syncThingSpeakProfile(slot, previousConfig.thingSpeakChannels[slot]);
     }
   }
-  sendJsonResult(localSaved,
-                 localSaved ? "ThingSpeak channel updated."
-                            : "Cloud updated, but the local assignment could not be saved.");
+  return {localSaved, localSaved ? "ThingSpeak channel updated."
+                                : "Cloud updated, but the local assignment could not be saved."};
 }
 
 void WebPortal::clearManagedThingSpeakChannel() {
@@ -1947,11 +2090,10 @@ void WebPortal::clearManagedThingSpeakChannel() {
     sendJsonResult(false, "Invalid Channel ID.");
     return;
   }
-  const ThingSpeakApiResult result = thingSpeak_->clearChannel(
-      config_->thingSpeakUserApiKey, channelId);
-  sendJsonResult(result.success,
-                 result.success ? "All channel measurements were cleared."
-                                : result.error);
+  ThingSpeakAccountJob::Request request;
+  request.operation = ThingSpeakAccountJob::Operation::Clear;
+  request.channelId = channelId;
+  runThingSpeakMutation(std::move(request));
 }
 
 void WebPortal::deleteManagedThingSpeakChannel() {
@@ -1963,12 +2105,13 @@ void WebPortal::deleteManagedThingSpeakChannel() {
     sendJsonResult(false, "Invalid Channel ID.");
     return;
   }
-  const ThingSpeakApiResult result = thingSpeak_->deleteChannel(
-      config_->thingSpeakUserApiKey, channelId);
-  if (!result.success) {
-    sendJsonResult(false, result.error);
-    return;
-  }
+  ThingSpeakAccountJob::Request request;
+  request.operation = ThingSpeakAccountJob::Operation::Delete;
+  request.channelId = channelId;
+  runThingSpeakMutation(std::move(request));
+}
+
+ThingSpeakMutationResult WebPortal::applyThingSpeakDelete(uint32_t channelId) {
   bool saved = true;
   bool changed = false;
   for (size_t slot = 0; slot < kMaxThingSpeakChannels; ++slot) {
@@ -1988,9 +2131,8 @@ void WebPortal::deleteManagedThingSpeakChannel() {
   if (changed) {
     saved = store_->saveStationConfig(*config_) && saved;
   }
-  sendJsonResult(saved,
-                 saved ? "ThingSpeak channel and local assignment deleted."
-                       : "Cloud channel deleted, but the local assignment could not be fully updated.");
+  return {saved, saved ? "ThingSpeak channel and local assignment deleted."
+                       : "Cloud channel deleted, but the local assignment could not be fully updated."};
 }
 
 void WebPortal::resetSensor() {
@@ -2027,6 +2169,9 @@ void WebPortal::factoryReset() {
     sendJsonResult(false, "Confirmation does not match");
     return;
   }
+  // Ignore local changes from earlier account jobs even if the reset only
+  // partially succeeds, since clearing NVS can succeed before formatting.
+  ++configResetGeneration_;
   const bool cleared = store_->factoryReset();
   if (cleared) otaService.forget();
   sendJsonResult(cleared,

@@ -45,12 +45,15 @@ bool Bme280Driver::write8(uint8_t reg, uint8_t value) {
   return error == 0;
 }
 
-bool Bme280Driver::waitReady(uint32_t timeoutMs) {
+bool Bme280Driver::waitReady(uint32_t timeoutMs, uint8_t* control) {
   const uint32_t started = millis();
   do {
-    uint8_t status;
-    if (!readBytes(0xF3, &status, 1)) return false;
-    if ((status & 0x09) == 0) return true;
+    uint8_t status[2];
+    if (!readBytes(0xF3, status, control ? 2 : 1)) return false;
+    if ((status[0] & 0x09) == 0) {
+      if (control) *control = status[1];
+      return true;
+    }
     measurementWaitUs(1000);
   } while (millis() - started < timeoutMs && !measurementBudgetExpired());
   SENSOR_LOG_PRINTLN("[BME280] Status did not become ready before the deadline");
@@ -108,7 +111,9 @@ EnvironmentalReading Bme280Driver::read() {
   // Polling immediately can see measuring=0 before the conversion starts.
   measurementWaitUs(10000);
   uint8_t control, raw[8];
-  if (!waitReady(50) || !readBytes(0xF4, &control, 1)) return reading;
+  // Read the adjacent status and control registers together. Keep the raw
+  // channels in their own burst after verifying that the conversion ended.
+  if (!waitReady(50, &control)) return reading;
   if (control != 0x24) {
     SENSOR_LOG_PRINTF("[BME280] Forced conversion control mismatch: expected=0x24 actual=0x%02X\n", control);
     return reading;

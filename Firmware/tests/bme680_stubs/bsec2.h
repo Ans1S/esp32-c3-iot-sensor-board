@@ -15,7 +15,7 @@ struct BsecScript {
   bool includeIaq = true, invalidOutputCount = false;
   float iaq = 42, temperature = 25, humidity = 50, pressure = 1000;
   uint8_t accuracy = 0;
-  unsigned runs = 0, restores = 0;
+  unsigned runs = 0, restores = 0, runsWithoutOutput = 0;
   int64_t nextCallNs = 0, forcedTimestampNs = -1, lastRunTimeMs = 0;
   float subscribedRate = 0;
 };
@@ -49,7 +49,7 @@ class Bsec2 {
   bool run() {
     ++testBsec.runs; testBsec.lastRunTimeMs = getTimeMs();
     if (testBsec.failRun) return false;
-    if (!testBsec.emit) return true;
+    if (!testBsec.emit || testBsec.runs <= testBsec.runsWithoutOutput) return true;
     outputs_ = {};
     const int64_t stamp = testBsec.forcedTimestampNs >= 0 ?
         testBsec.forcedTimestampNs : testBsec.lastRunTimeMs * 1000000;

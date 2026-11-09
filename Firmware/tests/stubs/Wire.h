@@ -1,10 +1,13 @@
 #pragma once
 #include <array>
+#include <cstddef>
 #include <deque>
 #include <vector>
 #include <cstdint>
 struct WireStub {
   unsigned readRequests = 0;
+  size_t shortFifoRequest = 0;
+  std::vector<uint8_t> fifoRequests;
   uint8_t registers[256]{};
   uint8_t address = 0, reg = 0;
   bool fail = false, stuckReset = false, shortRead = false, overrun = false;
@@ -31,8 +34,16 @@ struct WireStub {
       rx.push_back(fifo.size() & 255);
       rx.push_back((fifo.size() >> 8) | (overrun ? 0x40 : 0) | (latchedOverrun ? 8 : 0));
     } else if (reg == 0x78 && !fifo.empty()) {
-      for (auto b : fifo.front()) rx.push_back(b);
-      fifo.pop_front();
+      fifoRequests.push_back(n);
+      const size_t bytes = fifoRequests.size() == shortFifoRequest ? n - 1 : n;
+      // ST AN5272 section 4.7.1 specifies automatic wrap after each 7-byte word.
+      while (rx.size() < bytes && !fifo.empty()) {
+        for (auto b : fifo.front()) {
+          if (rx.size() == bytes) break;
+          rx.push_back(b);
+        }
+        fifo.pop_front();
+      }
     } else for (uint8_t i = 0; i < n; ++i) rx.push_back(registers[reg + i]);
     return rx.size();
   }

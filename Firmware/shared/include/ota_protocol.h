@@ -4,8 +4,8 @@
 
 namespace lil::ota {
 constexpr uint32_t kPackageMagic = 0x3141544f; // OTA1
-constexpr uint32_t kRelease = 40404;
-#define WCH_FIRMWARE_VERSION "4.4.4"
+constexpr uint32_t kRelease = 40405;
+#define WCH_FIRMWARE_VERSION "4.4.5"
 constexpr char kVersion[] = WCH_FIRMWARE_VERSION;
 constexpr size_t kBlockSize = 192;
 // Both sensor revisions reserve the rest of flash for the recording journal.
@@ -54,8 +54,22 @@ struct Identity {
 #pragma pack(pop)
 using Packet = protocol::Packet<Payload>;
 constexpr auto kMessageType = static_cast<protocol::MessageType>(16);
+// Offer.offset is zero on legacy stations and ignored by legacy clients.
+constexpr uint32_t kOfferCompactRead = 1U << 0;
+constexpr size_t kCompactReadPayloadSize = offsetof(Payload, data);
+constexpr size_t kCompactReadPacketSize = sizeof(protocol::PacketHeader) + kCompactReadPayloadSize;
 static_assert(sizeof(Manifest) == 160);
 static_assert(sizeof(Packet) <= protocol::kMaxPacketSize);
+inline bool requestSizeSupported(size_t length) {
+  return length == sizeof(Packet) || length == kCompactReadPacketSize;
+}
+inline bool decodeRequest(const uint8_t* data, size_t length, Packet& request) {
+  if (!requestSizeSupported(length) || !protocol::validatePacket(data, length, kMessageType,
+          length - sizeof(protocol::PacketHeader))) return false;
+  memcpy(&request, data, length);
+  if (length == sizeof(Packet)) return true;
+  return request.payload.op == Op::Read && request.payload.size == 0;
+}
 inline bool validIdentity(const Identity& identity) {
   return (identity.pcb == 3 || identity.pcb == 4) &&
       identity.protocol == protocol::kVersion &&

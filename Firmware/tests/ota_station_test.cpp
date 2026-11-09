@@ -34,10 +34,14 @@ Packet hello(uint32_t nonce) {
   request.payload.size = sizeof(identity); memcpy(request.payload.data, &identity, sizeof(identity));
   return request;
 }
-Packet send(station::OtaService& service, Packet request, bool success = true) {
-  lil::protocol::finalize(request, kMessageType, request.header.sequence);
+Packet send(station::OtaService& service, Packet request, bool success = true, bool compact = false) {
+  const size_t length = compact ? kCompactReadPacketSize : sizeof(request);
+  lil::protocol::finalizePacket(&request, length, kMessageType, request.header.sequence,
+                                length - sizeof(lil::protocol::PacketHeader));
+  Packet decoded{};
+  assert(decodeRequest(reinterpret_cast<const uint8_t*>(&request), length, decoded));
   Packet response{};
-  assert(service.respond(mac, request, response) == success);
+  assert(service.respond(mac, decoded, response) == success);
   if (success) assert(lil::protocol::validate(response, sizeof(response), kMessageType));
   return response;
 }
@@ -73,7 +77,8 @@ int main() {
   std::vector<uint8_t> image(70000);
   for (size_t i = 0; i < image.size(); ++i) image[i] = uint8_t(i * 17 + 3);
   stage(service, image, kRelease + 1);
-  assert(send(service, hello(91)).payload.op == Op::Offer);
+  const auto offer = send(service, hello(91));
+  assert(offer.payload.op == Op::Offer && offer.payload.offset & kOfferCompactRead);
   stagingReads.clear(); cacheAllocations = 0;
   Packet request{}; request.payload.nonce = 91; request.payload.op = Op::Read;
   size_t packets = 0;
@@ -100,7 +105,13 @@ int main() {
   send(service, request, false); failAllStagingReads = false;
   checkData(send(service, request), image, 30000);
   Packet status{}; status.payload.nonce = 91; status.payload.op = Op::Status; status.payload.state = State::Paused;
+  status.payload.offset = 16384;
   send(service, status);
+  // The durable offset is the last word of the station's saved job record.
+  const auto& savedJob = stationOtaPreferences.at("job");
+  uint32_t savedOffset;
+  memcpy(&savedOffset, savedJob.data() + savedJob.size() - sizeof(savedOffset), sizeof(savedOffset));
+  assert(savedOffset == status.payload.offset);
   failCacheAllocation = true; stagingReads.clear();
   for (size_t offset : {5000U, 5192U, 5384U}) {
     request.payload.offset = offset; checkData(send(service, request), image, offset);
@@ -133,7 +144,7 @@ int main() {
   request.payload.nonce = 106; stagingReads.clear(); cacheAllocations = 0; packets = bytes = 0;
   for (size_t offset = 0; offset < image.size(); offset += kBlockSize) {
     request.payload.offset = offset; ++request.header.sequence;
-    checkData(send(reboot, request), image, offset); ++packets;
+    checkData(send(reboot, request, true, true), image, offset); ++packets;
   }
   for (const auto& read : stagingReads) bytes += read.size;
   assert(bytes == image.size() && stagingReads.size() == (FLOW_OPTIMIZED ? (packets + 7) / 8 : packets));

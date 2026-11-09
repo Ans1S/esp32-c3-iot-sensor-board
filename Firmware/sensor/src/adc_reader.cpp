@@ -1,7 +1,5 @@
 #include "adc_reader.h"
 
-#include <algorithm>
-
 #include "hardware_profile.h"
 #include "low_power_wait.h"
 #include "power_policy.h"
@@ -45,19 +43,32 @@ BatteryReading AdcReader::finishBatteryMeasurement(float calibrationFactor) {
     lowPowerSensorWaitUs(remainingUs);
   }
 
-  uint16_t samples[kSampleCount];
+  uint32_t sum = 0;
+  uint16_t lowest = UINT16_MAX, secondLowest = UINT16_MAX;
+  uint16_t highest = 0, secondHighest = 0;
   for (size_t i = 0; i < kSampleCount; ++i) {
-    samples[i] = analogReadMilliVolts(static_cast<uint8_t>(kHardware.adcPin));
-    delayMicroseconds(150);
+    const uint16_t sample = analogReadMilliVolts(static_cast<uint8_t>(kHardware.adcPin));
+    sum += sample;
+    if (sample < lowest) {
+      secondLowest = lowest;
+      lowest = sample;
+    } else if (sample < secondLowest) {
+      secondLowest = sample;
+    }
+    if (sample > highest) {
+      secondHighest = highest;
+      highest = sample;
+    } else if (sample > secondHighest) {
+      secondHighest = sample;
+    }
+    if (i + 1 < kSampleCount) delayMicroseconds(150);
   }
   power_->adcPower(false);
   measurementPending_ = false;
 
-  std::sort(samples, samples + kSampleCount);
-  uint32_t sum = 0;
-  for (size_t i = 2; i < kSampleCount - 2; ++i) {
-    sum += samples[i];
-  }
+  // The same two readings from each end of a sorted window are discarded,
+  // including repeated extrema, without sorting or buffering the samples.
+  sum -= uint32_t(lowest) + secondLowest + highest + secondHighest;
   uint32_t factorBits;
   static_assert(sizeof(factorBits) == sizeof(calibrationFactor));
   memcpy(&factorBits, &calibrationFactor, sizeof(factorBits));

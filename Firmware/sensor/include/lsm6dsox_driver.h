@@ -22,7 +22,7 @@ class Lsm6dsoxDriver {
   uint32_t lastAccelMs_ = 0, lastGyroMs_ = 0;
   uint32_t lastPollMs_ = 0;
   uint32_t accelCount_ = 0, gyroCount_ = 0;
-  float sums_[2][3]{};
+  int64_t rawSums_[2][3]{};
   float gyroPeakSquared_ = 0;
   lil::protocol::MotionReading motion_{};
   lil::MotionFeedbackTracker feedback_{};

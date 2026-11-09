@@ -72,7 +72,8 @@ class SensorRegistry {
   bool begin(ConfigStore& store, uint32_t defaultSleepSeconds, PagedHistory* paged = nullptr);
   PagedHistory* normalHistory() const { return paged_; }
   void flushHistory() { if (paged_) paged_->flushDue(); }
-  size_t liveHistory(const uint8_t mac[6], LiveSample* output, size_t capacity) const;
+  size_t liveHistory(const uint8_t mac[6], LiveSample* output, size_t capacity,
+                     const uint32_t* afterMs = nullptr) const;
   bool registerTelemetry(const uint8_t mac[6], uint32_t sequence,
                          const lil::protocol::TelemetryPayload& telemetry,
                          int8_t rssi, SensorConfig& responseConfig,

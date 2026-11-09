@@ -101,6 +101,28 @@ int main() {
   assert(reading.valid && reading.bme680RawFallback && millis() - started == 180);
   assert(testBsec.runs == 1 && rawStarts == 1 && driver.recommendedSleepSeconds(300) == 300);
 
+  // Fractional BSEC deadlines round up before sleeping. A sub-millisecond
+  // fraction just beyond the acquisition budget takes the immediate fallback.
+  for (const uint32_t fractionNs : {0U, 1U, 999999U}) {
+    reset(); testBsec.runsWithoutOutput = 1;
+    testBsec.nextCallNs = (testLogicalMs + 123) * 1000000 + fractionNs;
+    assert(driver.begin(0x76,0));
+    const uint32_t start = millis();
+    reading = driver.read();
+    assert(reading.valid && !reading.bme680RawFallback && testBsec.runs == 2 && rawStarts == 0);
+    assert(millis() - start == 123 + (fractionNs != 0));
+  }
+  for (const uint32_t fractionNs : {0U, 1U}) {
+    reset(); testBsec.emit = false;
+    testBsec.nextCallNs = (testLogicalMs + 5000) * 1000000 + fractionNs;
+    assert(driver.begin(0x76,0));
+    const uint32_t start = millis();
+    reading = driver.read();
+    assert(reading.valid && reading.bme680RawFallback && rawStarts == 1);
+    assert(testBsec.runs == (fractionNs == 0 ? 2 : 1));
+    assert(millis() - start == (fractionNs == 0 ? 5180 : 180));
+  }
+
   // A corrupt extreme schedule cannot overflow while rounding nanoseconds.
   reset(); testBsec.emit = false; testBsec.nextCallNs = INT64_MAX;
   assert(driver.begin(0x76,0)); reading = driver.read();

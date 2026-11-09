@@ -21,6 +21,7 @@ struct Esp { uint32_t getFlashChipSize() { return 0x400000; } void restart() { e
 inline Esp ESP;
 inline uint32_t esp_random() { return 42; }
 inline std::map<std::string, std::vector<uint8_t>> values;
+inline bool failCheckpointSave = false;
 class Preferences {
  public:
   bool begin(const char*, bool) { return true; }
@@ -29,7 +30,10 @@ class Preferences {
   size_t putUInt(const char* key, uint32_t v) { return putBytes(key, &v, 4); }
   size_t getBytesLength(const char* key) { return values[key].size(); }
   size_t getBytes(const char* key, void* out, size_t size) { if (values[key].size() != size) return 0; memcpy(out, values[key].data(), size); return size; }
-  size_t putBytes(const char* key, const void* data, size_t size) { auto p = static_cast<const uint8_t*>(data); values[key] = {p,p+size}; return size; }
+  size_t putBytes(const char* key, const void* data, size_t size) {
+    if (failCheckpointSave && !strcmp(key, "checkpoint")) return 0;
+    auto p = static_cast<const uint8_t*>(data); values[key] = {p,p+size}; return size;
+  }
   bool remove(const char* key) { return values.erase(key); }
 };
 struct esp_partition_t { uint32_t address, size; };
@@ -103,6 +107,9 @@ inline lil::ota::Manifest offer;
 inline std::vector<uint8_t> image;
 inline uint32_t breakAt=UINT32_MAX, readDelayMs=0;
 inline bool signatureValid=true, offerEnabled=true;
+inline bool offerCompactRead=false;
+inline size_t readRequestBytes=0, readRequests=0;
+inline uint32_t lastStatusOffset=0;
 inline std::vector<lil::ota::State> states;
 inline std::vector<lil::ota::Failure> failures;
 class EspNowTransport {
@@ -111,14 +118,22 @@ class EspNowTransport {
     using namespace lil::ota;
     testTime+=2; r={}; r.payload.op=Op::Idle;
     if(q.payload.op==Op::Hello && offerEnabled) {
+      r.payload.offset=offerCompactRead ? kOfferCompactRead : 0U;
       r.payload.op=Op::Offer; r.payload.size=sizeof(offer); memcpy(r.payload.data,&offer,sizeof(offer));
     } else if(q.payload.op==Op::Read) {
+      ++readRequests;
+      const size_t length = sizeof(lil::protocol::PacketHeader) + q.header.payloadSize;
+      Packet decoded{};
+      assert(decodeRequest(reinterpret_cast<const uint8_t*>(&q), length, decoded));
+      assert(length == (offerCompactRead ? kCompactReadPacketSize : sizeof(Packet)));
+      readRequestBytes += length;
       testTime += readDelayMs;
       if(q.payload.offset >= breakAt) return false;
       r.payload.op=Op::Data; r.payload.offset=q.payload.offset;
       r.payload.size=min(size_t(kBlockSize),image.size()-q.payload.offset);
       memcpy(r.payload.data,image.data()+q.payload.offset,r.payload.size);
     } else if(q.payload.op==Op::Status) {
+      lastStatusOffset=q.payload.offset;
       states.push_back(q.payload.state);
       failures.push_back(q.payload.size==1?static_cast<Failure>(q.payload.data[0]):Failure::None);
     }

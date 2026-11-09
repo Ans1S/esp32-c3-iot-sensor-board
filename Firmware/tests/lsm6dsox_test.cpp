@@ -74,10 +74,85 @@ int main() {
   assert(r.valid && fabs(r.motion.accelerationG[0] - 1.22F) < .0001F && r.motion.angularRateDps[0] == 175);
   assert(Wire.readRequests == (FLOW_OPTIMIZED ? 0 : 1));
   printf("IMU checked snapshot: %u additional I2C read requests after poll\n", Wire.readRequests);
+  Wire.fifoRequests.clear();
+  Wire.readRequests = 0;
+  for (int i = 0; i < 9; ++i) {
+    Wire.sample(2, 10000 + 100*i, -1000*i, 0);
+    Wire.sample(1, -1000*i, 10000 + 100*i, 0);
+  }
+  r = driver.read();
+  printf("IMU snapshot of 18 FIFO words: %u read requests, %zu FIFO transactions\n",
+         Wire.readRequests, Wire.fifoRequests.size());
+  assert(Wire.readRequests == 4 && (Wire.fifoRequests == std::vector<uint8_t>{56, 56, 14}));
+  assert(r.valid && r.motion.sampleCount == 9 && Wire.fifo.empty());
+  assert(fabs(r.motion.accelerationG[0] - 10400 * .000122F) < .00001F);
+  assert(fabs(r.motion.accelerationG[1] - -4000 * .000122F) < .00001F);
+  assert(fabs(r.motion.angularRateDps[0] - -4000 * .0175F) < .00001F);
+  assert(fabs(r.motion.angularRateDps[1] - 10400 * .0175F) < .0001F);
+  Wire.fifoRequests.clear();
+  Wire.shortFifoRequest = 2;
+  for (int i = 0; i < 9; ++i) {
+    Wire.sample(2, 8197, 0, 0);
+    Wire.sample(1, 100, 0, 0);
+  }
+  assert(!driver.poll());
+  r = driver.read(false);
+  assert(!r.valid && r.motion.sampleCount == 0 && (r.live.flags & lil::protocol::kLiveGap));
+  assert(!driver.poll());
+  Wire.shortFifoRequest = 0;
+  assert(driver.begin(0x6A));
 #if FLOW_OPTIMIZED
   Wire.sample(2, 10000, 0, 0); Wire.sample(1, 10000, 0, 0);
   assert(driver.poll()); testMillis += 201; Wire.readRequests = 0;
   assert(!driver.read(false).valid && Wire.readRequests == 0);
 #endif
+  assert(driver.begin(0x6A));
+  uint32_t seed = 17;
+  float maxAccelerationDelta = 0, maxGyroDelta = 0;
+  for (unsigned window = 1; window <= 256; ++window) {
+    float previous[2][3]{};
+    int64_t sums[2][3]{};
+    const float scales[] = {.000122F, .0175F};
+    for (unsigned i = 0; i < window; ++i) {
+      for (unsigned sensor = 0; sensor < 2; ++sensor) {
+        int16_t axes[3];
+        for (unsigned axis = 0; axis < 3; ++axis) {
+          seed = seed * 1664525U + 1013904223U;
+          axes[axis] = int32_t(seed >> 16) - 32768;
+          sums[sensor][axis] += axes[axis];
+          previous[sensor][axis] += axes[axis] * scales[sensor];
+        }
+        Wire.sample(sensor == 0 ? 2 : 1, axes[0], axes[1], axes[2]);
+      }
+    }
+    const auto average = driver.read();
+    assert(average.valid && average.motion.sampleCount == window);
+    for (unsigned axis = 0; axis < 3; ++axis) {
+      const float acceleration = average.motion.accelerationG[axis];
+      const float gyro = average.motion.angularRateDps[axis];
+      const double exactAcceleration = double(sums[0][axis]) * scales[0] / window;
+      const double exactGyro = double(sums[1][axis]) * scales[1] / window;
+      assert(fabs(acceleration - exactAcceleration) <= .000001);
+      assert(fabs(gyro - exactGyro) <= .0001);
+      maxAccelerationDelta = fmaxf(maxAccelerationDelta, fabsf(acceleration - previous[0][axis] / window));
+      maxGyroDelta = fmaxf(maxGyroDelta, fabsf(gyro - previous[1][axis] / window));
+    }
+  }
+  assert(maxAccelerationDelta <= .00001F && maxGyroDelta <= .001F);
+  printf("IMU 256 signed windows: maximum mean delta %.9g g and %.9g dps\n",
+         double(maxAccelerationDelta), double(maxGyroDelta));
+  // A caller that drains the FIFO but delays readout may exceed a signed
+  // 32-bit total. Keep all six axes safe at either signed ADC extreme.
+  for (unsigned batch = 0; batch < 257; ++batch) {
+    for (unsigned i = 0; i < 256; ++i) {
+      Wire.sample(2, -32768, 32767, 0);
+      Wire.sample(1, 32767, -32768, 0);
+    }
+    assert(driver.poll());
+  }
+  r = driver.read(false);
+  assert(r.valid && r.motion.sampleCount == UINT16_MAX);
+  assert(r.motion.accelerationG[0] == -32768 * .000122F && r.motion.accelerationG[1] == 32767 * .000122F);
+  assert(r.motion.angularRateDps[0] == 32767 * .0175F && r.motion.angularRateDps[1] == -32768 * .0175F);
   puts("LSM6DSOX identity, reset timeout, FIFO, signed scale, peaks, overflow and stale/error checks passed");
 }

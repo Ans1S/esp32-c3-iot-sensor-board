@@ -58,5 +58,20 @@ int main() {
   assert(!interrupted.recording() && interrupted.next(upload));
   assert(upload.durationMs == UINT32_MAX && upload.totalRecords == 1);
   recordingClockExtraMs = 0;
+  assert(interrupted.start());
+  const uint32_t recoveryStarted = testMillis;
+  testMillis = recoveryStarted + 100; assert(interrupted.append(testMillis, payload));
+  testMillis = recoveryStarted + 200;
+  recordingFailReadAfterWrite = true;
+  assert(!interrupted.append(testMillis, payload) && interrupted.status(0).state == State::Fault);
+  sensor::RecordingStore recoveredWrite;
+  assert(recoveredWrite.begin(Type::kTmp117));
+  assert(recoveredWrite.next(upload) && upload.totalRecords == 2 && upload.durationMs == 200 &&
+         upload.record.sampleMs == 100);
+  assert(recoveredWrite.acknowledge(upload.record));
+  assert(recoveredWrite.next(upload) && upload.totalRecords == 2 && upload.record.sampleMs == 200);
+  recordingFailReadAfterWrite = true;
+  assert(!recoveredWrite.acknowledge(upload.record));
+  assert(!recoveredWrite.next(upload) && recoveredWrite.status(0).state == State::Synced);
   puts("Recording lifecycle: manual start, stop-only sync, reboot recovery, UTC uncertainty, replacement and ACK reclamation passed");
 }

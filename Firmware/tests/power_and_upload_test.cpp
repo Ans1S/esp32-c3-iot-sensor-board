@@ -13,6 +13,16 @@
 #include "lil_protocol.h"
 
 struct Job { uint32_t channelId; uint32_t value; };
+struct CountedJob {
+  static inline size_t assignments = 0;
+  uint32_t channelId = 0, value = 0;
+  CountedJob& operator=(const CountedJob& source) {
+    ++assignments;
+    channelId = source.channelId;
+    value = source.value;
+    return *this;
+  }
+};
 
 int main() {
   using namespace lil::power;
@@ -142,7 +152,62 @@ int main() {
   assert(wrap.take(0, entry) && entry.job.value == 3);
   wrap.complete(entry, 0, true, false);
   assert(!wrap.take(14898, entry));
-  assert(wrap.take(14899, entry) && entry.job.value == 2);
+  uint32_t waitMs = 0;
+  assert(!wrap.take(14898, entry, &waitMs) && waitMs == 1);
+  assert(wrap.take(14899, entry, &waitMs) && entry.job.value == 2 && waitMs == 0);
+
+  Scheduler deadlines;
+  assert(!deadlines.take(0, entry, &waitMs) && waitMs == UINT32_MAX);
+  deadlines.push({1, 1}, 0);
+  deadlines.push({1, 2}, 0);
+  assert(deadlines.take(0, entry) && entry.job.value == 1);
+  deadlines.complete(entry, 0, true, false);
+  assert(!deadlines.take(0, entry, &waitMs) && waitMs == Scheduler::kIntervalMs);
+  const uint32_t previousScans = waitMs / 250;
+  assert(deadlines.take(waitMs, entry) && entry.job.value == 2);
+  printf("Cloud rate limit: %lu timed scans with 250 ms polling, 1 with deadline waiting\n",
+         static_cast<unsigned long>(previousScans));
+  deadlines.complete(entry, 15000, false, true);
+  assert(deadlines.take(30000, entry) && entry.job.value == 2);
+  deadlines.complete(entry, 30000, false, true);
+  deadlines.push({1, 3}, 30001);
+  assert(!deadlines.take(30001, entry, &waitMs) && waitMs == 29999);
+  deadlines.push({2, 4}, 30002);  // A notification can interrupt the wait.
+  assert(deadlines.take(30002, entry, &waitMs) && entry.job.value == 4 && waitMs == 0);
+  deadlines.complete(entry, 30002, true, false);
+  assert(!deadlines.take(59999, entry, &waitMs) && waitMs == 1);
+  assert(deadlines.take(60000, entry) && entry.job.value == 2);
+
+  Scheduler expiry;
+  expiry.push({1, 1}, 0);
+  assert(expiry.take(Scheduler::kLifetimeMs - 20, entry));
+  expiry.complete(entry, Scheduler::kLifetimeMs - 20, false, true);
+  expiry.push({1, 2}, Scheduler::kLifetimeMs - 10);
+  assert(!expiry.take(Scheduler::kLifetimeMs - 10, entry, &waitMs) && waitMs == 10);
+  assert(!expiry.take(Scheduler::kLifetimeMs, entry, &waitMs) && waitMs == 14980);
+  assert(expiry.dropped() == 1);
+
+  Scheduler rates;
+  for (uint32_t channel = 1; channel <= 4; ++channel) {
+    rates.push({channel, channel}, channel);
+    assert(rates.take(channel, entry));
+    rates.complete(entry, channel, true, false);
+  }
+  rates.push({5, 5}, 5);
+  assert(!rates.take(5, entry, &waitMs) && waitMs == 14996);
+  assert(rates.take(15001, entry) && entry.job.value == 5);
+
+  using Backlog = lil::UploadScheduler<CountedJob, 64>;
+  Backlog backlog;
+  for (uint32_t i = 0; i < 64; ++i) backlog.push({i + 1, i}, i < 32 ? 0 : 1);
+  CountedJob::assignments = 0;
+  backlog.expire(Backlog::kLifetimeMs);
+  printf("Cloud expiry with 32 of 64 jobs expired: %zu job assignments\n", CountedJob::assignments);
+  assert(CountedJob::assignments == 32 && backlog.size() == 32 && backlog.dropped() == 32);
+  Backlog::Entry remaining;
+  for (uint32_t i = 32; i < 64; ++i) {
+    assert(backlog.take(Backlog::kLifetimeMs, remaining) && remaining.job.value == i);
+  }
   printf("Power, CRC and upload scheduler tests passed; ADC maximum delta: %u mV\n",
          largestDifference);
 }

@@ -20,6 +20,8 @@ void reset() {
   failOtaBufferAllocation = false; otaBufferAllocations = 0;
   failPrefixReadAt = 0; prefixReadSizes.clear();
   testTime=0; readDelayMs=0;
+  offerCompactRead=false; readRequestBytes=readRequests=0;
+  failCheckpointSave=false; lastStatusOffset=0;
   kHardware.pcbVersion = 4; updateBattery = {}; writeSizes.clear();
   values.clear(); states.clear(); failures.clear(); image.resize(70000);
   for(size_t i=0;i<image.size();++i) image[i]=uint8_t(i*17);
@@ -34,7 +36,7 @@ void reset() {
 BatteryReading run(uint16_t millivolts=4000) { EspNowTransport radio; SensorRuntimeConfig config; AdcReader adc; BatteryReading battery{true,millivolts}; checkOta(radio,config,adc,battery); return battery; }
 void complete() { bool restarted=false; try {run();} catch(Restart&) {restarted=true;} assert(restarted&&selected); assert(std::equal(image.begin(),image.end(),flash.begin())); }
 int main() {
-  reset(); breakAt=20000; run();
+  reset(); offerCompactRead=true; breakAt=20000; run();
   prefixReadSizes.clear(); breakAt=UINT32_MAX; complete();
   const size_t chunk = FLOW_OPTIMIZED ? 4096 : 1024;
   assert(resumed == 16384 && prefixReadSizes.size() == 16384 / chunk);
@@ -55,6 +57,7 @@ int main() {
   assert(lil::ota::validIdentity(identity));
   identity.pcb=9; assert(!lil::ota::validIdentity(identity));
   reset(); complete(); assert(began==1 && !values["attempted"].empty());
+  assert(readRequestBytes == readRequests * sizeof(lil::ota::Packet));
   assert(otaBufferAllocations == 1);
   assert(writeSizes.size() == (image.size() + 4095) / 4096);
   for (size_t i = 0; i + 1 < writeSizes.size(); ++i) assert(writeSizes[i] == 4096);
@@ -62,16 +65,23 @@ int main() {
   printf("Buffered OTA: %zu writes for %zu bytes (previously at least %zu packet writes)\n",
          writeSizes.size(), image.size(), (image.size() + 191) / 192);
   reset(); image.resize(lil::ota::kSlotSize);
+  offerCompactRead=true;
   for (size_t i=0;i<image.size();++i) image[i]=uint8_t(i*23+11);
   offer.imageSize=image.size();
   mbedtls_sha256_context fullHash;
   mbedtls_sha256_update(&fullHash,image.data(),image.size()); mbedtls_sha256_finish(&fullHash,offer.sha256);
   complete(); assert(writeSizes.size()==image.size()/4096 && otaBufferAllocations==1);
+  printf("OTA full-slot pull: %zu requests, %zu bytes across read requests\n", readRequests, readRequestBytes);
+  assert(readRequests == (image.size() + lil::ota::kBlockSize - 1) / lil::ota::kBlockSize);
+  assert(readRequestBytes == readRequests * lil::ota::kCompactReadPacketSize);
   printf("OTA full-slot client: %zu bytes, %zu sector writes, one existing 4096-byte buffer\n", image.size(), writeSizes.size());
   // An interruption with a partly filled RAM sector must resume from the
   // preceding durable checkpoint, never from the acknowledged RAM tail.
-  reset(); breakAt=21000; run(); assert(aborted && cursor == 20480);
+  reset(); breakAt=21000; run(); assert(aborted && cursor == 20480 && lastStatusOffset == 16384);
   breakAt=UINT32_MAX; complete(); assert(resumed==16384);
+  reset(); failCheckpointSave=true; run();
+  assert(aborted && cursor == 16384 && lastStatusOffset == 0 && failures.back() == lil::ota::Failure::FlashWrite);
+  failCheckpointSave=false; complete(); assert(began == 2 && resumed == UINT32_MAX);
 
   reset(); readDelayMs=600; complete(); assert(testTime > 180000 && testTime < 600000);
   reset(); readDelayMs=2000; run();

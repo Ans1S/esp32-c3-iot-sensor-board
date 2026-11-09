@@ -3,6 +3,7 @@
 #include "paged_history.h"
 #include "telemetry_validation.h"
 #include <LittleFS.h>
+#include <errno.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <dirent.h>
@@ -43,31 +44,40 @@ bool headerValid(const Header& h) {
   return h.magic == kMagic && h.version == 1 && h.session && h.width == lil::recording::size(h.type) &&
       h.width && h.crc == lil::protocol::crc32(reinterpret_cast<const uint8_t*>(&h), sizeof(h)-4);
 }
-bool load(FILE* file, Header& header, uint32_t& count) {
+bool load(FILE* file, Header& header, uint32_t& count, long* fileLength = nullptr) {
   if (fseek(file, 0, SEEK_SET) || fread(&header, 1, sizeof(header), file) != sizeof(header) || !headerValid(header)) return false;
   if (fseek(file, 0, SEEK_END)) return false;
   const long length = ftell(file);
   if (length < long(sizeof(header))) return false;
+  if (fileLength) *fileLength = length;
   count = (length - sizeof(header)) / header.width;
   return count <= header.expected;
 }
 void infoFrom(const Header& h, uint32_t count, RecordingInfo& info) {
   info = {h.session,h.epochMs,h.expected,count,h.durationMs,h.type};
 }
-bool readNext(FILE* file, const Header& h, lil::recording::Record& record) {
+enum class RowRead { Valid, Corrupt, IoError };
+RowRead readNext(FILE* file, const Header& h, lil::recording::Record& record) {
   record = {};
-  return fread(&record, 1, h.width, file) == h.width && lil::recording::valid(record) &&
+  if (fread(&record, 1, h.width, file) != h.width) return RowRead::IoError;
+  const bool valid = lil::recording::valid(record) &&
       record.session == h.session && record.type == h.type &&
       lil::protocol::validTelemetryValues(lil::recording::decode(record));
+  return valid ? RowRead::Valid : RowRead::Corrupt;
 }
-bool readAt(FILE* file, const Header& h, uint32_t index, lil::recording::Record& record) {
-  return !fseek(file, sizeof(Header) + size_t(index)*h.width, SEEK_SET) &&
-      readNext(file, h, record);
+RowRead readAt(FILE* file, const Header& h, uint32_t index, lil::recording::Record& record) {
+  if (fseek(file, sizeof(Header) + size_t(index)*h.width, SEEK_SET)) return RowRead::IoError;
+  return readNext(file, h, record);
 }
-uint32_t readableTail(FILE* file, const Header& header, uint32_t count, lil::recording::Record& last) {
-  // Do not advertise torn, unacknowledged tail records as synchronized data.
-  while (count && !readAt(file, header, count-1, last)) --count;
-  return count;
+bool readableTail(FILE* file, const Header& header, uint32_t& count, lil::recording::Record& last) {
+  while (count) {
+    const auto result = readAt(file, header, count - 1, last);
+    if (result == RowRead::Valid) return true;
+    // A failed read provides no evidence that the stored bytes are corrupt.
+    if (result == RowRead::IoError) return false;
+    --count;
+  }
+  return true;
 }
 }
 bool RecordingArchive::begin() { mutex_ = xSemaphoreCreateMutex(); return mutex_ != nullptr && initializeFilesystemLock(); }
@@ -86,8 +96,9 @@ bool RecordingArchive::append(const uint8_t mac[6], const lil::recording::Upload
   FilesystemGuard filesystem;
   char path[320]; pathFor(mac, record.session, path, sizeof(path));
   FILE* file = fopen(path, "r+b");
-  Header h{}; uint32_t count = 0;
+  Header h{}; uint32_t count = 0; long fileLength = 0;
   if (!file) {
+    if (errno != ENOENT) return false;
     if (freeBytes() < sizeof(Header) + lil::recording::size(record.type) + 4096) return false;
     h.width = lil::recording::size(record.type); h.session = record.session;
     h.epochMs = upload.sessionEpochMs; h.expected = upload.totalRecords;
@@ -100,33 +111,40 @@ bool RecordingArchive::append(const uint8_t mac[6], const lil::recording::Upload
     const bool closed = fclose(file) == 0;
     if (!written || !closed || rename(temporary, path)) return false;
     file = fopen(path, "r+b");
-    if (!file || !load(file, h, count)) { if (file) fclose(file); return false; }
-  } else if (!load(file, h, count)) { fclose(file); return false; }
+  }
+  if (!file || !load(file, h, count, &fileLength)) { if (file) fclose(file); return false; }
   if (h.session != record.session || h.type != record.type || h.expected != upload.totalRecords || h.durationMs != upload.durationMs) {
     fclose(file); return false;
   }
-  // A reset may leave a torn, unacknowledged tail. CRC-valid records remain.
   lil::recording::Record last{};
-  while (count && !readAt(file, h, count-1, last)) --count;
-  if (fseek(file, 0, SEEK_END)) { fclose(file); return false; }
-  if (ftell(file) != long(sizeof(Header) + size_t(count)*h.width) &&
-      ftruncate(fileno(file), sizeof(Header) + size_t(count)*h.width)) { fclose(file); return false; }
-  if (count && record.sampleMs <= last.sampleMs) {
+  if (!readableTail(file, h, count, last)) { fclose(file); return false; }
+  // The newest row is the common retry after a lost ACK. The verified tail
+  // already contains every byte needed to confirm that replay.
+  if (count && record.sampleMs == last.sampleMs) {
+    const bool duplicate = !memcmp(&last, &record, h.width);
+    fclose(file);
+    return duplicate;
+  }
+  if (count && record.sampleMs < last.sampleMs) {
     uint32_t low = 0, high = count;
     while (low < high) {
       const uint32_t middle = low + (high-low)/2;
       lil::recording::Record candidate{};
-      if (!readAt(file, h, middle, candidate)) { fclose(file); return false; }
+      if (readAt(file, h, middle, candidate) != RowRead::Valid) { fclose(file); return false; }
       if (candidate.sampleMs < record.sampleMs) low = middle+1; else high = middle;
     }
     lil::recording::Record existing{};
-    const bool duplicate = low < count && readAt(file, h, low, existing) && !memcmp(&existing, &record, h.width);
+    const bool duplicate = low < count && readAt(file, h, low, existing) == RowRead::Valid &&
+        !memcmp(&existing, &record, h.width);
     fclose(file); return duplicate;
   }
-  if (count >= h.expected || freeBytes() < h.width + 4096 || fseek(file, 0, SEEK_END) ||
+  const long committedEnd = sizeof(Header) + size_t(count)*h.width;
+  if (count >= h.expected || (fileLength != committedEnd && ftruncate(fileno(file), committedEnd)) ||
+      freeBytes() < size_t(h.width) + 4096 ||
+      fseek(file, committedEnd, SEEK_SET) ||
       fwrite(&record, 1, h.width, file) != h.width || fflush(file) || fsync(fileno(file))) { fclose(file); return false; }
   lil::recording::Record check{};
-  const bool ok = readAt(file, h, count, check) && !memcmp(&check, &record, h.width);
+  const bool ok = readAt(file, h, count, check) == RowRead::Valid && !memcmp(&check, &record, h.width);
   const bool closed = fclose(file) == 0;
   return ok && closed; // Only this result permits the durable radio ACK.
 }
@@ -143,9 +161,10 @@ std::vector<RecordingInfo> RecordingArchive::list(const uint8_t mac[6]) {
     Header header{}; uint32_t count;
     if (load(file, header, count)) {
       lil::recording::Record last{};
-      count = readableTail(file, header, count, last);
+      const bool readable = readableTail(file, header, count, last);
       RecordingInfo info; infoFrom(header, count, info);
-      if (count) info.availableMs = last.sampleMs;
+      info.readError = !readable;
+      if (readable && count) info.availableMs = last.sampleMs;
       result.push_back(info);
     }
     fclose(file);
@@ -155,21 +174,29 @@ std::vector<RecordingInfo> RecordingArchive::list(const uint8_t mac[6]) {
 }
 size_t RecordingArchive::read(const uint8_t mac[6], uint64_t session, uint32_t& offset,
     lil::recording::Record* output, size_t capacity, RecordingInfo& info, uint32_t fromMs) {
+  info = {};
   if (!mutex_ || !output) return 0;
   Guard guard(mutex_); char path[320]; pathFor(mac, session, path, sizeof(path));
-  FILE* file = fopen(path, "rb"); if (!file) return 0;
+  FILE* file = fopen(path, "rb");
+  if (!file) {
+    if (errno != ENOENT) { info.session = session; info.readError = true; }
+    return 0;
+  }
   Header header{}; uint32_t count;
-  if (!load(file, header, count)) { fclose(file); return 0; }
+  if (!load(file, header, count)) {
+    info.session = session; info.readError = true; fclose(file); return 0;
+  }
   lil::recording::Record last{};
-  count = readableTail(file, header, count, last);
+  const bool readable = readableTail(file, header, count, last);
   infoFrom(header, count, info);
+  if (!readable) { info.readError = true; fclose(file); return 0; }
   if (count) info.availableMs = last.sampleMs;
   if (fromMs != UINT32_MAX) {
     uint32_t low = 0, high = count;
     while (low < high) {
       const uint32_t middle = low + (high-low)/2;
       lil::recording::Record record{};
-      if (!readAt(file, header, middle, record)) { info.readError = true; fclose(file); return 0; }
+      if (readAt(file, header, middle, record) != RowRead::Valid) { info.readError = true; fclose(file); return 0; }
       if (record.sampleMs < fromMs) low = middle+1; else high = middle;
     }
     offset = low;
@@ -180,7 +207,7 @@ size_t RecordingArchive::read(const uint8_t mac[6], uint64_t session, uint32_t& 
     info.readError = true; fclose(file); return 0;
   }
   while (offset < count && copied < capacity) {
-    if (!readNext(file, header, output[copied])) { info.readError = true; break; }
+    if (readNext(file, header, output[copied]) != RowRead::Valid) { info.readError = true; break; }
     ++copied; ++offset;
   }
   fclose(file); return copied;

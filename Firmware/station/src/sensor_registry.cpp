@@ -759,7 +759,8 @@ bool SensorRegistry::persistTelemetry(
   return success && initialized;
 }
 
-size_t SensorRegistry::liveHistory(const uint8_t mac[6], LiveSample* output, size_t capacity) const {
+size_t SensorRegistry::liveHistory(const uint8_t mac[6], LiveSample* output,
+                                   size_t capacity, const uint32_t* afterMs) const {
   if (!output) return 0;
   LockGuard lock(mutex_);
   const int index = findIndexLocked(mac);
@@ -769,10 +770,14 @@ size_t SensorRegistry::liveHistory(const uint8_t mac[6], LiveSample* output, siz
   if (monotonicMs - live.lastSampleMonotonicMs > 60000) return 0;
   size_t count = 0;
   const uint32_t now = millis();
+  const auto selected = [now, afterMs](uint32_t receivedMs) {
+    return now - receivedMs <= 60000 &&
+        (!afterMs || static_cast<int32_t>(receivedMs - *afterMs) > 0);
+  };
   size_t position = live.head >= live.count ? live.head - live.count :
       live.capacity - (live.count - live.head);
   for (size_t scanned = 0; scanned < live.count && count < capacity;) {
-    if (now - live.samples[position].receivedMs > 60000) {
+    if (!selected(live.samples[position].receivedMs)) {
       ++scanned;
       if (++position == live.capacity) position = 0;
       continue;
@@ -783,7 +788,7 @@ size_t SensorRegistry::liveHistory(const uint8_t mac[6], LiveSample* output, siz
     size_t run = 0;
     do { ++run; ++position; ++scanned; }
     while (position < live.capacity && scanned < live.count && count + run < capacity &&
-           now - live.samples[position].receivedMs <= 60000);
+           selected(live.samples[position].receivedMs));
     memcpy(output + count, live.samples + first, run * sizeof(LiveSample));
     count += run;
     if (position == live.capacity) position = 0;

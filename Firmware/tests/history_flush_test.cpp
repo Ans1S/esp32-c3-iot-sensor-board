@@ -13,6 +13,9 @@
 #ifndef EXPECT_HISTORY_FLUSH_SEEKS
 #define EXPECT_HISTORY_FLUSH_SEEKS 2
 #endif
+#ifndef EXPECT_HISTORY_READ_BATCH_ROWS
+#define EXPECT_HISTORY_READ_BATCH_ROWS 8
+#endif
 int64_t testTimeUs = 0;
 void testRadioTick() { ++testMillis; }
 namespace {
@@ -20,6 +23,7 @@ constexpr uint32_t epoch = 1792886400;
 void resetCounters() {
   testFileSeekCount = testFileReadCount = 0;
   testFileSeekFailAt = testFileReadFailAt = testFileReadCorruptAt = 0;
+  testFileReadCorruptOffset = 0;
 }
 void clearFiles() {
   for (const auto& entry : std::filesystem::directory_iterator(NORMAL_HISTORY_MOUNT_PATH))
@@ -60,14 +64,17 @@ int main() {
     }
     const size_t seeks = testFileSeekCount, reads = testFileReadCount;
     assert(seeks == (EXPECT_HISTORY_FLUSH_SEEKS ? EXPECT_HISTORY_FLUSH_SEEKS : rows + 1));
-    assert(reads == rows);
     assert(store.info(config.mac).durablePoints == rows && !store.info(config.mac).pendingPoints);
     verify(store, config.mac, rows);
     station::PagedHistory reboot;
+    resetCounters();
     assert(reboot.begin(true)); reboot.configure(&config, 1);
+    const size_t startupReads = testFileReadCount;
     verify(reboot, config.mac, rows);
-    printf("History flush type=%u rows=%zu: %zu seeks, %zu checked row reads\n",
-           static_cast<unsigned>(type), rows, seeks, reads);
+    printf("History type=%u rows=%zu: flush %zu seeks and %zu reads, startup %zu reads\n",
+           static_cast<unsigned>(type), rows, seeks, reads, startupReads);
+    constexpr size_t batch = EXPECT_HISTORY_READ_BATCH_ROWS;
+    assert(reads == (rows + batch - 1) / batch && startupReads == reads + 1);
 
     // Positioning failure, short middle read and corrupted readback must leave
     // the entire RAM batch pending. A retry must retain every original sample.
@@ -81,8 +88,13 @@ int main() {
       }
       resetCounters();
       if (fault == 0) testFileSeekFailAt = 2;
-      if (fault == 1) testFileReadFailAt = 20;
-      if (fault == 2) testFileReadCorruptAt = 20;
+      constexpr size_t row = 19;
+      if (fault == 1) testFileReadFailAt = row / batch + 1;
+      if (fault == 2) {
+        testFileReadCorruptAt = row / batch + 1;
+        const size_t width = (station::PagedHistory::kPageBytes - station::PagedHistory::kHeaderBytes) / rows;
+        testFileReadCorruptOffset = (row % batch + 1) * width - 1;
+      }
       assert(!failed.flush(config.mac));
       const auto pending = failed.info(config.mac);
       assert(pending.writeFailed && pending.pendingPoints == 40 && !pending.durablePoints);

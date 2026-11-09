@@ -33,6 +33,8 @@ def main():
     suites = {
         "power_pins": ["tests/power_pins_test.cpp", "sensor/src/power_controller.cpp"],
         "power_pins_v3": ["tests/power_pins_test.cpp", "sensor/src/power_controller.cpp"],
+        "adc_v3": ["tests/adc_reader_test.cpp", "sensor/src/adc_reader.cpp"],
+        "adc_v4": ["tests/adc_reader_test.cpp", "sensor/src/adc_reader.cpp"],
         "battery_boot": ["tests/battery_boot_test.cpp", "tests/counted_protocol.cpp"],
         "sensor_config": ["tests/sensor_config_test.cpp"],
         "config_store": ["tests/config_store_test.cpp", "station/src/config_store.cpp",
@@ -63,8 +65,11 @@ def main():
         "ota_client": ["tests/ota_client_test.cpp", "sensor/src/ota_client.cpp", "shared/src/lil_protocol.cpp"],
         "ota_station": ["tests/ota_station_test.cpp", "station/src/ota_service.cpp", "shared/src/lil_protocol.cpp"],
         "power_and_upload": ["tests/power_and_upload_test.cpp", "shared/src/lil_protocol.cpp"],
+        "http_response_body": ["tests/http_response_body_test.cpp"],
+        "thingspeak_account_job": ["tests/thingspeak_account_job_test.cpp"],
         "transport": ["tests/transport_test.cpp", "sensor/src/espnow_transport.cpp",
                       "tests/counted_protocol.cpp"],
+        "gateway": ["tests/gateway_test.cpp", "shared/src/lil_protocol.cpp"],
         "registry": ["tests/registry_test.cpp", "station/src/sensor_registry.cpp",
                      "station/src/paged_history.cpp", "station/src/filesystem_guard.cpp",
                      "shared/src/lil_protocol.cpp"],
@@ -108,8 +113,10 @@ def main():
                 includes.insert(0, ROOT / "tests/recording_stubs")
             if name == "ota_client":
                 includes.insert(0, ROOT / "tests/ota_stubs")
-            if name == "ota_station":
+            if name in {"ota_station", "gateway"}:
                 includes.insert(0, ROOT / "tests/ota_station_stubs")
+            if name == "gateway":
+                includes.insert(0, ROOT / "tests/gateway_stubs")
             compile_command = command + ["-std=c++17", "-O2", "-UNDEBUG", "-Wall", "-Wextra"]
             if args.sanitize:
                 compile_command += ["-fsanitize=undefined,float-cast-overflow",
@@ -134,9 +141,9 @@ def main():
             if name == "battery_boot":
                 includes.insert(0, ROOT / "tests/boot_stubs")
                 compile_command += ["-DPCB_VERSION=4"]
-            if name in {"power_pins", "power_pins_v3"}:
+            if name in {"power_pins", "power_pins_v3", "adc_v3", "adc_v4"}:
                 includes.insert(0, ROOT / "tests/power_stubs")
-                compile_command += ["-DPCB_VERSION=" + ("3" if name == "power_pins_v3" else "4")]
+                compile_command += ["-DPCB_VERSION=" + ("3" if name.endswith("v3") else "4")]
             for include in includes:
                 compile_command += ["-I", str(include)]
             base_command = list(compile_command)

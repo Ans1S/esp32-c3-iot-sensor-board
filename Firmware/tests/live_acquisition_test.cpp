@@ -7,6 +7,10 @@
 #include <vector>
 #include "protocol_counter.h"
 
+#ifndef EXPECT_IMU_POLL_ON_REPORT
+#define EXPECT_IMU_POLL_ON_REPORT 1
+#endif
+
 struct Finished {};
 sensor::LiveAcquisition* current = nullptr;
 uint32_t deadline = 0;
@@ -39,6 +43,7 @@ int main() {
     assert(duplicatePolls == (FLOW_OPTIMIZED ? 0 : sensor.reads));
     printf("Acquisition flow: %u driver polls, %u captures, %zu duplicate same-tick polls\n",
            sensor.polls, sensor.reads, duplicatePolls);
+    if (EXPECT_IMU_POLL_ON_REPORT) assert(sensor.polls == sensor.reads);
   }
   assert(lil::timing::normalPrecisionIntervalMs(0) == 1000);
   assert(lil::timing::normalPrecisionIntervalMs(100000) == 86400000);
@@ -54,6 +59,7 @@ int main() {
       run(acquisition,seconds == 1 ? 8300 : 25400);
       assert(captures.size() == (seconds == 1 ? 4 : 3));
       assert(sensor.starts.size() == captures.size() && !sensor.powered);
+      if (EXPECT_IMU_POLL_ON_REPORT && type == Type::kLsm6dsox) assert(sensor.polls == sensor.reads);
       for (size_t i = 0; i < captures.size(); ++i) {
         assert(captures[i].reading.valid && !captures[i].recording);
         assert(!(captures[i].reading.live.flags & lil::protocol::kMotionFeedbackPresent));
