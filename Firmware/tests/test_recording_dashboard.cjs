@@ -92,6 +92,18 @@ const assert = require('node:assert/strict');
     assert(await page.evaluate(()=>savedSvg===document.querySelector('svg[aria-label="Acceleration X / Y / Z"]')&&savedSvg.parentElement.querySelector('.chartReadoutTime')),
       'A visible hover readout survives telemetry updates');
 
+    // An unreadable archive must surface the storage error, even if the last
+    // known count says its synchronization has not completed yet.
+    partial.readError=true;
+    await page.evaluate(()=>loadRecordings(statusData.sensors[0].mac,true));
+    failedNextRecording=true;
+    await selector.selectOption(partial.session);
+    await page.getByText('Recording read unavailable',{exact:false}).waitFor();
+    assert.equal(await page.evaluate(()=>recordingViews[statusData.sensors[0].mac].waitingForSync),false);
+    delete partial.readError;
+    await page.evaluate(()=>loadRecordings(statusData.sensors[0].mac,true));
+    await selector.selectOption('');
+
     slowNextRecording=true;
     await selector.selectOption(saved.session);
     await page.waitForFunction(()=>document.querySelector('.recordingPanel').textContent.includes('Loading recording'));

@@ -22,6 +22,14 @@ int main() {
   testMillis += 10;
   Wire.words[0] = 4737; Wire.words[1] |= 0x2000;
   r=driver.read(); assert(r.valid && r.temperatureC == 37.0078125F);
+  testMillis += 10;
+  Wire.shortRead = true; assert(!driver.poll()); Wire.shortRead = false;
+  assert(!driver.read(false).valid);
+  testMillis += 10;
+  assert(!driver.read().valid); // A clean status read must not revive the old sample.
+  testMillis += 10;
+  Wire.words[1] |= 0x2000;
+  assert(driver.read().valid);
   testMillis += 1501; assert(!driver.read().valid);
   Wire.shortRead = true; assert(!driver.read().valid); Wire.shortRead = false;
   for (uint8_t a = 0x48; a <= 0x4B; ++a) {

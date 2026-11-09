@@ -80,13 +80,20 @@ int main() {
   // A selected page must retain every row while avoiding per-row seeks.
   station::NormalHistoryPoint measuredPage[80];
   bool pageStale, pageError;
-  testFileSeekCount = 0;
+  testFileReadCount = testFileSeekCount = 0;
   assert(history.read(configs[0].mac, 0, epoch + 79, epoch,
                       measuredPage, 80, pageStale, pageError) == 80);
   const size_t pageSeeks = testFileSeekCount;
   assert(!pageStale && !pageError && measuredPage[79].timestamp == epoch + 79);
-  assert(pageSeeks == 1);
-  printf("History page: %zu file seeks for 80 rows\n", pageSeeks);
+  printf("History page: %zu file reads and %zu seeks for 80 rows\n", testFileReadCount, pageSeeks);
+  assert(testFileReadCount == 10 && pageSeeks == 1);
+  testFileReadCount = testFileSeekCount = 0;
+  assert(history.read(configs[0].mac, epoch + 10, epoch + 12, epoch,
+                      measuredPage, 80, pageStale, pageError) == 2);
+  printf("Bounded history window: %zu file reads for two requested rows\n", testFileReadCount);
+  assert(!pageStale && !pageError && measuredPage[0].timestamp == epoch + 11 &&
+         measuredPage[1].timestamp == epoch + 12);
+  assert(testFileReadCount == 2 && testFileSeekCount == 1);
   assert(history.append(configs[0].mac, epoch, value, 1));
   assert(history.info(configs[0].mac).points == 202); // Duplicate radio delivery.
   station::PagedHistory reboot;
@@ -144,7 +151,8 @@ int main() {
     assert(info.points > 900 && info.points < 1400 && info.oldest > epoch);
     assert(info.points <= info.capacityPoints);
     const auto points = read(full, node);
-    assert(points.size() == info.points && points.back().timestamp == epoch + 1399);
+    assert(points.size() == info.points && points.front().timestamp == info.oldest &&
+           points.back().timestamp == info.newest && info.newest == epoch + 1399);
   }
   assert(LittleFS.totalBytes() - LittleFS.usedBytes() >= station::PagedHistory::kReserveBytes);
   bool stale, error; station::NormalHistoryPoint batch[2];
@@ -167,6 +175,32 @@ int main() {
   assert(unavailable.begin(false)); unavailable.configure(configs, station::kMaxSensors);
   assert(!unavailable.append(configs[0].mac, epoch, value, 1));
   assert(!unavailable.info(configs[0].mac).available);
+
+  // At global space pressure pick the oldest page of the largest owner,
+  // including retained pages from a sensor that is no longer configured.
+  clearFiles(); configure(4);
+  testSpiramFreeBytes = 4 * 1024 * 1024;
+  station::PagedHistory eviction;
+  assert(eviction.begin(true)); eviction.configure(configs, station::kMaxSensors);
+  uint32_t nextTime[2] = {epoch, epoch};
+  for (size_t owner : {1, 0, 0, 1, 0, 1}) {
+    for (size_t row = 0; row < 91; ++row)
+      assert(eviction.append(configs[owner].mac, nextTime[owner]++, value, 1));
+  }
+  configs[1].provisioned = false;
+  eviction.configure(configs, station::kMaxSensors);
+  const auto retiredFirst = std::filesystem::path(NORMAL_HISTORY_MOUNT_PATH) / "hist2-020000000002-00000001.bin";
+  const auto activeFirst = std::filesystem::path(NORMAL_HISTORY_MOUNT_PATH) / "hist2-020000000001-00000002.bin";
+  const auto activeSecond = std::filesystem::path(NORMAL_HISTORY_MOUNT_PATH) / "hist2-020000000001-00000003.bin";
+  assert(std::filesystem::exists(retiredFirst) && std::filesystem::exists(activeFirst));
+  LittleFS.extraUsed = LittleFS.totalBytes() - LittleFS.usedBytes() -
+      station::historyWorkspaceReserve() - station::PagedHistory::kPageBytes;
+  assert(eviction.append(configs[2].mac, epoch, value, 1) && eviction.flush(configs[2].mac));
+  assert(!std::filesystem::exists(retiredFirst) && std::filesystem::exists(activeFirst));
+  assert(eviction.append(configs[3].mac, epoch, value, 1) && eviction.flush(configs[3].mac));
+  assert(!std::filesystem::exists(activeFirst) && std::filesystem::exists(activeSecond));
+  assert(eviction.info(configs[0].mac).durablePoints == 182 &&
+         eviction.info(configs[0].mac).oldest == epoch + 91);
 
   // Refuse allocation under memory pressure, then resume without formatting
   // storage or presenting the rejected sample as a retained measurement.
@@ -206,6 +240,23 @@ int main() {
   assert(mixed[127].telemetry.motion.accelerationG[0] == .123456F);
   assert(mixed.back().timestamp == epoch + 253);
 
+  value = {}; value.sensorType = EnvironmentalSensorType::kTmp117;
+  value.capabilities = kTemperature; value.temperatureC = 21.123046875F;
+  for (uint32_t i = 254; i < 379; ++i) assert(fullBuffers.append(configs[0].mac, epoch + i, value, 1));
+  const auto narrower = fullBuffers.info(configs[0].mac);
+  printf("TMP117 after 64-byte rows: %lu pending points out of 125\n",
+         static_cast<unsigned long>(narrower.pendingPoints));
+  assert(narrower.durablePoints == 254 && narrower.pendingPoints == 125);
+  assert(fullBuffers.flush(configs[0].mac));
+  assert(read(fullBuffers, 0).size() == 379);
+  configs[0].provisioned = false;
+  fullBuffers.configure(configs, station::kMaxSensors);
+  assert(!fullBuffers.info(configs[0].mac).available);
+  configs[0].provisioned = true;
+  fullBuffers.configure(configs, station::kMaxSensors);
+  const auto reenabled = fullBuffers.info(configs[0].mac);
+  assert(reenabled.durablePoints == 379 && reenabled.oldest == epoch && reenabled.newest == epoch + 378);
+
   // Corruption discovered by an active reader must stop a page with an error.
   tail.clear();
   for (const auto& entry : std::filesystem::directory_iterator(NORMAL_HISTORY_MOUNT_PATH))
@@ -215,8 +266,23 @@ int main() {
   const int oldByte = fgetc(file); assert(oldByte != EOF);
   assert(!fseek(file, -1, SEEK_CUR)); assert(fputc(oldByte ^ 1, file) != EOF); assert(!fclose(file));
   station::NormalHistoryPoint corruptPage[128];
+  assert(fullBuffers.read(configs[0].mac, 0, epoch + 8, epoch, corruptPage, 128, stale, error) == 9);
+  assert(!error && !stale);
   assert(fullBuffers.read(configs[0].mac, 0, epoch + 253, epoch, corruptPage, 128, stale, error) == 10);
   assert(error && !stale);
+  // A short batch can contain complete rows and an unreadable partial row.
+  std::filesystem::resize_file(tail, 64 + 10 * 32 + 15);
+  assert(fullBuffers.read(configs[0].mac, 0, epoch + 8, epoch, corruptPage, 128, stale, error) == 9);
+  assert(!error && !stale);
+  assert(fullBuffers.read(configs[0].mac, 0, epoch + 253, epoch, corruptPage, 128, stale, error) == 10);
+  assert(error && !stale);
+  assert(fullBuffers.clear(configs[0].mac));
+  const auto cleared = fullBuffers.info(configs[0].mac);
+  assert(cleared.available && !cleared.points && !cleared.oldest && !cleared.newest);
+  assert(fullBuffers.append(configs[0].mac, epoch + 4, value, 1));
+  assert(fullBuffers.flush(configs[0].mac));
+  const auto afterClear = fullBuffers.info(configs[0].mac);
+  assert(afterClear.durablePoints == 1 && afterClear.oldest == epoch + 4 && afterClear.newest == epoch + 4);
   testSpiramFreeBytes = testInternalFreeBytes = 1024 * 1024;
   puts("paged history: bounded retention, precision, paging, recovery and reserves passed");
 }

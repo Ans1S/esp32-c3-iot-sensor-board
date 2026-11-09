@@ -43,11 +43,10 @@ history/recording charts and exports, OTA, ThingSpeak and mobile operation.
 This change targets their shared storage paths; it does not claim a performance
 gain for every feature or prove that every path has been audited exhaustively.
 
-ThingSpeak account requests still execute synchronously in the web handler and
-use an unbounded response string. A slow or oversized response can consume heap
-or delay web requests; changing that path needs compatible identity/chunked HTTP
-tests and is not part of these storage changes. See the
-[real-time review](REALTIME_REVIEW.md).
+At the time of this storage comparison, ThingSpeak account requests executed
+synchronously in the web handler and used an unbounded response string. The
+[later body-reader comparison](PERFORMANCE_FOLLOWUP_2026-11-09.md#bounded-thingspeak-response-bodies)
+records the size and time bounds now applied to response bodies.
 
 Host tests and successful target builds do not establish hardware timings,
 flash endurance, rail stability, sensor accuracy, RF behavior or battery life.

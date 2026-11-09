@@ -7,8 +7,9 @@ struct BmeWire {
   uint8_t registers[256]{}, reg = 0, address = 0, present = 0x76;
   int failRead = -1, failWrite = -1, ignoreWrite = -1;
   bool stuck = false, inconsistentTrim = false;
-  unsigned trimReads = 0, dataBursts = 0, forcedWrites = 0;
-  uint32_t conversionStart = 0;
+  unsigned trimReads = 0, dataBursts = 0, forcedWrites = 0, readRequests = 0;
+  uint32_t conversionStart = 0, conversionDurationMs = 10;
+  uint8_t finishedControl = 0x24;
   std::vector<uint8_t> tx;
   std::deque<uint8_t> rx;
   void word(uint8_t r, uint16_t v) { registers[r] = v; registers[r+1] = v >> 8; }
@@ -42,10 +43,13 @@ struct BmeWire {
     return 0;
   }
   int requestFrom(uint8_t, uint8_t n) {
+    ++readRequests;
     rx.clear();
-    if (reg == failRead) return 0;
-    if (!stuck && registers[0xF4] == 0x25 && millis()-conversionStart >= 10) registers[0xF4] = 0x24;
-    if (reg == 0xF3) registers[0xF3] = stuck ? 9 : 0;
+    if (failRead >= reg && failRead < reg + n) n = failRead - reg;
+    if (!n) return 0;
+    if (!stuck && registers[0xF4] == 0x25 && millis()-conversionStart >= conversionDurationMs)
+      registers[0xF4] = finishedControl;
+    if (reg == 0xF3) registers[0xF3] = stuck ? 9 : registers[0xF4] == 0x25 ? 8 : 0;
     for (int i=0;i<n;++i) rx.push_back(registers[reg+i]);
     if (reg == 0x88 && ++trimReads == 2 && inconsistentTrim) rx.front() ^= 1;
     if (reg == 0xF7) { assert(n == 8); ++dataBursts; }

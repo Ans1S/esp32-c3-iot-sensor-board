@@ -12,7 +12,7 @@ class Bme280Driver {
  private:
   bool readBytes(uint8_t reg, uint8_t* bytes, uint8_t count);
   bool write8(uint8_t reg, uint8_t value);
-  bool waitReady(uint32_t timeoutMs);
+  bool waitReady(uint32_t timeoutMs, uint8_t* control = nullptr);
   uint8_t address_ = 0;
   uint16_t t1_ = 0, p1_ = 0;
   int16_t t2_ = 0, t3_ = 0, p_[8]{};

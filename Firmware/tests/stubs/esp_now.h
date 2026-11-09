@@ -1,10 +1,10 @@
 #pragma once
 #include <stdint.h>
 #include <stddef.h>
-using esp_err_t = int;
-constexpr esp_err_t ESP_OK = 0;
+#include "esp_err.h"
 constexpr esp_err_t ESP_ERR_ESPNOW_EXIST = 1;
 constexpr int WIFI_IF_STA = 0;
+constexpr size_t ESP_NOW_MAX_TOTAL_PEER_NUM = 20;
 enum esp_now_send_status_t { ESP_NOW_SEND_SUCCESS, ESP_NOW_SEND_FAIL };
 struct wifi_tx_info_t {};
 struct RxControl { int8_t rssi = -55; };
@@ -26,4 +26,6 @@ inline void esp_now_unregister_send_cb() { testSendCallback = nullptr; }
 inline void esp_now_unregister_recv_cb() { testReceiveCallback = nullptr; }
 inline bool esp_now_is_peer_exist(const uint8_t*) { return true; }
 inline esp_err_t esp_now_add_peer(const esp_now_peer_info_t*) { return ESP_OK; }
+inline esp_err_t esp_now_fetch_peer(bool, esp_now_peer_info_t*) { return -1; }
+inline esp_err_t esp_now_del_peer(const uint8_t*) { return ESP_OK; }
 esp_err_t esp_now_send(const uint8_t*, const uint8_t*, size_t);

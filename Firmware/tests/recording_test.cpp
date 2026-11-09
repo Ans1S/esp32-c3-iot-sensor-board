@@ -10,10 +10,12 @@ struct MemoryFlash : lil::recording::Flash {
   int writeBudget = -1;
   size_t reads = 0;
   size_t failReadAt = SIZE_MAX;
+  unsigned failReadsAfterWrite = 0, failedReadsRemaining = 0;
   explicit MemoryFlash(size_t bytes) : data(bytes, 0xff) {}
   size_t bytes() const override { return data.size(); }
   bool read(size_t offset, void* out, size_t length) override {
     ++reads;
+    if (failedReadsRemaining) { --failedReadsRemaining; return false; }
     if (offset + length > data.size() || (failReadAt >= offset && failReadAt - offset < length)) return false;
     memcpy(out, data.data() + offset, length); return true;
   }
@@ -26,6 +28,8 @@ struct MemoryFlash : lil::recording::Flash {
       assert((data[offset+i] & source[i]) == source[i]);
       data[offset+i] &= source[i];
     }
+    failedReadsRemaining = failReadsAfterWrite;
+    failReadsAfterWrite = 0;
     return true;
   }
   bool erase(size_t offset, size_t length) override {
@@ -58,7 +62,25 @@ int main() {
     recording::Record pending{}; assert(journal.peek(pending));
     const size_t before=flash.reads;
     assert(journal.acknowledge(pending));
-    assert(flash.reads-before == 4); // header, record, bitmap word and readback
+    printf("Healthy archive ACK: %zu flash reads\n", flash.reads - before);
+    assert(flash.reads-before == 3); // header, record and bitmap readback
+  }
+  {
+    protocol::TelemetryPayload sample{}; sample.sensorType = protocol::EnvironmentalSensorType::kTmp117;
+    MemoryFlash flash(8192); recording::Journal journal; assert(journal.begin(flash));
+    assert(journal.append(recording::encode(7, 100, sample)));
+    assert(journal.append(recording::encode(7, 200, sample)));
+    recording::Record oldest{};
+    assert(journal.peek(oldest) && oldest.sampleMs == 100);
+    flash.failReadsAfterWrite = 2;
+    assert(!journal.acknowledge(oldest));
+    assert(!journal.peek(oldest) && journal.pending() == 2);
+    assert(journal.peek(oldest) && oldest.sampleMs == 200 && journal.pending() == 1);
+    flash.writeBudget = 0;
+    assert(!journal.acknowledge(oldest) && journal.pending() == 1);
+    flash.writeBudget = -1;
+    assert(journal.peek(oldest) && oldest.sampleMs == 200);
+    assert(journal.acknowledge(oldest) && journal.pending() == 0 && !journal.fault());
   }
   recording::Button button;
   button.begin(true, 0); // A held boot strap is not a recording request.

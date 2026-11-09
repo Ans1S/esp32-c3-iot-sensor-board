@@ -223,6 +223,7 @@ bool OtaService::respond(const uint8_t mac[6], const lil::ota::Packet& request,
       }
       else if (identity.release < job_.manifest.release) {
         r.op = Op::Offer; r.size = sizeof(Manifest);
+        r.offset = kOfferCompactRead;
         memcpy(r.data, &job_.manifest, sizeof(Manifest));
       }
     }
@@ -231,15 +232,16 @@ bool OtaService::respond(const uint8_t mac[6], const lil::ota::Packet& request,
       r.size = min(static_cast<uint32_t>(kBlockSize), job_.manifest.imageSize - q.offset);
       if (!readImage(q.offset, r.data, r.size)) return false;
       r.op = Op::Data;
-      job_.confirmed = q.offset; // The next request acknowledges the previous write.
+      job_.confirmed = q.offset; // The next request confirms receipt of the previous block.
       job_.state = State::Transferring;
     } else if (q.op == Op::Status && (q.state == State::Verifying || q.state == State::Rebooting ||
                q.state == State::Paused || q.state == State::LowBattery || q.state == State::Rejected)) {
       const Failure failure = q.size == 1 ? static_cast<Failure>(q.data[0]) : Failure::None;
-      if (job_.state != q.state || job_.failure != failure) {
-        job_.state = q.state; job_.failure = failure; save();
+      const uint32_t confirmed = min(q.offset, job_.manifest.imageSize);
+      if (job_.state != q.state || job_.failure != failure || job_.confirmed != confirmed) {
+        job_.state = q.state; job_.failure = failure; job_.confirmed = confirmed;
+        save();
       }
-      job_.confirmed = min(q.offset, job_.manifest.imageSize);
       clearReadCache();
     }
   }

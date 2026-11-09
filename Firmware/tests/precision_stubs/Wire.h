@@ -8,6 +8,7 @@ struct PrecisionWire {
   bool fail = false, shortRead = false, stuckReset = false;
   uint8_t partialFifoBytes = 0;
   unsigned fifoReadCalls = 0, shortFifoAt = 0;
+  unsigned opticalMetadataReads = 0;
   std::vector<uint8_t> fifoRequests;
   uint16_t words[256]{};
   uint8_t registers[256]{};
@@ -29,9 +30,14 @@ struct PrecisionWire {
   }
   int requestFrom(uint8_t, uint8_t n) {
     rx.clear(); if (shortRead) return 0;
+    if (present == 0x57 && (reg == 0 || reg == 4)) ++opticalMetadataReads;
     if (present >= 0x48 && present <= 0x4B) {
       rx.push_back(words[reg] >> 8); rx.push_back(words[reg] & 255);
       if (reg == 1 || reg == 0) words[1] &= ~0x2000;
+    } else if (reg == 0 && n == 7) {
+      for (uint8_t i = 0; i < 4; ++i) rx.push_back(registers[i]);
+      registers[0] = registers[1] = 0;
+      rx.push_back(fifo.size() & 31); rx.push_back(registers[5]); rx.push_back(0);
     } else if (reg == 4 && n == 3) {
       rx.push_back(fifo.size() & 31); rx.push_back(registers[5]); rx.push_back(0);
     } else if (reg == 7 && !fifo.empty()) {

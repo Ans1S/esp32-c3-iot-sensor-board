@@ -27,6 +27,7 @@ class RecordingStore {
   bool recording() const { return state_ == lil::recording::State::Recording; }
   bool available() const { return available_; }
  private:
+  bool markSynced();
   RecordingFlash flash_;
   lil::recording::Journal journal_;
   Preferences prefs_;

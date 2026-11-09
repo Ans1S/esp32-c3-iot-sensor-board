@@ -14,6 +14,7 @@
 #include "hardware_profile.h"
 #include "lil_protocol.h"
 #include "power_controller.h"
+#include "radio_benchmark.h"
 #include "sensor_config_store.h"
 #include "sensor_log.h"
 #include "sleep_controller.h"
@@ -350,8 +351,10 @@ bool batteryProtectionRequired(const sensor::BatteryReading& battery) {
       espNowTransport.begin()) {
     // One bounded reporting window on the saved channel, even if the station
     // is offline. A failed delivery must not trigger an early retry wake.
+    WCH_RADIO_BENCHMARK_BEGIN();
     const auto exchange = espNowTransport.exchangeLpChannel(
         packet, runtimeConfig, runtimeConfig.wifiChannel);
+    WCH_RADIO_BENCHMARK_FINISH(true, packet, exchange);
     if (exchange.configReceived) {
       rtcState.lastStationRssi = exchange.stationRssi;
       sensor::confirmOtaBootAfterContact();
@@ -479,12 +482,17 @@ void runLiveMode(sensor::BatteryReading battery) {
       outgoing.header.sequence = ++rtcState.sequence;
       haveLatest = false; lastTelemetry = now;
       sensor::ExchangeResult exchange{};
+      WCH_RADIO_BENCHMARK_BEGIN();
       if (radioReady) exchange = espNowTransport.exchange(outgoing, runtimeConfig, sensor::otaBootPending());
-      if (radioReady && !exchange.configReceived && now - lastRecovery >= 5000) {
+      // A successful MAC delivery confirms the channel even if the station
+      // is too busy to return its application response.
+      if (radioReady && !exchange.configReceived && !exchange.delivered &&
+          now - lastRecovery >= 5000) {
         lastRecovery = now;
         exchange = espNowTransport.exchangeLpChannel(outgoing, runtimeConfig,
             takeNextRecoveryChannel(runtimeConfig.wifiChannel), true);
       }
+      WCH_RADIO_BENCHMARK_FINISH(radioReady, outgoing, exchange);
       if (exchange.configReceived) {
         rtcState.lastStationRssi = exchange.stationRssi;
         const auto previousType = runtimeConfig.environmentalSensorType;
@@ -693,6 +701,7 @@ void setup() {
         environment, battery,
         discoveryMode ? lil::protocol::SensorOperatingMode::kDiscovery
                       : lil::protocol::SensorOperatingMode::kEnergySaving);
+    WCH_RADIO_BENCHMARK_BEGIN();
     exchange = espNowTransport.exchange(packet, runtimeConfig, sensor::otaBootPending());
     // A successful unicast MAC acknowledgement proves that the station was on
     // the configured channel. If only the application response was lost, a
@@ -726,6 +735,7 @@ void setup() {
         }
       }
     }
+    WCH_RADIO_BENCHMARK_FINISH(true, packet, exchange);
     if (exchange.configReceived && exchange.config.provisioned) {
       // Use the confirmed station/channel for the pull-based OTA exchange.
       auto otaConfig = runtimeConfig;

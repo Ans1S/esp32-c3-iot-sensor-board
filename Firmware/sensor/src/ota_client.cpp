@@ -91,9 +91,10 @@ void checkOta(EspNowTransport& radio, const SensorRuntimeConfig& config,
   Packet q{}, r{};
   const uint32_t nonce = esp_random();
   uint32_t sequence = esp_random();
-  auto exchange = [&]() {
+  auto exchange = [&](size_t payloadSize = sizeof(Payload)) {
     q.payload.nonce = nonce;
-    lil::protocol::finalize(q, kMessageType, ++sequence);
+    lil::protocol::finalizePacket(&q, sizeof(lil::protocol::PacketHeader) + payloadSize,
+                                  kMessageType, ++sequence, payloadSize);
     return radio.otaExchange(config.stationMac, q, r);
   };
   auto status = [&](State state, uint32_t offset, Failure failure = Failure::None) {
@@ -111,6 +112,8 @@ void checkOta(EspNowTransport& radio, const SensorRuntimeConfig& config,
   if (!exchange()) return;
   if (attempted && r.payload.op == Op::Idle) prefs.remove("attempted");
   if (r.payload.op != Op::Offer || r.payload.size != sizeof(Manifest)) return;
+  const size_t readPayloadSize = r.payload.offset & kOfferCompactRead ?
+      kCompactReadPayloadSize : sizeof(Payload);
   Manifest manifest{}; memcpy(&manifest, r.payload.data, sizeof(manifest));
   const esp_partition_t* target = esp_ota_get_next_update_partition(nullptr);
   if (!verifyManifest(manifest)) { status(State::Rejected, 0, Failure::ManifestInvalid); return; }
@@ -136,7 +139,7 @@ void checkOta(EspNowTransport& radio, const SensorRuntimeConfig& config,
   std::unique_ptr<uint8_t[]> writeBuffer(new (std::nothrow) uint8_t[kSectorSize]);
   if (!writeBuffer) {
     mbedtls_sha256_free(&hash);
-    status(State::Paused, checkpoint.offset, Failure::FlashBegin);
+    status(State::Paused, 0, Failure::FlashBegin);
     return;
   }
   if (resume) {
@@ -163,17 +166,24 @@ void checkOta(EspNowTransport& radio, const SensorRuntimeConfig& config,
     mbedtls_sha256_starts(&hash, 0);
     error = esp_ota_begin(target, manifest.imageSize, &handle);
   }
-  if (error != ESP_OK) { mbedtls_sha256_free(&hash); status(State::Paused, 0, Failure::FlashBegin); return; }
+  if (error != ESP_OK) {
+    mbedtls_sha256_free(&hash);
+    status(State::Paused, resume ? checkpoint.offset : 0, Failure::FlashBegin);
+    return;
+  }
   const uint32_t started = millis();
   uint32_t offset = checkpoint.offset;
+  uint32_t durableOffset = checkpoint.offset;
   bool ok = true;
   State interruption = State::Paused;
   Failure interruptionFailure = Failure::Transport;
+  q.payload = {};
+  q.payload.op = Op::Read;
   while (offset < manifest.imageSize && millis() - started < kSessionMs) {
-    q.payload = {}; q.payload.op = Op::Read; q.payload.offset = offset;
-    if (!exchange() || r.payload.op != Op::Data || r.payload.offset != offset ||
+    q.payload.offset = offset;
+    if (!exchange(readPayloadSize) || r.payload.op != Op::Data || r.payload.offset != offset ||
         r.payload.size != min(static_cast<uint32_t>(kBlockSize), manifest.imageSize - offset)) { ok = false; break; }
-    // Preserve the 192-byte wire protocol, but write full flash sectors.
+    // Assemble full flash sectors from the 192-byte OTA response blocks.
     // The final short sector is flushed before verification as well.
     uint32_t consumed = 0;
     while (consumed < r.payload.size) {
@@ -192,6 +202,7 @@ void checkOta(EspNowTransport& radio, const SensorRuntimeConfig& config,
           if (!saveCheckpoint(prefs, checkpoint, hash)) {
             interruptionFailure = Failure::FlashWrite; ok = false; break;
           }
+          durableOffset = offset;
         }
         // Radio waits already yield between packets. Yield explicitly only
         // after a flash sector, rather than adding a delay to every packet.
@@ -215,7 +226,7 @@ void checkOta(EspNowTransport& radio, const SensorRuntimeConfig& config,
     // another multi-retry radio window at an unsafe or invalid voltage.
     if (!battery.valid || battery.millivolts < SENSOR_LOW_BATTERY_PAUSE_MV) return;
 #endif
-    status(interruption, offset, interruptionFailure); return;
+    status(interruption, durableOffset, interruptionFailure); return;
   }
   status(State::Verifying, offset);
   uint8_t digest[32];

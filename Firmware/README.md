@@ -29,10 +29,9 @@ verify a target without writing to a connected device.
 - [Architecture](ARCHITECTURE.md)
 - [Hardware test plan](HARDWARE_TESTPLAN.md)
 
-Current station and sensor release: **4.4.4 / 40404**, protocol V5.
-It reduces sensor arithmetic, packet preparation and OTA flash-read work while
-preserving acquisition, recording and recovery behavior. See
-[release packages](releases/README.md).
+The station and sensor source is **4.4.5 / 40405**, protocol V5. It reduces
+work in acquisition, ESP-NOW transport, station storage and dashboard
+responses. The [release archive](releases/README.md) lists available downloads.
 For an installed station, `python Firmware/upload.py station --application-only`
 updates only its application and preserves Wi-Fi, sensors, settings and files.
 Initialize the installation signing key as described
@@ -60,12 +59,10 @@ Pulse estimates update once per second. Saved recordings load as complete,
 stable snapshots; full-session CSV retains the original samples. See [operation, accuracy limits and OTA migration](PRECISION_SENSORS.md).
 
 
-## Full release and publication checks
+## Changes and publication checks
 
-Firmware **4.4.4 / 40404** includes bounded sensor reinitialization, long-uptime
-corrections, adaptive normal history and the compact configurable dashboard.
 See [the complete change inventory](CHANGELOG.md),
-[release artifacts](releases/README.md) and
+[4.4.5 performance and regression checks](PERFORMANCE_FOLLOWUP_2026-11-09.md) and
 [publication review](PUBLICATION_REVIEW.md). Build diagnostics use relative
 paths; installation keys and device data must stay local. Software tests do not
 replace physical accuracy, rail-voltage and sleep-current acceptance.

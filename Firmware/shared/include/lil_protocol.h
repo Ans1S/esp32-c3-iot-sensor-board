@@ -2,6 +2,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 #include "sensor_timing.h"
 
 namespace lil {
@@ -198,6 +199,20 @@ static_assert(sizeof(TelemetryPacket) <= kMaxPacketSize,
               "Telemetry packet exceeds the ESP-NOW payload limit");
 static_assert(sizeof(ConfigResponsePacket) <= kMaxPacketSize,
               "Config packet exceeds the ESP-NOW payload limit");
+
+// Cheap queue-admission check for radio callbacks. Full CRC and message
+// validation are still required before acting on a frame.
+inline bool readPacketType(const uint8_t* data, size_t length, MessageType& type) {
+  if (!data || length < sizeof(PacketHeader) || length > kMaxPacketSize) return false;
+  uint32_t magic;
+  memcpy(&magic, data, sizeof(magic));
+  if (magic != kMagic || data[offsetof(PacketHeader, version)] != kVersion) return false;
+  uint16_t payloadSize;
+  memcpy(&payloadSize, data + offsetof(PacketHeader, payloadSize), sizeof(payloadSize));
+  if (length != sizeof(PacketHeader) + payloadSize) return false;
+  type = static_cast<MessageType>(data[offsetof(PacketHeader, type)]);
+  return true;
+}
 
 uint32_t crc32(const uint8_t* data, size_t length);
 void finalizePacket(void* packet, size_t packetSize, MessageType type,

@@ -8,8 +8,9 @@ must stop before a scheduled OTA transfer starts.
 
 ## Updating the station without resetting settings
 
-Release 4.4.4 uses the same NVS and partition layouts as the existing recording
-release. `python Firmware/upload.py station --application-only` builds and
+Firmware 4.4.5 uses the existing recording partition and NVS layouts. See the
+[release archive](releases/README.md) for available signed packages and station
+images. `python Firmware/upload.py station --application-only` builds and
 writes only the installed station application. The distributed station BIN
 also goes at `0x10000`, without full erasure. Wi-Fi credentials, paired sensors,
 settings and files are preserved. The station itself is updated by USB; its
@@ -151,9 +152,17 @@ Normal OTA never changes the bootloader or partition table.
 Environmental telemetry/configuration retain the original protocol V5 layouts.
 LSM6DSOX telemetry adds a motion suffix accepted by the current station. OTA uses an additional
 message type; old nodes continue normal operation but cannot update themselves.
+The station can advertise compact OTA reads in the `Offer` offset field.
+A capable sensor then sends 28-byte block requests. A sensor that receives
+an offer without the capability uses 220-byte requests. Stations that
+advertise it accept both forms. Data blocks and status messages use the
+220-byte form.
 The station persists the package, selected MAC, target version, job state and
 reported node versions. Transfer progress is reconstructed from the node after
 a station restart rather than writing station NVS for every radio block.
+During transfer, the next requested offset reflects received data. When the
+sensor reports a pause or low voltage, the offset reports the last saved
+checkpoint from which a later attempt can resume.
 
 ## Security and practical limits
 

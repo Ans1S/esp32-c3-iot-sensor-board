@@ -180,6 +180,19 @@ int main() {
   bool restarted = false;
   try { setup(); } catch (const Restarted&) { restarted = true; }
   assert(restarted && sensor::savedConfig.environmentalSensorType == lil::protocol::EnvironmentalSensorType::kAutoDetect);
+  // Stop the live path at battery protection after its first two contacts.
+  // A confirmed MAC delivery with a missing application ACK must stay on
+  // the known channel. A missing MAC delivery still permits recovery.
+  for (bool delivered : {true, false}) {
+    resetBoot(); sensor::savedConfig.environmentalSensorType = lil::protocol::EnvironmentalSensorType::kTmp117;
+    sensor::batteries.push_back({true, 3500}); sensor::batteries.push_back({true, 2790});
+    sensor::ExchangeResult reply{}; reply.delivered = delivered;
+    sensor::configurationReplies.push_back(reply);
+    sensor::configurationReplies.push_back(reply);
+    sensor::configurationReplies.push_back(reply);
+    assert(boot() == 86400 && normalExchanges == 3);
+    assert(lowPowerExchanges == (delivered ? 1 : 3)); // Includes the final battery report.
+  }
   resetBoot();
   sensor::EnvironmentalReading unreadable{};
   runtimeConfig.environmentalSensorType = lil::protocol::EnvironmentalSensorType::kBme280;

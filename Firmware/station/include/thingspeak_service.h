@@ -9,6 +9,7 @@
 
 #include "app_config.h"
 #include "lil_protocol.h"
+#include "thingspeak_account_job.h"
 #include "upload_scheduler.h"
 
 namespace station {
@@ -27,22 +28,6 @@ struct CloudUploadJob {
   lil::protocol::TelemetryPayload telemetry{};
 };
 
-struct ChannelCreationResult {
-  bool success = false;
-  int httpStatus = 0;
-  uint32_t channelId = 0;
-  String readKey;
-  String writeKey;
-  String error;
-};
-
-struct ThingSpeakApiResult {
-  bool success = false;
-  int httpStatus = 0;
-  String response;
-  String error;
-};
-
 class ThingSpeakService {
  public:
   bool begin(SensorRegistry& registry);
@@ -50,18 +35,21 @@ class ThingSpeakService {
              const lil::protocol::TelemetryPayload& telemetry,
              int8_t stationRssi, uint32_t sequence, uint32_t receivedAt,
              bool sharedChannel = false, uint32_t generation = 0);
-  ChannelCreationResult createChannel(const String& userApiKey,
-                                      const String& sensorName);
-  ThingSpeakApiResult listChannels(const String& userApiKey);
-  ThingSpeakApiResult createManagedChannel(const String& userApiKey,
-                                           const String& encodedSettings);
-  ThingSpeakApiResult updateChannel(const String& userApiKey,
-                                    uint32_t channelId,
-                                    const String& encodedSettings);
-  ThingSpeakApiResult clearChannel(const String& userApiKey,
-                                   uint32_t channelId);
-  ThingSpeakApiResult deleteChannel(const String& userApiKey,
-                                    uint32_t channelId);
+  ThingSpeakApiResult executeAccount(const ThingSpeakAccountJob::Request& request);
+  uint32_t startAccountJob(ThingSpeakAccountJob::Request request, const char* owner);
+  template <typename Result>
+  ThingSpeakAccountJob::Poll collectAccountJob(uint32_t ticket, const char* account,
+                                              const char* owner, Result& result) {
+    if (!queueMutex_) return ThingSpeakAccountJob::Poll::Missing;
+    xSemaphoreTake(queueMutex_, portMAX_DELAY);
+    const auto state = accountJob_.collect(ticket, account, owner, millis(), result);
+    xSemaphoreGive(queueMutex_);
+    return state;
+  }
+  bool takeMutation(ThingSpeakAccountJob::Request& request, ThingSpeakApiResult& result);
+  bool mutationReady() const { return mutationReady_.load(std::memory_order_acquire); }
+  void finishMutation(ThingSpeakMutationResult result);
+  bool mutationPending();
   static String urlEncode(const String& value);
   int lastHttpStatus() const;
   int lastEntryId() const;
@@ -73,6 +61,7 @@ class ThingSpeakService {
 
  private:
   static void taskEntry(void* context);
+  bool ensureTask();
   void taskLoop();
   bool upload(const CloudUploadJob& job);
   ThingSpeakApiResult accountRequest(const char* method, const String& url,
@@ -80,10 +69,12 @@ class ThingSpeakService {
                                      const String& encodedSettings = "");
 
   lil::UploadScheduler<CloudUploadJob, 64> scheduler_;
+  ThingSpeakAccountJob accountJob_;
   SensorRegistry* registry_ = nullptr;
   SemaphoreHandle_t queueMutex_ = nullptr;
   SemaphoreHandle_t tlsMutex_ = nullptr;
   TaskHandle_t task_ = nullptr;
+  std::atomic<bool> mutationReady_{false};
   std::atomic<int> lastHttpStatus_{0};
   std::atomic<int> lastEntryId_{0};
   std::atomic<uint32_t> successfulUploads_{0};
