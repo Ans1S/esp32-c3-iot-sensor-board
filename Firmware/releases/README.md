@@ -1,14 +1,22 @@
 # Firmware packages
 
-The [4.4.5 / 40405 source](../CHANGELOG.md) includes station and V3/V4 sensor
-improvements. Compatible sensor OTA downloads are pending signatures from the
-key already trusted by the installed firmware.
+## Latest full release 4.4.5
 
-Additional station dashboard and history changes are unreleased source work;
-the packages below do not contain them. No new release or signed OTA package
-is created by these changes.
+Station and PCB V3/V4 use **4.4.5 / 40405**, protocol V5. This release
+includes the station dashboard and history improvements and the 4.4.5 sensor
+and station changes. Install the station application at `0x10000` on a
+compatible existing layout, then use the matching signed sensor OTA package.
 
-## Latest packaged release 4.4.4
+- [Complete update bundle](w-charger-4.4.5.zip)
+- [PCB V3 OTA](sensor-v3-4.4.5.ota) and [PCB V4 OTA](sensor-v4-4.4.5.ota)
+- [Station application](station-4.4.5.bin)
+- [Installation instructions](INSTALL-4.4.5.txt), [release notes](RELEASE-NOTES-4.4.5.txt), and [checksums](SHA256SUMS-4.4.5.txt)
+
+All three targets build. Sensor packages use the existing installation key;
+previous packages and final payloads were verified. No board was flashed or
+physically measured.
+
+## Previous full release 4.4.4
 
 Station and PCB V3/V4 use **4.4.4 / 40404**, protocol V5. This release includes
 all three efficiency audit passes: sensor arithmetic/FIFO work, main/radio
