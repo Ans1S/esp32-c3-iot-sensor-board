@@ -53,6 +53,7 @@ def main():
                           "station/src/filesystem_guard.cpp", "shared/src/lil_protocol.cpp"],
         "history_flush": ["tests/history_flush_test.cpp", "station/src/paged_history.cpp",
                           "station/src/filesystem_guard.cpp", "shared/src/lil_protocol.cpp"],
+        "history_json": ["tests/history_json_test.cpp"],
         "recording_json": ["tests/recording_json_test.cpp", "shared/src/lil_protocol.cpp"],
         "recording_store": ["tests/recording_store_test.cpp", "sensor/src/recording_store.cpp", "shared/src/recording_journal.cpp", "shared/src/lil_protocol.cpp"],
         "precision_sensors": ["tests/precision_sensors_test.cpp", "sensor/src/precision_sensors.cpp"],
@@ -88,7 +89,7 @@ def main():
             includes = [ROOT / directory for directory in
                         ["tests/stubs", "shared/include", "station/include", "sensor/include"]]
             includes.append(driver)
-            if name == "recording_json":
+            if name in {"recording_json", "history_json"}:
                 includes.append(ROOT / "station/.pio/libdeps/station_s3/ArduinoJson/src")
             if name == "sensor_config":
                 includes.insert(0, ROOT / "tests/sensor_config_stubs")

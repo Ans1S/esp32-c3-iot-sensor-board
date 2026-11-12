@@ -13,6 +13,9 @@
 
 #include "web_pages.h"
 #include "web_input.h"
+#include "history_json.h"
+#include "accept_encoding.h"
+#include "dashboard_gzip.h"
 
 namespace station {
 
@@ -195,6 +198,17 @@ void sendNoCache(WebServer& server) {
       "object-src 'none'; frame-ancestors 'none'; base-uri 'none'; "
       "form-action 'self'");
 }
+
+void sendDashboard(WebServer& server) {
+  server.sendHeader("Vary", "Accept-Encoding");
+  if (acceptsDashboardGzip(server.header("Accept-Encoding").c_str())) {
+    server.sendHeader("Content-Encoding", "gzip");
+    server.send_P(200, "text/html; charset=utf-8",
+                  reinterpret_cast<const char*>(kDashboardGzip), sizeof(kDashboardGzip));
+  } else {
+    server.send_P(200, "text/html; charset=utf-8", kDashboardPage);
+  }
+}
 }  // namespace
 
 bool WebPortal::begin(StationConfig& config, ConfigStore& store,
@@ -208,17 +222,19 @@ bool WebPortal::begin(StationConfig& config, ConfigStore& store,
   gateway_ = &gateway;
   refreshCsrfToken();
   clearAuthSessions();
-  const char* collectedHeaders[] = {"Cookie", "Origin"};
-  server_.collectHeaders(collectedHeaders, 2);
+  const char* collectedHeaders[] = {"Cookie", "Origin", "Accept-Encoding"};
+  server_.collectHeaders(collectedHeaders, 3);
 
   server_.on("/", HTTP_GET, [this]() {
     sendNoCache(server_);
     if (config_->wifiSsid[0] != '\0' && !requireAuthentication(true)) {
       return;
     }
-    server_.send_P(200, "text/html; charset=utf-8",
-                   config_->wifiSsid[0] == '\0' ? kSetupWizardPage
-                                                : kDashboardPage);
+    if (config_->wifiSsid[0] == '\0') {
+      server_.send_P(200, "text/html; charset=utf-8", kSetupWizardPage);
+    } else {
+      sendDashboard(server_);
+    }
   });
   server_.on("/setup", HTTP_GET, [this]() {
     sendNoCache(server_);
@@ -234,7 +250,7 @@ bool WebPortal::begin(StationConfig& config, ConfigStore& store,
     if (!requireAuthentication(true)) {
       return;
     }
-    server_.send_P(200, "text/html; charset=utf-8", kDashboardPage);
+    sendDashboard(server_);
   });
   server_.on("/login", HTTP_GET, [this]() { handleLogin(); });
   server_.on("/login", HTTP_POST, [this]() { handleLogin(); });
@@ -1178,23 +1194,18 @@ void WebPortal::sendPagedHistory(const uint8_t mac[6]) {
   header["bucketSeconds"]=info.intervalSeconds;header["capacityPoints"]=info.capacityPoints;
   header["pointsTotal"]=info.points;header["durablePoints"]=info.durablePoints;header["pendingPoints"]=info.pendingPoints;
   header["until"]=until;header["oldest"]=oldest;header["nextAfter"]=count==capacity&&points[count-1].timestamp<until?points[count-1].timestamp:0;
+  const bool compact=server_.arg("format")=="array-v1";
+  const uint32_t columns=compact?historyColumnMask(points,count):0;
+  if(compact){header["format"]="array-v1";JsonArray fields=header["fields"].to<JsonArray>();
+    for(size_t i=0;i<kHistoryColumnCount;++i)if(columns&(1UL<<i))fields.add(kHistoryColumns[i]);}
+  if(header.overflowed()){heap_caps_free(points);server_.client().stop();return;}
   String opening;serializeJson(header,opening);opening.remove(opening.length()-1);opening+=",\"points\":[";server_.sendContent(opening);
   String chunk;chunk.reserve(4096);
   for(size_t i=0;i<count;++i){
-    const auto& p=points[i];const auto& t=p.telemetry;JsonDocument row;
-    row["t"]=uint64_t(p.timestamp)*1000;row["sensorType"]=static_cast<uint8_t>(t.sensorType);
-    if(t.pcbVersion)row["pcbVersion"]=t.pcbVersion;
-    row["iaqAccuracy"]=t.iaqAccuracy;row["gap"]=bool(t.live.flags&lil::protocol::kLiveGap)||t.motion.fifoOverrun;
-    if(t.capabilities&lil::protocol::kTemperature)row["temperature"]=float(t.temperatureC);
-    if(t.capabilities&lil::protocol::kHumidity)row["humidity"]=float(t.humidityPercent);
-    if(t.capabilities&lil::protocol::kPressure)row["pressure"]=float(t.pressureHpa);
-    if((t.capabilities&lil::protocol::kIaq)&&t.iaqAccuracy)row["iaq"]=float(t.iaq);
-    if(t.capabilities&lil::protocol::kGasResistance)row["gas"]=t.gasResistanceOhms/1000.0F;
-    if(t.capabilities&lil::protocol::kBattery)row["battery"]=t.batteryMillivolts/1000.0F;
-    if(t.capabilities&lil::protocol::kMotion){const char* keys[]={"ax","ay","az","gx","gy","gz"};
-      for(size_t axis=0;axis<6;++axis)row[keys[axis]]=float(axis<3?t.motion.accelerationG[axis]:t.motion.angularRateDps[axis-3]);
-      row["peakAcceleration"]=float(t.motion.peakAccelerationG);row["peakAngularRate"]=float(t.motion.peakAngularRateDps);}
-    if ((i && !chunk.concat(',')) || !appendJson(row, chunk)) {
+    JsonDocument row;historyPointJson(row,points[i]);JsonDocument array;
+    if(compact)compactHistoryPointJson(array,row,columns);
+    if (row.overflowed() || array.overflowed() || (i && !chunk.concat(',')) ||
+        !(compact?appendJson(array,chunk):appendJson(row,chunk))) {
       heap_caps_free(points);
       server_.client().stop();
       return;

@@ -1,5 +1,19 @@
 # Firmware change inventory
 
+## Unreleased — station dashboard and history
+
+- Generate a gzip dashboard at build time and negotiate it per request while
+  retaining the identity response, access checks and no-store headers.
+- Send optional compact normal-history pages without changing the default API
+  or saved data. Load only the chosen window and reuse an existing snapshot
+  when extending it, validating the retained boundary before merging.
+- Prefetch at most three seven-day pages only when the history is suitable and
+  the station is not serving active live sensors or recording transfers.
+- Offer year-scale periods and bound chart geometry while retaining raw cursor
+  values and full on-demand CSV export. Explain the finite shared retention.
+- Add browser, storage, serialization and long-uptime regression checks. These
+  source changes are not included in the published 4.4.4 release packages.
+
 ## 4.4.5 / 40405 - station and sensor efficiency, 2026-11-09
 
 - Reuse discovery frames across channels, wait for send completion by

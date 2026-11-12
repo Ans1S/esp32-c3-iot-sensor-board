@@ -160,13 +160,16 @@ about 5 s of scheduling delay, excluding storage faults or scheduling stalls.
 A sudden power loss can lose that uncommitted tail. Long intervals flush each
 normal report. Manual journal ACKs still require durable readback success.
 
-A response contains at most 128 samples (about 25 KiB of snapshot payload),
-with an internal-heap reserve if PSRAM allocation fails. A fixed until/oldest
+A response contains at most 512 samples, falling back to 128 if PSRAM is
+unavailable and the internal-heap reserve permits it. The dashboard can request
+compact array pages; the default object response remains supported. A fixed until/oldest
 cursor detects eviction during a multi-page read. The browser requests only
-the opened node and updates incrementally; closing/changing details aborts the
-read. Large SVG paths preserve time-ordered first/last/min/max values per
-display bucket, separately across gaps. Raw inspection/CSV retain every loaded
-sample. No long-term averaged tier replaces original values.
+the opened node and updates incrementally. It reuses covered data when extending
+the window and validates the oldest snapshot boundary; closing/changing details
+aborts obsolete reads. A bounded seven-day prefetch is skipped for high-rate or
+active live workloads. Large SVG paths preserve time-ordered first/last/min/max
+values per display bucket, separately across gaps. Raw inspection/CSV retain
+every loaded sample. No long-term averaged tier replaces original values.
 
 Normal TMP117/IMU samples use the recording codec's floats without extra
 quantization. Environmental values retain the previous compact centidegree,

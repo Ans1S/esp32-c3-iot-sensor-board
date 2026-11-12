@@ -29,9 +29,10 @@ verify a target without writing to a connected device.
 - [Architecture](ARCHITECTURE.md)
 - [Hardware test plan](HARDWARE_TESTPLAN.md)
 
-The station and sensor source is **4.4.5 / 40405**, protocol V5. It reduces
-work in acquisition, ESP-NOW transport, station storage and dashboard
-responses. The [release archive](releases/README.md) lists available downloads.
+The station and sensor source identifies as **4.4.5 / 40405**, protocol V5.
+Unreleased station changes further improve dashboard transfer, history paging
+and chart responsiveness without changing stored formats. The [release archive](releases/README.md)
+lists available downloads; those packages do not include the unreleased work.
 For an installed station, `python Firmware/upload.py station --application-only`
 updates only its application and preserves Wi-Fi, sensors, settings and files.
 Initialize the installation signing key as described

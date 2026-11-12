@@ -2,7 +2,7 @@
 
 The [2026-10-07 reliability review](../RELIABILITY_REVIEW.md) documents the
 current fixes, energy behavior and remaining hardware acceptance. The runner
-includes 35 production C++ suites.
+includes production C++ suites.
 
 Run from the repository root after resolving/building the sensor dependencies:
 
@@ -14,7 +14,7 @@ python Firmware/tests/test_library_patches.py
 
 Add `--sanitize` to the C++ runner for undefined-behavior, alignment and
 float-to-integer overflow checks. `--suite NAME` selects a suite and can be
-repeated; omitting it runs all 35 suites. `--benchmark` additionally runs the
+repeated; omitting it runs all suites. `--benchmark` additionally runs the
 optional host benchmarks in selected `pulse_signal` and `registry` suites.
 For example:
 
@@ -169,10 +169,17 @@ Set `RECORDING_PAGE_SIZE=512` to exercise larger recording pages. Run
 comparison with 19 simulated sensors and 4,400 history points. The simulated
 API delays and page size do not measure an actual station, radio or filesystem.
 
-Run `node Firmware/tests/test_history_priority.cjs` to check that a complete
-selected window appears before older history finishes, and that failed older
-pages preserve the window while navigation and full CSV export remain gated
-until a successful retry restores the complete snapshot.
+Run `node Firmware/tests/test_history_window_switch.cjs` to verify that the
+period can be changed while an earlier request is stalled and that an obsolete
+response cannot replace the selected window. `test_history_priority.cjs` checks
+window-bounded loading, failed-page recovery, historical navigation and a
+complete on-demand CSV export. `test_history_long_term.cjs` exercises 17,520
+hourly samples over two years, year-window cache reuse and a 12,000-gap plot;
+`test_history_expand.cjs` checks prefix-only expansion and snapshot rollover.
+`test_history_prefetch.cjs` covers an in-flight switch, completed prefetch,
+high-rate and page-count limits, failed prefetch and full export during loading.
+`history_json_test.cpp` compares legacy and compact normal-history points,
+including mixed capabilities, missing values, a gap and post-2038 timestamps.
 
 Run `node Firmware/tests/test_chart_readability.cjs` to verify single-point
 history charts, time-window switching, browsing retained history, exact cursor
@@ -364,8 +371,9 @@ and categories, never matched values.
 
 `paged_history_test.cpp` runs the production paged store against actual temporary
 files: all 19 nodes, fair quotas, full storage, explicit reserve, immutable
-pagination ceilings, stale readers, CRC/torn-tail recovery and exact precision
-values. Registry integration also imports the legacy ring, preserves settings,
+pagination ceilings, stale readers, CRC/torn-tail recovery, two years of hourly
+samples across a reboot, bounded rollover and exact precision values. Registry
+integration also imports the legacy ring, preserves settings,
 and rejects cached precision contacts as new measurements. The configuration
 suite checks the independent dashboard NVS key and CRC fallback.
 

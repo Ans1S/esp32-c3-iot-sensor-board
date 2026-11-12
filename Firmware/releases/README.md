@@ -4,6 +4,10 @@ The [4.4.5 / 40405 source](../CHANGELOG.md) includes station and V3/V4 sensor
 improvements. Compatible sensor OTA downloads are pending signatures from the
 key already trusted by the installed firmware.
 
+Additional station dashboard and history changes are unreleased source work;
+the packages below do not contain them. No new release or signed OTA package
+is created by these changes.
+
 ## Latest packaged release 4.4.4
 
 Station and PCB V3/V4 use **4.4.4 / 40404**, protocol V5. This release includes
