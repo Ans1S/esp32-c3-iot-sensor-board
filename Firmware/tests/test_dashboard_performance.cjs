@@ -4,7 +4,7 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
 (async () => {
   const source = fs.readFileSync(process.env.DASHBOARD_SOURCE || path.join(__dirname, '../station/src/web_pages.cpp'), 'utf8');
   const html = source.match(/const char kDashboardPage\[\].*?R"WCH\((.*?)\)WCH";/s)[1];
-  const pageSize = Number(process.env.HISTORY_PAGE_SIZE || 512), mac = '02:03:04:05:06:01';
+  const pageSize = Number(process.env.HISTORY_PAGE_SIZE || 512), expectedPoints=Number(process.env.EXPECTED_POINTS||1440), mac = '02:03:04:05:06:01';
   const now = Math.floor(Date.now()/1000)-1;
   const points = Array.from({length:4400}, (_, i) => ({t:(now-(4399-i)*60)*1000,battery:3.7+i/100000,sensorType:255}));
   const sensors = Array.from({length:19}, (_, i) => ({mac:i ? `02:03:04:05:06:${String(i+1).padStart(2,'0')}` : mac,
@@ -38,11 +38,11 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     await page.waitForFunction(()=>document.querySelectorAll('.sensorSummary').length===19);
     const overviewMs=Date.now()-start;
     const graphStart=Date.now(); await page.locator('.sensorSummary').first().click();
-    await page.waitForFunction(mac=>stationHistory[mac]?.length===4400,mac);
+    await page.waitForFunction(({mac,expectedPoints})=>stationHistory[mac]?.length===expectedPoints&&!historyLoadController,{mac,expectedPoints});
     const graphMs=Date.now()-graphStart;
-    assert.equal(historyCalls,Math.ceil(points.length/pageSize));
+    assert.equal(historyCalls,Math.ceil(expectedPoints/pageSize));
     assert.equal(await page.evaluate(mac=>stationHistory[mac].at(-1).battery,mac),points.at(-1).battery);
     if(!process.env.DASHBOARD_SOURCE)assert(statusStarted<configFinished,'Status request starts while configuration is loading');
-    console.log(JSON.stringify({pageSize,overviewMs,graphMs,historyCalls,statusStartedBeforeConfig:statusStarted<configFinished}));
+    console.log(JSON.stringify({pageSize,expectedPoints,overviewMs,graphMs,historyCalls,statusStartedBeforeConfig:statusStarted<configFinished}));
   } finally { await browser.close(); }
 })().catch(e=>{console.error(e);process.exit(1)});
