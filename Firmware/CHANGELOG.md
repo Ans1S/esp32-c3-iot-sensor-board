@@ -1,6 +1,6 @@
 # Firmware change inventory
 
-## Unreleased — station dashboard and history
+## 4.4.5 release — station dashboard and history
 
 - Generate a gzip dashboard at build time and negotiate it per request while
   retaining the identity response, access checks and no-store headers.
@@ -12,7 +12,7 @@
 - Offer year-scale periods and bound chart geometry while retaining raw cursor
   values and full on-demand CSV export. Explain the finite shared retention.
 - Add browser, storage, serialization and long-uptime regression checks. These
-  source changes are not included in the published 4.4.4 release packages.
+  changes are included in the complete 4.4.5 release.
 
 ## 4.4.5 / 40405 - station and sensor efficiency, 2026-11-09
 

@@ -20,6 +20,7 @@ build/
 !Firmware/releases/station-4.4.1.bin
 !Firmware/releases/station-4.4.3.bin
 !Firmware/releases/station-4.4.4.bin
+!Firmware/releases/station-4.4.5.bin
 *.elf
 *.map
 *.hex
