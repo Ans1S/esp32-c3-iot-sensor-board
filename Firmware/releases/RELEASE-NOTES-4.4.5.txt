@@ -1,0 +1,28 @@
+W-Charger 4.4.5 / 40405 - 2026-11-12
+
+Full station and PCB V3/V4 update, ESP-NOW protocol V5.
+
+CHANGES
+
+- Reduce sensor acquisition and radio overhead; invalidate stale TMP117 data
+  on I2C faults and require a fresh conversion after recovery.
+- Separate station receive and reply processing, bound history reads, coalesce
+  streamed responses and preserve recording rows on transient I/O errors.
+- Compress the station dashboard and load history in bounded windows,
+  reusing validated pages for faster navigation and complete CSV export.
+- Retain the existing partition and settings formats, signed OTA identity,
+  low-power sensor schedules, SW2 recording behavior and V4 battery protection.
+- See Firmware/CHANGELOG.md and PERFORMANCE_FOLLOWUP_2026-11-12.md for details.
+
+INSTALLATION
+
+Read INSTALL-4.4.5.txt. Install the station application at 0x10000 on an
+existing compatible layout without full flash erasure; then offer the matching
+V3 or V4 signed package through the station. Same-version OTA is rejected.
+
+VALIDATION AND LIMITS
+
+Builds, software tests, signature, payload, partition and checksum checks are
+separate from hardware acceptance. No board was flashed or physically measured.
+RF, current, sensor accuracy, FIFO behavior and power-loss recovery require
+physical testing. Host operation counts do not establish device performance.
