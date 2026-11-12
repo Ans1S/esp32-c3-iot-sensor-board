@@ -39,7 +39,7 @@ dark and system themes. Collection continues when the browser is closed.
 | Add a node | **Find sensors** discovers nearby nodes. Name the device, choose its sensor and set its interval; no station address or Wi-Fi credentials are hard-coded into sensor firmware. |
 | Keep the overview tidy | **Arrange** saves order, visibility, columns and spacing on the station and exposes the dashboard refresh rate. Hidden nodes continue measuring; **Show hidden** brings them into view. |
 | Check measurements | Cards show current values, battery voltage and last contact. Details add radio strength, firmware, operating mode, pending settings and sensor/storage faults. |
-| Explore history | Choose a measurement and period, browse previous windows or return to **Now**. Hover, tap or use arrow keys for exact values; touch selections stay pinned. |
+| Explore history | Choose a measurement and period, browse previous windows or return to **Now**. Previously loaded points are reused; longer periods fetch only missing history. Hover, tap or use arrow keys for exact values. |
 | Export data | **Display options & export** provides display filters and full retained-history CSV. Filters and the selected chart window preserve original cursor and export values. |
 | Adjust a sensor | **Device information & settings → Edit** changes type, name, interval and cloud fields. Calibration includes battery voltage, BME680 temperature compensation/IAQ reset and a separate motion zero reference. |
 | Connect ThingSpeak | **Settings** manages optional channel profiles and account channels; each measurement can use a field from 1–8 or **Do not upload**. |
@@ -54,7 +54,9 @@ dark and system themes. Collection continues when the browser is closed.
 
 Normal history is saved on the station. Retention adapts to reporting intervals,
 sensor count and shared storage; the detail view reports saved/buffered points
-and capacity. Choose **All retained data** to inspect the full available range.
+and estimated capacity. Older pages are recycled as space is needed; one year
+of raw history is not guaranteed. Choose **All retained data** to inspect the
+full available range or export it before it is recycled.
 Short intervals are batched, so sudden power loss can lose the latest
 uncommitted samples. Storage is finite and shared with saved recordings.
 
@@ -178,7 +180,9 @@ python Firmware/upload.py sensor-v3
 5. Use the dashboard for measurements, settings, recordings and signed updates.
 
 The **4.4.5 / 40405** source improves V3/V4 acquisition and ESP-NOW delivery,
-station data handling and dashboard response streaming. See the
+station data handling and dashboard response streaming. Unreleased station
+source changes additionally improve dashboard transfer and history loading;
+they are not part of the published 4.4.4 packages. See the
 [firmware change inventory](Firmware/CHANGELOG.md) and
 [software verification](Firmware/PERFORMANCE_FOLLOWUP_2026-11-09.md).
 

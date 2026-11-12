@@ -283,6 +283,31 @@ int main() {
   assert(fullBuffers.flush(configs[0].mac));
   const auto afterClear = fullBuffers.info(configs[0].mac);
   assert(afterClear.durablePoints == 1 && afterClear.oldest == epoch + 4 && afterClear.newest == epoch + 4);
+
+  // Two years of hourly samples remain readable across reboot. When the
+  // bounded ring eventually fills, the oldest page rolls over and snapshots
+  // that depended on that page are rejected rather than silently truncated.
+  clearFiles(); configure(1, 3600);
+  testSpiramFreeBytes = 4 * 1024 * 1024;
+  station::PagedHistory years;
+  assert(years.begin(true)); years.configure(configs, station::kMaxSensors);
+  value = {}; value.sensorType = EnvironmentalSensorType::kBme280;
+  value.capabilities = kTemperature | kBattery; value.temperatureC = 22.25F; value.batteryMillivolts = 3805;
+  for (uint32_t i = 0; i < 17520; ++i) assert(years.append(configs[0].mac, epoch + i * 3600, value, 3600));
+  assert(years.flush(configs[0].mac));
+  auto infoYears = years.info(configs[0].mac);
+  assert(infoYears.points == 17520 && infoYears.oldest == epoch && infoYears.newest == epoch + 17519 * 3600);
+  station::PagedHistory yearsReboot;
+  assert(yearsReboot.begin(true)); yearsReboot.configure(configs, station::kMaxSensors);
+  const auto restoredYears = read(yearsReboot, 0);
+  assert(restoredYears.size() == 17520 && restoredYears.front().timestamp == epoch &&
+         restoredYears.back().timestamp == epoch + 17519 * 3600);
+  for (uint32_t i = 17520; i < 24500; ++i) assert(yearsReboot.append(configs[0].mac, epoch + i * 3600, value, 3600));
+  assert(yearsReboot.flush(configs[0].mac));
+  infoYears = yearsReboot.info(configs[0].mac);
+  assert(infoYears.oldest > epoch && infoYears.newest == epoch + 24499 * 3600 && infoYears.points <= infoYears.capacityPoints);
+  assert(yearsReboot.read(configs[0].mac, 0, 0, epoch, batch, 2, stale, error) == 0 && stale && !error);
+  printf("Long history: 17,520 hourly points recovered after reboot; bounded rollover and stale snapshot passed\n");
   testSpiramFreeBytes = testInternalFreeBytes = 1024 * 1024;
   puts("paged history: bounded retention, precision, paging, recovery and reserves passed");
 }

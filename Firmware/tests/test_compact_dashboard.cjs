@@ -71,8 +71,9 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
     }),'Identity follows the name and header actions align with the right edge');
     assert.equal(await page.getByLabel('History metric').inputValue(),'battery');
     await page.waitForFunction(()=>!historyLoadController);
-    assert(historyCalls.length>1&&historyCalls.every(m=>m===mac),'Only the opened sensor is paged');
+    assert(historyCalls.length>=1&&historyCalls.every(m=>m===mac),'Only the opened sensor is paged');
     await page.getByLabel('Chart time window').selectOption('all');
+    await page.waitForFunction(mac=>stationHistory[mac]?.length===4400&&!historyLoadController,mac);
     const svg=page.locator('.historySvg');
     assert.equal((await svg.getAttribute('data-samples')),'[]');
     assert((await svg.getAttribute('data-cache-key')),'Long data stays out of repeated DOM attributes');

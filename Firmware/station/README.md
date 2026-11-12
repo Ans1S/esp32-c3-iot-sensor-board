@@ -54,6 +54,13 @@ TMP117 and LSM6DSOX samples. Retention follows the interval and available shared
 space rather than a fixed 24-hour limit. Short intervals are batched; a sudden
 power loss can lose the latest uncommitted batch (normally up to about 35 s,
 longer if storage is failing). The detail view reports saved/buffered points.
+The 1.625 MiB LittleFS partition is shared with recordings, other files and a
+workspace reserve; normal history is limited to 256 pages of 4 KiB. Oldest
+normal-history pages are recycled as needed, so the station does not guarantee
+one year of raw data. Actual retention depends on the number of active sensors,
+sample type, interval, free space and recordings. For example, 5,824 samples at
+one every ten minutes cover roughly 40 days if none are missing. Use regular
+exports or a separately designed external archive when longer retention matters.
 Manual SW2 sessions remain independent. MAX30102 remains SW2-only.
 Each sensor report also carries its actual operating mode. The captive setup
 wizard, pending-sensor list and configured dashboard cards display **Setup
@@ -131,10 +138,65 @@ reset of the IAQ learning state and optional battery-voltage calibration using
 a multimeter reference. Independently of any open browser, the station stores
 an adaptive persistent history for normal measurements. Environmental/battery
 rows retain compact precision; TMP117 and IMU rows retain their floats. A
-selected sensor loads the complete retained data in bounded API pages. No
-browser needs to remain open for collection. The view reports saved/buffered
-points, gaps, interval and estimated capacity, with a raw full-history CSV.
+selected sensor loads only its chosen time window in bounded API pages. The
+period remains selectable while requests are in progress; selecting another
+window cancels the previous load. After the first day is shown, the dashboard
+can prefetch up to three pages for seven days in the background; a selection
+can reuse a completed or in-progress prefetch. It skips this for high-rate
+histories, active live sensors, hidden pages and recording transfers, and it
+falls back to ordinary on-demand loading if the estimate was too small.
+Selecting all retained data or exporting the
+full-history CSV explicitly loads the full retained snapshot. No browser needs
+to remain open for collection. The view reports saved/buffered points, gaps,
+interval, the oldest available date and estimated shared capacity. One- and
+two-year windows are available when inspecting longer histories. Already loaded
+ranges are reused until the history revision changes; a wider live window
+downloads only the missing older prefix when its snapshot boundary is valid.
+The dashboard requests an
+optional compact array representation of normal-history pages, preserving raw
+values and missing fields; the default API continues to return objects. Dense or
+highly discontinuous charts use bounded visual geometry while retaining the raw
+samples for the cursor and CSV. A simplified graph is labeled in the UI.
 Short-interval batches have a bounded uncommitted tail on sudden power loss.
+
+On 2026-11-12, a direct station comparison used the same fixed snapshot of 512
+actual points in both representations. Decoded fields and values matched: the
+object response was 75,562 bytes and the compact response 26,690 bytes. Three
+alternating requests per format had median completion times of 564 ms and
+305 ms respectively. These are a short local measurement, not a load test;
+results depend on the sensors' available fields, Wi-Fi and station load.
+The actual public dashboard also loaded a 2,745-point full CSV export, and
+switching within an already loaded window did not request the history again.
+
+A later single-run comparison against the same real station API switched from
+24 hours to seven days after a 1.5-second pause. Before prefetch this took
+841 ms and two history requests; after prefetch it took 24 ms and no new
+request. On the installed public dashboard the prefetched switch took 28 ms.
+These figures depend on the sensor, transfer time and how long the user waits;
+switching while prefetch is still in progress can still show a loading state.
+
+A separate single-run comparison with 2,747 real retained points loaded the
+30-day view after a seven-day view. Prefix reuse reduced requests from six to
+four, decoded JSON from 143,078 to 89,719 bytes and measured time from 2,082 to
+1,361 ms. The station had less than 30 days of data, so its year view needed
+no further requests; this does not measure a real one-year history. A synthetic
+17,520-point hourly history checked exact one- and two-year expansion and
+reduced the complete test scenario from 54 to 37 API pages.
+
+A 2026-11-12 browser comparison used the same live station APIs for the old and
+new local dashboard HTML, without deploying the new page. With 2,742 retained
+points, the old page loaded all points in seven history requests before the
+period control became usable (3,108 ms). The new page loaded 144 recent points
+in one request (243 ms); selecting seven days then loaded 1,022 points in two
+additional requests (1,165 ms). This was one sequential run per page through
+the public API, not a controlled load test. After an application-only update,
+the actual public dashboard loaded 145 recent points in one request in 839 ms,
+then 1,023 seven-day points in two requests in 1,395 ms. A second browser test
+delayed the first history request, selected seven days while it was pending,
+and confirmed that the obsolete response did not replace the new data. Browser
+fixtures also cover failed-page retries, navigation and full export. Latency
+and sensor histories vary; these timings include different browser and network
+conditions and do not establish a statistical speedup.
 
 The channel ID and read/write API keys can be entered in the captive portal and
 later in the station settings. The read key is used only to read private
@@ -258,3 +320,55 @@ sensor identities, partition table, bootloader and filesystem outside the write.
 The settings schema is unchanged; dashboard preferences use a separate key.
 For a bare/new board use the normal installation target to install the layout.
 Only the explicitly named factory-reset target erases all flash.
+
+## Dashboard transfer
+
+The dashboard is embedded in the firmware. At build time PlatformIO generates
+a gzip copy from the same HTML source in its build directory. For `/dashboard`
+and the configured station's `/`, clients that explicitly advertise gzip with
+a positive quality receive that copy with `Content-Encoding: gzip` and `Vary:
+Accept-Encoding`. Other clients receive the original HTML. Authentication,
+security headers and no-store behavior are unchanged; the setup and login pages
+and live API requests are unaffected. Both copies use flash, not runtime gzip
+compression. The generated file is not a source file to edit or commit.
+
+On 2026-11-12, the installed station's direct dashboard was byte-identical to
+the checked-in HTML (180,192 bytes). Six sequential Pi-to-station requests
+with no load test took 426–500 ms in total; response headers arrived in
+24–46 ms. This shows substantial time between headers and completion, but
+does not isolate Wi-Fi throughput from the station's HTTP sending behavior.
+The local build-time gzip result was 50,103 bytes, a 72.2% reduction; the host
+test decompresses it and compares every byte to the source. Matching HTML alone
+does not establish the complete installed firmware version.
+
+On the existing Pi, the remote-view proxy uses a loopback-only adapter for the
+dashboard: the adapter requests gzip from the station and decompresses the
+response before the existing `sub_filter` rewrites it. The public proxy then
+compresses the filtered response when the browser supports gzip. Other routes
+continue through their existing paths. A station that ignores gzip still works.
+The proxy adjustment was checked with simulated compressed and uncompressed
+station responses, then with the updated station. A packet-level check observed
+the Pi request gzip and the station respond with gzip and 50,103 bytes. The
+adapter's copied proxy settings must be kept aligned with future changes to the
+original proxy configuration. Do not simply forward the browser's gzip
+preference to the station: that would bypass the required decompression before
+HTML rewriting.
+
+On 2026-11-12, five alternating direct Pi-to-station requests per representation
+took 376–406 ms (median 398 ms) for identity and 106–140 ms (median 111 ms) for
+gzip. Five gzip requests through the Pi's local public proxy took 110–155 ms
+(median 118 ms). Five public Funnel requests from the workstation took
+322–438 ms (median 328 ms); a previous short series before the change was about
+660–745 ms. These are individual new-connection requests, not a load test or a
+controlled experiment. The compressed and identity station responses decoded
+to the same 180,192 bytes, and the public response had the expected filtered
+HTML and `no-store`. Wi-Fi and all five configured sensor identities remained
+present after the application-only update; not every sensor had checked in
+again when tested.
+
+For verification, run `python3 Firmware/tests/test_dashboard_gzip.py` from
+the repository root and build the `station_s3` PlatformIO environment. For
+later deployments, compare direct gzip and identity requests and check the
+actual dashboard, login, no-cache/security headers and remote view on a test
+device; measure first-byte and total timings separately. The build alone does
+not verify device behavior.
