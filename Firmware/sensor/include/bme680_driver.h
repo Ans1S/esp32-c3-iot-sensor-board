@@ -11,7 +11,7 @@ namespace sensor {
 
 class Bme680Driver {
  public:
-  bool begin(uint8_t address, float temperatureOffsetC);
+  bool begin(uint8_t address, float temperatureOffsetC, bool isBme688 = false);
   EnvironmentalReading read();
   void prepareForDeepSleep(uint32_t seconds);
   uint32_t recommendedSleepSeconds(uint32_t fallbackSeconds) const;
@@ -52,6 +52,8 @@ class Bme680Driver {
   bool bsecReady_ = false;
   bool stateStoreReady_ = false;
   bool scheduleUpdated_ = false;
+  bool calibrationClockSeeded_ = false;
+  bool isBme688_ = false;
   uint8_t address_ = 0;
   uint64_t calibrationAwakeStartedMs_ = 0;
   uint32_t calibrationElapsedAtBeginSeconds_ = 0;

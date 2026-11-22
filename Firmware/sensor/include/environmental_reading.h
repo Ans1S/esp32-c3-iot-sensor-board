@@ -11,6 +11,7 @@ struct EnvironmentalReading {
   lil::protocol::MotionFeedback motionFeedback{};
   lil::protocol::PulseReading pulse{};
   lil::protocol::LiveReading live{};
+  lil::protocol::ExtendedReading extended{};
   bool valid = false;
   bool bme680RawFallback = false;
   float temperatureC = 0;

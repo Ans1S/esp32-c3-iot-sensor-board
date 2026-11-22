@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <esp_task_wdt.h>
 #include <time.h>
 
 #include "app_config.h"
@@ -20,9 +21,25 @@ station::EspNowGateway espNowGateway;
 station::WebPortal webPortal;
 
 [[noreturn]] void fatal(const char* message) {
-  Serial.printf("[FATAL] %s\n", message);
+  Serial.printf("[FATAL] %s; restarting in 30 seconds\n", message);
+  delay(30000);
+  ESP.restart();
   for (;;) {
     delay(1000);
+  }
+}
+
+// Keep the ~1 KiB StationConfig copy off loop()'s persistent stack frame so
+// every HTTP request has nearly 1 KiB more stack headroom on loopTask.
+[[gnu::noinline]] void persistSetupPortalCompletion() {
+  if (!stationConfig.setupPortalRequired) return;
+  station::StationConfig updated = stationConfig;
+  updated.setupPortalRequired = false;
+  if (!configStore.saveStationConfig(updated)) {
+    Serial.println("[WARN] Setup portal state could not be saved");
+  } else {
+    stationConfig = updated;
+    Serial.println("Home Wi-Fi connected; setup Wi-Fi was disabled.");
   }
 }
 }  // namespace
@@ -30,7 +47,7 @@ station::WebPortal webPortal;
 void setup() {
   Serial.begin(115200);
   const uint32_t serialStarted = millis();
-  while (!Serial && millis() - serialStarted < 2000) {
+  while (!Serial && millis() - serialStarted < 250) {
     delay(10);
   }
 
@@ -64,6 +81,10 @@ void setup() {
   if (!station::otaService.begin()) {
     Serial.println("[WARN] OTA staging unavailable; install the new partition layout by USB");
   }
+  const esp_task_wdt_config_t wdtConfig{30000, 0, true};
+  if (esp_task_wdt_reconfigure(&wdtConfig) != ESP_OK) {
+    (void)esp_task_wdt_init(&wdtConfig);
+  }
   if (!espNowGateway.begin(sensorRegistry, thingSpeakService, wifiService)) {
     fatal("ESP-NOW gateway could not be started");
   }
@@ -71,12 +92,13 @@ void setup() {
                        thingSpeakService, espNowGateway)) {
     fatal("Web interface could not be started");
   }
+  (void)esp_task_wdt_add(nullptr);
 
   if (wifiService.setupPortalActive()) {
     Serial.printf("Setup Wi-Fi active: %s\n",
                   wifiService.accessPointSsid().c_str());
-    Serial.println("Setup-Passwort: im lokalen Webinterface sichtbar");
-    Serial.printf("Setup-Adresse: http://%s/\n",
+    Serial.println("Setup password: visible in the local web interface");
+    Serial.printf("Setup address: http://%s/\n",
                   wifiService.accessPointIp().c_str());
     Serial.println("Setup through the captive portal does not require a web login.");
   } else {
@@ -88,13 +110,9 @@ void setup() {
 void loop() {
   wifiService.loop();
   if (wifiService.consumeSetupPortalCompletion()) {
-    stationConfig.setupPortalRequired = false;
-    if (!configStore.saveStationConfig(stationConfig)) {
-      Serial.println("[WARN] Setup portal state could not be saved");
-    } else {
-      Serial.println("Home Wi-Fi connected; setup Wi-Fi was disabled.");
-    }
+    persistSetupPortalCompletion();
   }
   webPortal.loop();
-  delay(2);
+  (void)esp_task_wdt_reset();
+  vTaskDelay(1);
 }

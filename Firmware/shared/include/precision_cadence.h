@@ -16,6 +16,11 @@ class RetryBackoff {
     if (waiting_ && uint32_t(now - startedMs_) >= durationMs_) clear();
     return !waiting_;
   }
+  uint32_t remainingMs(uint32_t now) const {
+    if (!waiting_) return 0;
+    const uint32_t elapsed = uint32_t(now - startedMs_);
+    return elapsed >= durationMs_ ? 0 : durationMs_ - elapsed;
+  }
  private:
   uint32_t startedMs_ = 0, durationMs_ = 0;
   bool waiting_ = false;
@@ -35,10 +40,27 @@ constexpr uint32_t normalPrecisionIntervalMs(uint32_t seconds) {
 
 class PrecisionCadence {
  public:
-  void reset(uint32_t now) { next_ = now; }
-  bool due(uint32_t now) const { return static_cast<int32_t>(now - next_) >= 0; }
-  void started(uint32_t now, uint32_t intervalMs) { next_ = now + intervalMs; }
+  void reset(uint32_t now) {
+    started_ = now;
+    interval_ = 0;
+    waiting_ = false;
+  }
+  bool due(uint32_t now) const {
+    return !waiting_ || uint32_t(now - started_) >= interval_;
+  }
+  void started(uint32_t now, uint32_t intervalMs) {
+    started_ = now;
+    interval_ = intervalMs;
+    waiting_ = intervalMs != 0;
+  }
+  uint32_t remainingMs(uint32_t now) const {
+    if (!waiting_) return 0;
+    const uint32_t elapsed = uint32_t(now - started_);
+    return elapsed >= interval_ ? 0 : interval_ - elapsed;
+  }
  private:
-  uint32_t next_ = 0;
+  uint32_t started_ = 0;
+  uint32_t interval_ = 0;
+  bool waiting_ = false;
 };
 }  // namespace lil::timing

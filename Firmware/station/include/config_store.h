@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Preferences.h>
+#include <atomic>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 #include "app_config.h"
 #include "sensor_identity.h"
@@ -10,7 +13,7 @@ namespace station {
 class ConfigStore {
  public:
   bool begin();
-  bool storageAvailable() const { return storageAvailable_; }
+  bool storageAvailable() const { return storageAvailable_.load(std::memory_order_acquire); }
   StationConfig loadStationConfig();
   bool saveStationConfig(const StationConfig& config);
   DashboardLayout loadDashboardLayout();
@@ -40,8 +43,11 @@ class ConfigStore {
 
  private:
   void applyDefaults(StationConfig& config);
+  bool saveStationConfigLocked(const StationConfig& config);
+  bool saveSensorConfigLocked(size_t index, const SensorConfig& config);
   Preferences preferences_;
-  bool storageAvailable_ = false;
+  SemaphoreHandle_t nvsMutex_ = nullptr;
+  std::atomic<bool> storageAvailable_{false};
 };
 
 }  // namespace station

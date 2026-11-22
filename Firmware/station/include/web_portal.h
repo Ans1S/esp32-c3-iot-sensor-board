@@ -36,7 +36,8 @@ class WebPortal {
   const char* createAuthSession();
   void clearAuthSessions();
   void revokeCurrentSession();
-  String currentSessionToken() const;
+  int findActiveSessionIndex(bool pruneExpired = true);
+  String currentSessionToken();
   bool loginBlocked(uint32_t& retryAfterSeconds);
   bool recordFailedLogin(uint32_t& retryAfterSeconds);
   void clearLoginFailures();
@@ -46,6 +47,7 @@ class WebPortal {
   bool verifyCsrf();
   void sendJsonStatus();
   void sendJsonHistory();
+  void sendLegacyJsonHistory(const uint8_t mac[6], uint32_t since);
   void sendPagedHistory(const uint8_t mac[6]);
   void saveDashboardLayout();
   void sendRecordings();
@@ -103,8 +105,13 @@ class WebPortal {
   AuthSession authSessions_[4]{};
   LoginThrottle loginThrottle_{};
   char csrfToken_[33]{};
+  SensorView* sensorViews_ = nullptr;
+  DashboardLayout dashboardLayout_{};
+  bool dashboardLayoutLoaded_ = false;
+  bool otaUploadSeen_ = false;
   bool otaUploadAuthorized_ = false;
   bool otaUploadOk_ = false;
+  bool otaUploadEnded_ = false;
   String otaUploadError_;
 };
 

@@ -4,6 +4,10 @@ Successful compiler builds validate interfaces and memory limits, but they do
 not replace tests on real hardware. Record each result with the date, firmware
 commit, board revision, power source and measurement equipment.
 
+## Acceptance for the five additional sensors
+
+Run on both PCB revisions. Compare BMP280 pressure/temperature against a reference and verify its rail shuts down. Check that BME688 reports its variant, honors the five-minute maintenance schedule and retains BSEC calibration. Allow CCS811 to warm up with the rail powered between reports, check V4 low-battery protection and compare eCO₂/TVOC under repeatable conditions. Check VL53L1X range and invalid returns at known distances. Check AS7341 bands, clear/NIR counts and saturation under reproducible lighting. For every module, compare dashboard values, saved history and exported units after a station restart.
+
 ## Repeatable station captures
 
 Run the same capture from the same client and network for the reference and

@@ -1,6 +1,7 @@
 #pragma once
 
-#include <vector>
+#include <memory>
+#include <new>
 #include "recording_protocol.h"
 
 namespace lil::recording {
@@ -18,8 +19,8 @@ class Flash {
 class Journal {
  public:
   static constexpr size_t kPageBytes = 4096, kHeaderBytes = 64;
-  bool begin(Flash& flash, uint64_t sessionFilter = 0);
-  bool replaceSession(uint64_t session) { return flash_ && begin(*flash_, session); }
+  bool begin(Flash& flash, uint64_t sessionFilter = 0, bool freshSession = false);
+  bool replaceSession(uint64_t session) { return flash_ && begin(*flash_, session, session != 0); }
   bool clear();
   bool append(const Record& record);
   bool peek(Record& record);
@@ -29,7 +30,7 @@ class Journal {
   uint32_t lastSampleMs() const { return lastSampleMs_; }
   size_t capacity(protocol::EnvironmentalSensorType type) const {
     const size_t width = size(type);
-    return width ? pages_.size() * ((kPageBytes - kHeaderBytes) / width) : 0;
+    return width ? pageCount_ * ((kPageBytes - kHeaderBytes) / width) : 0;
   }
  private:
   struct Page {
@@ -51,7 +52,8 @@ class Journal {
   bool locate(size_t& page, uint8_t& slot, Header& header);
   bool reconcileAcknowledgement();
   Flash* flash_ = nullptr;
-  std::vector<Page> pages_;
+  std::unique_ptr<Page[]> pages_;
+  size_t pageCount_ = 0;
   uint32_t generation_ = 0, pending_ = 0;
   uint32_t lastSampleMs_ = 0;
   size_t ackOffset_ = 0;

@@ -3,17 +3,31 @@
 #include "hardware_profile.h"
 #include "low_power_wait.h"
 #include "power_policy.h"
+#ifdef ESP_PLATFORM
+#include <esp_timer.h>
+#endif
 #include <string.h>
 
 namespace sensor {
 
 namespace {
 constexpr size_t kSampleCount = 16;
+
+uint64_t monotonicMicros() {
+#ifdef ESP_PLATFORM
+  return static_cast<uint64_t>(esp_timer_get_time());
+#else
+  return static_cast<uint64_t>(micros());
+#endif
+}
 }
 
 void AdcReader::begin(PowerController& power) {
   power_ = &power;
   analogReadResolution(12);
+#ifdef ESP_PLATFORM
+  analogSetAttenuation(ADC_11db);
+#endif
   analogSetPinAttenuation(static_cast<uint8_t>(kHardware.adcPin), ADC_11db);
 }
 
@@ -22,7 +36,7 @@ void AdcReader::startBatteryMeasurement() {
     return;
   }
   power_->adcPower(true);
-  settleStartedUs_ = micros();
+  settleStartedUs_ = monotonicMicros();
   measurementPending_ = true;
 }
 
@@ -35,11 +49,19 @@ BatteryReading AdcReader::finishBatteryMeasurement(float calibrationFactor) {
     startBatteryMeasurement();
   }
 
-  const uint32_t requiredSettleUs =
-      static_cast<uint32_t>(kHardware.adcSettleMs) * 1000UL;
-  const uint32_t elapsedSettleUs = micros() - settleStartedUs_;
+  const uint64_t requiredSettleUs =
+      static_cast<uint64_t>(kHardware.adcSettleMs) * 1000ULL;
+  const uint64_t nowUs = monotonicMicros();
+#ifdef ESP_PLATFORM
+  const uint64_t elapsedSettleUs =
+      nowUs >= settleStartedUs_ ? (nowUs - settleStartedUs_) : 0ULL;
+#else
+  const uint64_t elapsedSettleUs = static_cast<uint32_t>(nowUs) -
+                                   static_cast<uint32_t>(settleStartedUs_);
+#endif
   if (elapsedSettleUs < requiredSettleUs) {
-    const uint32_t remainingUs = requiredSettleUs - elapsedSettleUs;
+    const uint32_t remainingUs =
+        static_cast<uint32_t>(requiredSettleUs - elapsedSettleUs);
     lowPowerSensorWaitUs(remainingUs);
   }
 

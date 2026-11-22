@@ -69,9 +69,12 @@ struct SensorView {
 
 class SensorRegistry {
  public:
+  ~SensorRegistry();
   bool begin(ConfigStore& store, uint32_t defaultSleepSeconds, PagedHistory* paged = nullptr);
+  void resetForFactory();
   PagedHistory* normalHistory() const { return paged_; }
   void flushHistory() { if (paged_) paged_->flushDue(); }
+  void flushAllHistory() { if (paged_) paged_->flushAll(); }
   size_t liveHistory(const uint8_t mac[6], LiveSample* output, size_t capacity,
                      const uint32_t* afterMs = nullptr) const;
   bool registerTelemetry(const uint8_t mac[6], uint32_t sequence,
@@ -131,6 +134,9 @@ class SensorRegistry {
                            const lil::protocol::TelemetryPayload& telemetry,
                            uint32_t bucketSeconds, uint32_t receivedAt);
   bool loadHistoryLocked(size_t index);
+  bool loadLegacyHistoryV2Locked(size_t index, uint32_t desiredBucketSeconds);
+  bool loadLegacyHistoryV3Locked(size_t index, uint32_t desiredBucketSeconds,
+                                 size_t storedLength);
   bool configureHistoryLocked(size_t index, uint32_t bucketSeconds,
                               bool preserveSamples,
                               bool persistImmediately = true);
@@ -140,12 +146,17 @@ class SensorRegistry {
       size_t index, const lil::protocol::TelemetryPayload& telemetry,
       int8_t stationRssi);
   void updateTxPowerLocked(size_t index, int8_t rssi, uint8_t pcbVersion);
+  SensorIdentity* ensureIdentitiesScratchLocked();
 
   struct LatestTelemetry {
     uint32_t magic = 0;
     uint8_t protocolVersion = 0;
     lil::protocol::TelemetryPayload telemetry{};
     int8_t stationRssi = 0;
+  };
+  struct LatestTelemetryV2 {
+    LatestTelemetry base{};
+    uint32_t crc32 = 0;
   };
 
   struct StoredHistory {
@@ -162,7 +173,10 @@ class SensorRegistry {
   mutable SemaphoreHandle_t storageMutex_ = nullptr;
   uint32_t generations_[kMaxSensors]{};
   SensorConfig configs_[kMaxSensors]{};
+  SensorConfig storageConfigScratch_[kMaxSensors]{};
   SensorIdentity identities_[kMaxSensorIdentities]{};
+  SensorIdentity* identitiesScratch_ = nullptr;
+  bool pagedConfigDirty_ = false;
   SensorRuntime runtime_[kMaxSensors]{};
   StoredHistory history_[kMaxSensors]{};
   struct LiveHistory {

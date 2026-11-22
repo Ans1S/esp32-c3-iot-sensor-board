@@ -1,4 +1,5 @@
 #include "thingspeak_service.h"
+#include "history_json.h"
 #include "http_response_body.h"
 #include "sensor_registry.h"
 
@@ -6,15 +7,26 @@
 #include <HTTPClient.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <cmath>
+#include <esp_heap_caps.h>
+#include <esp_timer.h>
+#include <new>
 #include <time.h>
+
+#include "sensor_timing.h"
 
 namespace station {
 
 namespace {
 constexpr uint32_t kHttpTimeoutMs = 7000;
+constexpr uint32_t kTlsHandshakeTimeoutSeconds = kHttpTimeoutMs / 1000U;
 constexpr size_t kAccountResponseBytes = 64 * 1024;
 constexpr size_t kUploadResponseBytes = 1024;
 const char* kBodyHeaders[] = {"Transfer-Encoding"};
+
+uint64_t monotonicMs() {
+  return lil::timing::signedUsToMs(esp_timer_get_time());
+}
 
 HttpBodyStatus readThingSpeakResponse(HTTPClient& https, WiFiClientSecure& client,
                                      String& output, size_t limit) {
@@ -81,12 +93,12 @@ bool ThingSpeakService::queue(
   job.telemetry = telemetry;
 
   xSemaphoreTake(queueMutex_, portMAX_DELAY);
-  if (!ensureTask()) {
+  if (!ensureScheduler() || !ensureTask()) {
     xSemaphoreGive(queueMutex_);
     return false;
   }
-  scheduler_.push(job, millis());
-  droppedJobs_.store(scheduler_.dropped(), std::memory_order_relaxed);
+  scheduler_->push(job, millis());
+  droppedJobs_.store(scheduler_->dropped(), std::memory_order_relaxed);
   // Notifications are retained if the worker has not entered its wait yet.
   xTaskNotifyGive(task_);
   xSemaphoreGive(queueMutex_);
@@ -97,8 +109,22 @@ void ThingSpeakService::taskEntry(void* context) {
   static_cast<ThingSpeakService*>(context)->taskLoop();
 }
 
+bool ThingSpeakService::ensureScheduler() {
+  if (scheduler_ != nullptr) return true;
+  void* storage =
+      heap_caps_malloc(sizeof(Scheduler), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!storage) {
+    storage = heap_caps_malloc(sizeof(Scheduler), MALLOC_CAP_8BIT);
+  }
+  if (!storage) return false;
+  scheduler_ = new (storage) Scheduler();
+  return true;
+}
+
 bool ThingSpeakService::ensureTask() {
-  return task_ || xTaskCreate(taskEntry, "thingspeak", 10240, this, 1, &task_) == pdPASS;
+  return task_ ||
+         xTaskCreatePinnedToCore(taskEntry, "thingspeak", 10240, this, 1,
+                                 &task_, 1) == pdPASS;
 }
 
 uint32_t ThingSpeakService::startAccountJob(ThingSpeakAccountJob::Request request, const char* owner) {
@@ -151,11 +177,14 @@ void ThingSpeakService::taskLoop() {
       xSemaphoreGive(queueMutex_);
       continue;
     }
-    uint32_t nextWaitMs = 250;
-    const bool ready = connected && scheduler_.take(now, entry, &nextWaitMs);
-    if (!connected) scheduler_.expire(now);
-    const bool pending = scheduler_.size() != 0;
-    droppedJobs_.store(scheduler_.dropped(), std::memory_order_relaxed);
+    uint32_t nextWaitMs = connected ? 250 : 2000;
+    const bool ready =
+        connected && scheduler_ != nullptr && scheduler_->take(now, entry, &nextWaitMs);
+    if (!connected && scheduler_ != nullptr) scheduler_->expire(now);
+    const bool pending = scheduler_ != nullptr && scheduler_->size() != 0;
+    if (scheduler_ != nullptr) {
+      droppedJobs_.store(scheduler_->dropped(), std::memory_order_relaxed);
+    }
     xSemaphoreGive(queueMutex_);
     if (!ready) {
       // A connected worker can wait for eligibility or expiry. While offline
@@ -172,9 +201,12 @@ void ThingSpeakService::taskLoop() {
     // credential/field errors. Retain the original acquisition timestamp.
     const bool retryable = (status < 0 && status != -2 && status != -3) || status == 429 ||
                            status >= 500 || status == HTTP_CODE_OK;
+    const bool recordChannelRate = status != -2 && status != -3;
     xSemaphoreTake(queueMutex_, portMAX_DELAY);
-    scheduler_.complete(entry, millis(), success, retryable);
-    droppedJobs_.store(scheduler_.dropped(), std::memory_order_relaxed);
+    if (scheduler_ != nullptr) {
+      scheduler_->complete(entry, millis(), success, retryable, recordChannelRate);
+      droppedJobs_.store(scheduler_->dropped(), std::memory_order_relaxed);
+    }
     xSemaphoreGive(queueMutex_);
   }
 }
@@ -189,9 +221,13 @@ bool ThingSpeakService::upload(const CloudUploadJob& job) {
     xSemaphoreGive(tlsMutex_);
     return false;
   }
-  lastAttemptMs_.store(millis(), std::memory_order_relaxed);
+  const uint64_t attemptMs = monotonicMs();
+  portENTER_CRITICAL(&statsMux_);
+  lastAttemptMs_ = attemptMs;
+  portEXIT_CRITICAL(&statsMux_);
   WiFiClientSecure client;
   client.setCACert(kThingSpeakRootCa);
+  client.setHandshakeTimeout(kTlsHandshakeTimeoutSeconds);
   HTTPClient https;
   https.setConnectTimeout(kHttpTimeoutMs);
   https.setTimeout(kHttpTimeoutMs);
@@ -203,16 +239,26 @@ bool ThingSpeakService::upload(const CloudUploadJob& job) {
     https.addHeader("Content-Type", "application/x-www-form-urlencoded");
     https.addHeader("THINGSPEAKAPIKEY", job.writeKey);
 
-    String body;
-    body.reserve(160);
-    const auto appendField = [&body](uint8_t field, const String& value) {
-      if (field == 0 || field > 8) {
-        return;
+    char body[320];
+    size_t bodyLen = 0;
+    body[0] = '\0';
+    // Pure 32-bit FPU + LUT formatter avoids __udivdi3/__umoddi3/snprintf per field.
+    const auto appendFieldScaled = [&](uint8_t field, float value, uint8_t decimals) {
+      if (field == 0 || field > 8 || !std::isfinite(value)) return;
+      const uint8_t d = decimals > 3 ? 3 : decimals;
+      const float limit = d == 0 ? 1e8F : 2e5F;
+      const float clamped = value < -limit ? -limit : (value > limit ? limit : value);
+      size_t pos = bodyLen;
+      bool ok = true;
+      if (pos > 0) ok = appendRawChar(body, sizeof(body), pos, '&');
+      ok = ok && appendLit(body, sizeof(body), pos, "field") &&
+           appendRawChar(body, sizeof(body), pos, static_cast<char>('0' + field)) &&
+           appendRawChar(body, sizeof(body), pos, '=') &&
+           appendScaledFloat(body, sizeof(body), pos, clamped, d);
+      if (ok && pos < sizeof(body)) {
+        bodyLen = pos;
+        body[bodyLen] = '\0';
       }
-      if (!body.isEmpty()) {
-        body += '&';
-      }
-      body += "field" + String(field) + '=' + value;
     };
     const bool environmentValid =
         (job.telemetry.flags & lil::protocol::kSensorReadFailed) == 0;
@@ -222,39 +268,35 @@ bool ThingSpeakService::upload(const CloudUploadJob& job) {
         (job.telemetry.flags & lil::protocol::kBme680RawFallback) == 0;
     if (environmentValid &&
         (job.telemetry.capabilities & lil::protocol::kTemperature) != 0) {
-      appendField(job.fields.temperature,
-                  String(job.telemetry.temperatureC, 2));
+      appendFieldScaled(job.fields.temperature, job.telemetry.temperatureC, 2);
     }
     if (environmentValid &&
         (job.telemetry.capabilities & lil::protocol::kHumidity) != 0) {
-      appendField(job.fields.humidity,
-                  String(job.telemetry.humidityPercent, 2));
+      appendFieldScaled(job.fields.humidity, job.telemetry.humidityPercent, 2);
     }
     if (environmentValid &&
         (job.telemetry.capabilities & lil::protocol::kPressure) != 0) {
-      appendField(job.fields.pressure,
-                  String(job.telemetry.pressureHpa, 2));
+      appendFieldScaled(job.fields.pressure, job.telemetry.pressureHpa, 2);
     }
     if (environmentValid &&
         freshBsecIaq &&
         (job.telemetry.capabilities & lil::protocol::kIaq) != 0 &&
         job.telemetry.iaqAccuracy > 0) {
-      appendField(job.fields.iaq, String(job.telemetry.iaq, 2));
+      appendFieldScaled(job.fields.iaq, job.telemetry.iaq, 2);
     }
     if (environmentValid &&
         (job.telemetry.capabilities & lil::protocol::kGasResistance) != 0) {
-      appendField(job.fields.gasResistance,
-                  String(job.telemetry.gasResistanceOhms, 0));
+      appendFieldScaled(job.fields.gasResistance, job.telemetry.gasResistanceOhms, 0);
     }
     if (batteryValid &&
         (job.telemetry.capabilities & lil::protocol::kBattery) != 0) {
-      appendField(job.fields.battery,
-                  String(job.telemetry.batteryMillivolts / 1000.0F, 3));
+      appendFieldScaled(job.fields.battery, job.telemetry.batteryMillivolts * 0.001F, 3);
     }
 
-    if (body.isEmpty()) {
+    if (bodyLen == 0) {
       lastHttpStatus_.store(-2, std::memory_order_relaxed);
       lastEntryId_.store(0, std::memory_order_relaxed);
+      lastUploadFailed_.store(true, std::memory_order_relaxed);
       failedUploads_.fetch_add(1, std::memory_order_relaxed);
       https.end();
       xSemaphoreGive(tlsMutex_);
@@ -264,18 +306,28 @@ bool ThingSpeakService::upload(const CloudUploadJob& job) {
     if (job.receivedAt >= 1577836800UL) {
       const time_t timestamp = job.receivedAt;
       struct tm utc{};
-      char formatted[24]{};
+      char formatted[32]{};
       if (gmtime_r(&timestamp, &utc) != nullptr &&
-          strftime(formatted, sizeof(formatted), "%Y-%m-%dT%H:%M:%SZ", &utc)) {
+          strftime(formatted, sizeof(formatted), "%Y-%m-%dT%H%%3A%M%%3A%SZ", &utc)) {
         // Shared channels can receive simultaneous samples. ThingSpeak requires
         // unique second-resolution created_at values, so retain server time in
         // that case and carry the actual receive time explicitly in status.
-        if (!job.sharedChannel) body += "&created_at=" + urlEncode(formatted);
-        body += "&status=" + urlEncode("received_at=" + String(formatted) +
-                                      ";sequence=" + String(job.sequence));
+        if (!job.sharedChannel) {
+          const int n = snprintf(body + bodyLen, sizeof(body) - bodyLen,
+                                 "&created_at=%s", formatted);
+          if (n > 0 && bodyLen + static_cast<size_t>(n) < sizeof(body)) {
+            bodyLen += static_cast<size_t>(n);
+          }
+        }
+        const int n = snprintf(body + bodyLen, sizeof(body) - bodyLen,
+                               "&status=received_at%%3D%s%%3Bsequence%%3D%lu",
+                               formatted, static_cast<unsigned long>(job.sequence));
+        if (n > 0 && bodyLen + static_cast<size_t>(n) < sizeof(body)) {
+          bodyLen += static_cast<size_t>(n);
+        }
       }
     }
-    const int status = https.POST(body);
+    const int status = https.POST(reinterpret_cast<uint8_t*>(body), bodyLen);
     lastHttpStatus_.store(status, std::memory_order_relaxed);
     int entryId = 0;
     if (status == HTTP_CODE_OK) {
@@ -290,9 +342,13 @@ bool ThingSpeakService::upload(const CloudUploadJob& job) {
     }
     lastEntryId_.store(entryId, std::memory_order_relaxed);
     success = status == HTTP_CODE_OK && entryId > 0;
+    lastUploadFailed_.store(!success, std::memory_order_relaxed);
     if (success) {
       successfulUploads_.fetch_add(1, std::memory_order_relaxed);
-      lastSuccessMs_.store(millis(), std::memory_order_relaxed);
+      const uint64_t successMs = monotonicMs();
+      portENTER_CRITICAL(&statsMux_);
+      lastSuccessMs_ = successMs;
+      portEXIT_CRITICAL(&statsMux_);
     } else {
       failedUploads_.fetch_add(1, std::memory_order_relaxed);
     }
@@ -301,6 +357,7 @@ bool ThingSpeakService::upload(const CloudUploadJob& job) {
   } else {
     lastHttpStatus_.store(-1, std::memory_order_relaxed);
     lastEntryId_.store(0, std::memory_order_relaxed);
+    lastUploadFailed_.store(true, std::memory_order_relaxed);
     failedUploads_.fetch_add(1, std::memory_order_relaxed);
   }
   xSemaphoreGive(tlsMutex_);
@@ -316,10 +373,10 @@ ThingSpeakApiResult ThingSpeakService::executeAccount(const ThingSpeakAccountJob
                             urlEncode(account), account);
     case Operation::QuickCreate: {
       String settings = "name=" + urlEncode("W-Charger Sensor - " + String(request.name));
-      settings += "&description=" + urlEncode("Automatisch von der W-Charger Station erstellt");
-      settings += "&field1=Temperatur+C&field2=Luftfeuchte+Prozent";
-      settings += "&field3=Luftdruck+hPa&field4=Static+IAQ";
-      settings += "&field5=Batteriespannung+V&field6=Gaswiderstand+Ohm&public_flag=false";
+      settings += "&description=" + urlEncode("Automatically created by the W-Charger Station");
+      settings += "&field1=Temperature+C&field2=Humidity+Percent";
+      settings += "&field3=Pressure+hPa&field4=Static+IAQ";
+      settings += "&field5=Battery+Voltage+V&field6=Gas+Resistance+Ohm&public_flag=false";
       return accountRequest("POST", "https://api.thingspeak.com/channels.json", account, settings);
     }
     case Operation::Create:
@@ -346,13 +403,14 @@ ThingSpeakApiResult ThingSpeakService::accountRequest(
     return result;
   }
   if (userApiKey.isEmpty()) {
-    result.error = "ThingSpeak User API Key fehlt";
+    result.error = "ThingSpeak User API Key is missing";
     return result;
   }
 
   xSemaphoreTake(tlsMutex_, portMAX_DELAY);
   WiFiClientSecure client;
   client.setCACert(kThingSpeakRootCa);
+  client.setHandshakeTimeout(kTlsHandshakeTimeoutSeconds);
   HTTPClient https;
   https.setConnectTimeout(kHttpTimeoutMs);
   https.setTimeout(kHttpTimeoutMs);
@@ -430,6 +488,10 @@ int ThingSpeakService::lastEntryId() const {
   return lastEntryId_.load(std::memory_order_relaxed);
 }
 
+bool ThingSpeakService::lastUploadFailed() const {
+  return lastUploadFailed_.load(std::memory_order_relaxed);
+}
+
 uint32_t ThingSpeakService::successfulUploads() const {
   return successfulUploads_.load(std::memory_order_relaxed);
 }
@@ -438,12 +500,32 @@ uint32_t ThingSpeakService::failedUploads() const {
   return failedUploads_.load(std::memory_order_relaxed);
 }
 
-uint32_t ThingSpeakService::lastAttemptMs() const {
-  return lastAttemptMs_.load(std::memory_order_relaxed);
+uint64_t ThingSpeakService::lastAttemptMs() const {
+  portENTER_CRITICAL(&statsMux_);
+  const uint64_t value = lastAttemptMs_;
+  portEXIT_CRITICAL(&statsMux_);
+  return value;
 }
 
-uint32_t ThingSpeakService::lastSuccessMs() const {
-  return lastSuccessMs_.load(std::memory_order_relaxed);
+uint64_t ThingSpeakService::lastSuccessMs() const {
+  portENTER_CRITICAL(&statsMux_);
+  const uint64_t value = lastSuccessMs_;
+  portEXIT_CRITICAL(&statsMux_);
+  return value;
+}
+
+uint64_t ThingSpeakService::lastAttemptAgeMs() const {
+  const uint64_t attempt = lastAttemptMs();
+  if (attempt == 0) return 0;
+  const uint64_t now = monotonicMs();
+  return now >= attempt ? now - attempt : 0;
+}
+
+uint64_t ThingSpeakService::lastSuccessAgeMs() const {
+  const uint64_t success = lastSuccessMs();
+  if (success == 0) return 0;
+  const uint64_t now = monotonicMs();
+  return now >= success ? now - success : 0;
 }
 
 uint32_t ThingSpeakService::droppedJobs() const {

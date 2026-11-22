@@ -1,5 +1,6 @@
 #include "wifi_service.h"
 
+#include <algorithm>
 #include <esp_mac.h>
 #include <esp_wifi.h>
 
@@ -7,7 +8,9 @@ namespace station {
 
 namespace {
 constexpr uint32_t kReconnectIntervalMs = 10000;
+constexpr uint32_t kPortalReconnectIntervalMs = 30000;
 constexpr uint32_t kRecoveryPortalDelayMs = 30000;
+constexpr uint32_t kRecoveryRetryIntervalMs = 15000;
 constexpr uint32_t kMdnsRetryIntervalMs = 5000;
 constexpr uint16_t kDnsPort = 53;
 constexpr uint32_t kPortalStartSettleMs = 150;
@@ -20,6 +23,11 @@ bool WifiService::begin(const StationConfig& config) {
   config_ = config;
   setupPortalActive_ = false;
   setupPortalCompletionPending_ = false;
+  lastRecoveryAttemptMs_ = 0;
+  hasRecoveryAttempt_ = false;
+  hasMdnsAttempt_ = false;
+  hasDisconnectedSince_ = false;
+  lastStaChannel_ = 0;
   esp_read_mac(stationMac_, ESP_MAC_WIFI_STA);
 
   char suffix[7];
@@ -34,6 +42,8 @@ bool WifiService::begin(const StationConfig& config) {
   // boot (the resulting panic is reported as an MMU/cache error).
   WiFi.persistent(false);
   WiFi.setAutoReconnect(false);
+  // Set hostname before enabling the STA interface so DHCP includes it.
+  WiFi.setHostname(config_.hostname);
   const bool setupRequired = config_.wifiSsid[0] == '\0' ||
                              config_.setupPortalRequired;
   Serial.printf("[WiFi] Starting radio (%s) ...\n",
@@ -42,7 +52,6 @@ bool WifiService::begin(const StationConfig& config) {
     Serial.println("[WiFi] Radio mode could not be initialized");
     return false;
   }
-  WiFi.setHostname(config_.hostname);
   WiFi.setSleep(false);  // The USB-powered station prioritizes ESP-NOW latency.
 
   if (setupRequired) {
@@ -55,6 +64,7 @@ bool WifiService::begin(const StationConfig& config) {
     // PHY is still starting.
     dnsServer_.stop();
     disconnectedSinceMs_ = millis();
+    hasDisconnectedSince_ = true;
   }
   startStationConnection();
   return true;
@@ -73,15 +83,16 @@ void WifiService::startMdnsIfNeeded() {
   if (mdnsStarted_ || !stationConnected()) {
     return;
   }
-  if (lastMdnsAttemptMs_ != 0 &&
-      millis() - lastMdnsAttemptMs_ < kMdnsRetryIntervalMs) {
+  if (hasMdnsAttempt_ &&
+      uint32_t(millis() - lastMdnsAttemptMs_) < kMdnsRetryIntervalMs) {
     return;
   }
   lastMdnsAttemptMs_ = millis();
+  hasMdnsAttempt_ = true;
   if (MDNS.begin(config_.hostname)) {
     MDNS.addService("http", "tcp", 80);
     mdnsStarted_ = true;
-    Serial.printf("[mDNS] http://%s.local/ aktiv\n", config_.hostname);
+    Serial.printf("[mDNS] http://%s.local/ active\n", config_.hostname);
   } else {
     Serial.println("[mDNS] Start failed; retrying in 5 seconds");
   }
@@ -107,15 +118,28 @@ void WifiService::loop() {
 
   if (stationConnected()) {
     disconnectedSinceMs_ = 0;
+    hasDisconnectedSince_ = false;
+    lastRecoveryAttemptMs_ = 0;
+    hasRecoveryAttempt_ = false;
+    if (!networkScanInProgress_) {
+      uint8_t primary = 0;
+      wifi_second_chan_t secondary = WIFI_SECOND_CHAN_NONE;
+      if (esp_wifi_get_channel(&primary, &secondary) == ESP_OK &&
+          primary >= 1 && primary <= 13) {
+        lastStaChannel_ = primary;
+      }
+    }
     startMdnsIfNeeded();
   } else {
-    if (disconnectedSinceMs_ == 0) {
+    if (!hasDisconnectedSince_) {
       disconnectedSinceMs_ = millis();
+      hasDisconnectedSince_ = true;
     }
     if (mdnsStarted_) {
       MDNS.end();
       mdnsStarted_ = false;
       lastMdnsAttemptMs_ = 0;
+      hasMdnsAttempt_ = false;
     }
   }
 
@@ -123,15 +147,22 @@ void WifiService::loop() {
     stopSetupPortal();
   }
 
+  const uint32_t reconnectIntervalMs =
+      setupPortalActive_ ? kPortalReconnectIntervalMs : kReconnectIntervalMs;
   if (config_.wifiSsid[0] != '\0' && !stationConnected() &&
-      millis() - lastReconnectAttemptMs_ >= kReconnectIntervalMs) {
+      !networkScanInProgress_ &&
+      uint32_t(millis() - lastReconnectAttemptMs_) >= reconnectIntervalMs) {
     WiFi.disconnect(false, false);
     startStationConnection();
   }
 
   if (!setupPortalActive_ && config_.wifiSsid[0] != '\0' &&
-      !stationConnected() && disconnectedSinceMs_ != 0 &&
-      millis() - disconnectedSinceMs_ >= kRecoveryPortalDelayMs) {
+      !stationConnected() && hasDisconnectedSince_ &&
+      uint32_t(millis() - disconnectedSinceMs_) >= kRecoveryPortalDelayMs &&
+      (!hasRecoveryAttempt_ ||
+       uint32_t(millis() - lastRecoveryAttemptMs_) >= kRecoveryRetryIntervalMs)) {
+    lastRecoveryAttemptMs_ = millis();
+    hasRecoveryAttempt_ = true;
     startRecoveryPortal();
   }
 }
@@ -141,6 +172,7 @@ bool WifiService::startRecoveryPortal() {
     Serial.println("[RECOVERY] Could not enable AP+STA mode");
     return false;
   }
+  WiFi.setSleep(false);
   delay(kPortalStartSettleMs);
   return startSetupPortalAccessPoint();
 }
@@ -182,16 +214,27 @@ void WifiService::stopSetupPortal() {
   // softAPdisconnect() already removes only the AP interface and leaves STA
   // enabled. A second WiFi.mode(WIFI_STA) transition is both redundant and
   // unsafe while ESP-NOW is active.
-  WiFi.softAPdisconnect(true);
+  if (!WiFi.softAPdisconnect(true)) {
+    Serial.println("[PORTAL] SoftAP stop failed; retrying");
+    return;
+  }
   setupPortalActive_ = false;
-  setupPortalCompletionPending_ = true;
+  if (config_.setupPortalRequired) {
+    setupPortalCompletionPending_ = true;
+  }
 }
 
 uint8_t WifiService::channel() const {
+  const uint8_t cached = lastStaChannel_.load(std::memory_order_relaxed);
+  // Never advertise a transient off-channel frequency during an active Wi-Fi scan.
+  if (networkScanInProgress_.load(std::memory_order_acquire)) {
+    return cached >= 1 && cached <= 13 ? cached : config_.fallbackWifiChannel;
+  }
   uint8_t primary = config_.fallbackWifiChannel;
   wifi_second_chan_t secondary = WIFI_SECOND_CHAN_NONE;
-  if (esp_wifi_get_channel(&primary, &secondary) != ESP_OK) {
-    return config_.fallbackWifiChannel;
+  if (esp_wifi_get_channel(&primary, &secondary) != ESP_OK ||
+      primary < 1 || primary > 13) {
+    return cached >= 1 && cached <= 13 ? cached : config_.fallbackWifiChannel;
   }
   return primary;
 }
@@ -231,17 +274,24 @@ const uint8_t* WifiService::stationMac() const {
 }
 
 bool WifiService::requestNetworkScan() {
-  if (networkScanInProgress_) {
+  if (networkScanInProgress_.load(std::memory_order_acquire)) {
     return true;
   }
   WiFi.scanDelete();
+  // Publish scan-in-progress before esp_wifi_scan_start() begins channel
+  // hopping on Core 0 so espnow-gateway never advertises a transient scan
+  // channel as stable.
+  networkScanInProgress_.store(true, std::memory_order_release);
   const int16_t result = WiFi.scanNetworks(true, true);
-  networkScanInProgress_ = result == WIFI_SCAN_RUNNING;
-  if (result >= 0) {
-    networkScanInProgress_ = true;
-    collectNetworkScan();
+  if (result == WIFI_SCAN_RUNNING) {
+    return true;
   }
-  return networkScanInProgress_ || result >= 0;
+  if (result >= 0) {
+    collectNetworkScan();
+    return true;
+  }
+  networkScanInProgress_.store(false, std::memory_order_release);
+  return false;
 }
 
 bool WifiService::networkScanInProgress() const {
@@ -263,28 +313,54 @@ void WifiService::collectNetworkScan() {
     WiFi.scanDelete();
     return;
   }
-  for (int16_t i = 0; i < found && networkCacheCount_ < kNetworkCacheSize;
-       ++i) {
+  for (int16_t i = 0; i < found; ++i) {
     const String ssid = WiFi.SSID(i);
     if (ssid.isEmpty()) {
       continue;
     }
-    bool duplicate = false;
-    for (size_t existing = 0; existing < networkCacheCount_; ++existing) {
-      if (networkCache_[existing].ssid == ssid) {
-        duplicate = true;
+    const int32_t rssi = WiFi.RSSI(i);
+    const uint8_t ch = static_cast<uint8_t>(WiFi.channel(i));
+    const bool secure = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+    size_t existing = networkCacheCount_;
+    for (size_t j = 0; j < networkCacheCount_; ++j) {
+      if (networkCache_[j].ssid == ssid) {
+        existing = j;
         break;
       }
     }
-    if (duplicate) {
+    if (existing < networkCacheCount_) {
+      if (rssi > networkCache_[existing].rssi) {
+        networkCache_[existing].rssi = rssi;
+        networkCache_[existing].channel = ch;
+        networkCache_[existing].secure = secure;
+      }
       continue;
     }
-    auto& network = networkCache_[networkCacheCount_++];
-    network.ssid = ssid;
-    network.rssi = WiFi.RSSI(i);
-    network.channel = static_cast<uint8_t>(WiFi.channel(i));
-    network.secure = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+    if (networkCacheCount_ < kNetworkCacheSize) {
+      auto& network = networkCache_[networkCacheCount_++];
+      network.ssid = ssid;
+      network.rssi = rssi;
+      network.channel = ch;
+      network.secure = secure;
+    } else {
+      size_t weakest = 0;
+      for (size_t j = 1; j < networkCacheCount_; ++j) {
+        if (networkCache_[j].rssi < networkCache_[weakest].rssi) {
+          weakest = j;
+        }
+      }
+      if (rssi > networkCache_[weakest].rssi) {
+        networkCache_[weakest].ssid = ssid;
+        networkCache_[weakest].rssi = rssi;
+        networkCache_[weakest].channel = ch;
+        networkCache_[weakest].secure = secure;
+      }
+    }
   }
+  std::sort(networkCache_, networkCache_ + networkCacheCount_,
+            [](const WifiNetwork& a, const WifiNetwork& b) {
+              return a.rssi > b.rssi;
+            });
   WiFi.scanDelete();
 }
 

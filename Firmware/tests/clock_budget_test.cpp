@@ -66,5 +66,15 @@ int main() {
   sensor::accountForDeepSleep(1000000); // Early error sleep uses the same clock.
   testTimeUs = 0;
   assert(sensor::logicalTimeMs() == 301155);
+  // Exact 64-bit usToMs across small, 32-bit-wrap, multi-year, and UINT64_MAX edges.
+  const uint64_t edges[] = {
+      0ULL, 1ULL, 999ULL, 1000ULL, 1001ULL, 999999ULL, 1000000ULL,
+      (1ULL << 32) - 1, (1ULL << 32), (1ULL << 50) + 999ULL,
+      (1ULL << 63) - 1, UINT64_MAX - 1000ULL, UINT64_MAX - 1ULL, UINT64_MAX};
+  for (uint64_t us : edges) {
+    assert(lil::timing::usToMs(us) == us / 1000ULL);
+  }
+  assert(lil::timing::signedUsToMs(-1) == 0ULL);
+  assert(lil::timing::signedUsToMs(123456789LL) == 123456ULL);
   puts("Measurement budget, long-uptime retry backoff and deep-sleep clock tests passed");
 }

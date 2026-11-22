@@ -17,7 +17,9 @@ uint32_t lastRegistered = 0;
 uint32_t notifications = 0;
 unsigned sends = 0;
 unsigned otaRequests = 0;
+unsigned otaWireRequests = 0;
 bool driverBusy = false;
+bool failNextSendPeerNotFound = false;
 std::vector<uint32_t> persisted;
 }
 
@@ -31,11 +33,16 @@ uint32_t ulTaskNotifyTake(bool clear, TickType_t ticks) {
 }
 esp_err_t esp_now_send(const uint8_t* mac, const uint8_t* bytes, size_t size) {
   assert(!driverBusy && !memcmp(mac, source, 6));
-  assert(size == sizeof(lil::protocol::ConfigResponsePacket));
-  lil::protocol::ConfigResponsePacket reply;
-  memcpy(&reply, bytes, size);
-  assert(lil::protocol::validate(reply, size, lil::protocol::MessageType::kConfigResponse));
-  assert(reply.payload.requestSequence == lastRegistered);
+  if (failNextSendPeerNotFound) {
+    failNextSendPeerNotFound = false;
+    return ESP_ERR_ESPNOW_NOT_FOUND;
+  }
+  if (size == sizeof(lil::protocol::ConfigResponsePacket)) {
+    lil::protocol::ConfigResponsePacket reply;
+    memcpy(&reply, bytes, size);
+    assert(lil::protocol::validate(reply, size, lil::protocol::MessageType::kConfigResponse));
+    assert(reply.payload.requestSequence == lastRegistered);
+  }
   ++sends;
   driverBusy = true;
   return ESP_OK;
@@ -51,9 +58,20 @@ bool OtaService::respond(const uint8_t*, const lil::ota::Packet& request, lil::o
   ++otaRequests;
   return false;
 }
+size_t OtaService::respondWire(const uint8_t*, const lil::ota::Packet& request,
+                               uint8_t* wireOut, size_t wireCap) {
+  assert(request.payload.op == lil::ota::Op::Read &&
+         request.payload.size == lil::ota::kLargeBlockSize &&
+         wireCap >= sizeof(lil::ota::LargePacket));
+  ++otaWireRequests;
+  memset(wireOut, 0, sizeof(lil::ota::LargePacket));
+  return sizeof(lil::ota::LargePacket);
+}
 bool WifiService::stationConnected() const { return true; }
+bool WifiService::networkScanInProgress() const { return false; }
 uint8_t WifiService::channel() const { return 6; }
 const uint8_t* WifiService::stationMac() const { return ::stationMac; }
+SensorRegistry::~SensorRegistry() {}
 bool SensorRegistry::findConfig(const uint8_t* mac, SensorConfig& config, uint32_t*) const {
   config.provisioned = memcmp(mac, source, 6) == 0;
   return config.provisioned;
@@ -77,6 +95,8 @@ bool SensorRegistry::generationMatches(const uint8_t*, uint32_t) const { return 
 bool SensorRegistry::channelShared(uint32_t) const { return false; }
 void SensorRegistry::updateRecording(const uint8_t*, const lil::recording::Status&) {}
 void PagedHistory::flushDue() {}
+void PagedHistory::flushAll() {}
+SemaphoreHandle_t filesystemMutex() { return nullptr; }
 bool ThingSpeakService::queue(const SensorConfig&, const lil::protocol::TelemetryPayload&,
     int8_t, uint32_t, uint32_t, bool, uint32_t) { return true; }
 }
@@ -178,6 +198,25 @@ int main() {
   malformed.header.crc32 ^= 1;
   gateway.handle(queueControl(malformed, sizeof(malformed)));
   assert(gateway.invalidPackets() == 65 && lastRegistered == sequence);
+  // Large OTA responses reuse one persistent wire buffer and recover from stale peer cache.
+  lil::ota::Packet largeOta{};
+  largeOta.payload.op = lil::ota::Op::Read;
+  largeOta.payload.offset = 0;
+  largeOta.payload.size = lil::ota::kLargeBlockSize;
+  lil::protocol::finalizePacket(&largeOta, compactLength, lil::ota::kMessageType,
+                                55, lil::ota::kCompactReadPayloadSize);
+  failNextSendPeerNotFound = true;
+  const unsigned sendsBeforeLarge = sends;
+  gateway.handle(queueControl(largeOta, compactLength));
+  assert(otaWireRequests == 1 && sends == sendsBeforeLarge + 1 && gateway.peerFailures() == 0);
+  const uint8_t* firstBuf = gateway.otaWireBuffer_.get();
+  assert(firstBuf != nullptr);
+  driverBusy = false;
+  testSendCallback(nullptr, ESP_NOW_SEND_SUCCESS);
+  gateway.handle(queueControl(largeOta, compactLength));
+  assert(otaWireRequests == 2 && gateway.otaWireBuffer_.get() == firstBuf);
+  driverBusy = false;
+  testSendCallback(nullptr, ESP_NOW_SEND_SUCCESS);
   vQueueDelete(gateway.receiveQueue_);
   vQueueDelete(gateway.persistenceQueue_);
   vQueueDelete(gateway.archiveQueue_);

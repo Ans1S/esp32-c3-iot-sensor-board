@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-146c43.svg)](LICENSE)
 ![Sensor](https://img.shields.io/badge/Sensor-ESP32--C3-146c43.svg)
 ![Station](https://img.shields.io/badge/Station-ESP32--S3-146c43.svg)
-[![Firmware](https://img.shields.io/badge/Firmware-4.4.4-146c43.svg)](Firmware/releases/README.md)
+[![Firmware](https://img.shields.io/badge/Firmware-4.4.10-146c43.svg)](Firmware/releases/README.md)
 
 **[Dashboard](#one-dashboard-for-the-whole-network)** · **[Hardware](#choose-your-sensor)** · **[Get started](#from-clone-to-first-measurement)** · **[Downloads](Firmware/releases/README.md)**
 
@@ -24,10 +24,19 @@ signed sensor updates. Optional ThingSpeak export adds cloud access.
   <img src="Readme/second-life-flow.svg" alt="Recovered battery powers a sensor node that sends measurements to the station" width="960">
 </p>
 
+## Firmware 4.4.10
+
+- **Five new I²C sensors** cover pressure (BMP280), indoor air quality (BME688 and CCS811), distance (VL53L1X) and spectral light (AS7341). Both PCB revisions use the same driver set.
+- **Sensor nodes** reject repeated Bosch factory calibration data, retry failed acquisitions within a bounded window and recover the radio channel after a link change. The V4 low-battery cutoff also applies to continuous CCS811 operation.
+- **Station** displays the new measurements, preserves compatible older latest-reading records during upgrades and caches history pages. CSV exports retain the underlying samples.
+- **Sensor updates** can use 1,024-byte data blocks on compatible links, fall back to 192 bytes during a transfer and retry the handshake after a station restart.
+
+[Download the complete update](Firmware/releases/w-charger-4.4.10.zip) · [Installation and checksums](Firmware/releases/README.md)
+
 ## One dashboard for the whole network
 
 <p align="center">
-  <img src="Readme/station-overview-4.4.3.webp" alt="Station overview with climate, air-quality and precision-temperature sensor cards" width="1040">
+  <img src="Readme/station-overview-4.4.10.webp" alt="Station overview with spectral light, indoor air quality and time-of-flight distance sensor cards" width="1040">
 </p>
 
 **Click a card to open its details, or a measurement tile to open its chart.**
@@ -49,7 +58,7 @@ dark and system themes. Collection continues when the browser is closed.
 <summary><strong>Open the history and settings views</strong></summary>
 
 <p align="center">
-  <img src="Readme/station-history-4.4.3.webp" alt="Air-quality details with current readings, measurement and period selectors, history and CSV controls" width="1040">
+  <img src="Readme/station-history-4.4.10.webp" alt="Air-quality details with current readings, measurement and period selectors, history and CSV controls" width="1040">
 </p>
 
 Normal history is saved on the station. Retention adapts to reporting intervals,
@@ -61,7 +70,7 @@ Short intervals are batched, so sudden power loss can lose the latest
 uncommitted samples. Storage is finite and shared with saved recordings.
 
 <p align="center">
-  <img src="Readme/station-settings-4.4.3.webp" alt="Station settings for Wi-Fi, default measurement interval and website access" width="1040">
+  <img src="Readme/station-settings-4.4.10.webp" alt="Station settings for Wi-Fi, default measurement interval and website access" width="1040">
 </p>
 
 **Settings** groups network, default interval, website password and cloud
@@ -88,7 +97,7 @@ space. Completed graphs stay stable while the dashboard refreshes.
 <summary><strong>Open a saved motion recording in dark mode</strong></summary>
 
 <p align="center">
-  <img src="Readme/station-recording-4.4.3.webp" alt="Saved motion recording with session selection, minute navigation, XYZ graphs and recording export" width="1040">
+  <img src="Readme/station-recording-4.4.10.webp" alt="Saved motion recording with session selection, minute navigation, XYZ graphs and recording export" width="1040">
 </p>
 
 Normal TMP117/LSM6DSOX measurements follow the configured interval with the rail
@@ -101,7 +110,7 @@ acquisition follows the physical button. See [rates and storage limits](Firmware
 ### Update sleeping nodes from the station
 
 <p align="center">
-  <img src="Readme/station-ota-4.4.3.webp" alt="Firmware page showing installed versions, a compatible PCB V4 package and an update queued for the next sensor contact" width="1040">
+  <img src="Readme/station-ota-4.4.10.webp" alt="Firmware page showing installed versions, a compatible PCB V4 package and an update queued for the next sensor contact" width="1040">
 </p>
 
 Choose a sensor and its signed `.ota` package, then **Upload and schedule**.
@@ -123,6 +132,11 @@ Choose the attached sensor in the dashboard:
 | **LSM6DSOX** | XYZ acceleration, angular rate and motion feedback | Normal interval snapshots; faster SW2 recordings |
 | **TMP117** | Precision temperature and stability feedback | Normal interval snapshots; one-second SW2 recording values |
 | **MAX30102** | Red/infrared waveform and estimated pulse | SW2 recordings only; no SpO₂ or clinical accuracy claim |
+| **BMP280** | Temperature and barometric pressure | Forced measurement at the reporting interval |
+| **BME688** | Temperature, humidity, pressure, gas resistance and Static IAQ | Five-minute Bosch BSEC maintenance with separate reporting |
+| **CCS811** | Estimated CO₂ equivalent (eCO₂) and total volatile organic compounds (TVOC) | Paired nodes keep the heater powered between reports for warm-up and baseline stability |
+| **VL53L1X (TOF400C)** | Time-of-flight distance, range status, signal and ambient rates | Ranging at the configured interval |
+| **AS7341** | Eight visible spectral bands plus clear and near-infrared counts | Two measurement passes with gain and saturation status |
 | **Battery only** | Battery voltage | A base for experiments without an external sensor |
 
 <details>
@@ -179,16 +193,8 @@ python Firmware/upload.py sensor-v3
 4. Open **Find sensors**, name the node, select its sensor and save.
 5. Use the dashboard for measurements, settings, recordings and signed updates.
 
-The **4.4.5 / 40405** source improves V3/V4 acquisition and ESP-NOW delivery,
-station data handling and dashboard response streaming. Unreleased station
-source changes additionally improve dashboard transfer and history loading;
-they are not part of the published 4.4.4 packages. See the
-[firmware change inventory](Firmware/CHANGELOG.md) and
-[software verification](Firmware/PERFORMANCE_FOLLOWUP_2026-11-09.md).
+The [4.4.10 bundle](Firmware/releases/w-charger-4.4.10.zip) contains the station application, signed V3 and V4 sensor updates, installation instructions and SHA-256 checksums.
 
-The latest complete download is [4.4.4 / 40404](Firmware/releases/README.md).
-Its [bundle](Firmware/releases/w-charger-4.4.4.zip) includes the station
-application, both sensor packages, installation instructions and checksums.
 Published sensor packages require the signing identity trusted by the installed
 base firmware; new builders use their own key and matching packages.
 

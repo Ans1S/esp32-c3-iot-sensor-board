@@ -52,6 +52,13 @@ int main() {
   };
   reset();
   assert(driver.begin(0x76,0));
+  uint8_t chipId = 0xFF;
+  Wire.afterRegisterSelect = []() { testExpired = true; };
+  assert(testBsec.readRegister(0xD0, &chipId, 1, testBsec.context) == BME68X_E_COM_FAIL);
+  assert(!Wire.repeatedStart && chipId == 0xFF);
+  Wire.afterRegisterSelect = nullptr;
+  testExpired = false;
+  assert(testBsec.readRegister(0xD0, &chipId, 1, testBsec.context) == BME68X_OK);
   assert(testBsec.subscribedRate == BSEC_SAMPLE_RATE_ULP);
   auto reading = driver.read();
   assert(reading.valid && !reading.bme680RawFallback && !rawStarts);

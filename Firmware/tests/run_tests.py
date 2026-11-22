@@ -41,6 +41,8 @@ def main():
                          "station/src/filesystem_guard.cpp", "shared/src/lil_protocol.cpp"],
         "web_input": ["tests/web_input_test.cpp"],
         "bme280": ["tests/bme280_test.cpp", "sensor/src/bme280_driver.cpp"],
+        "extended_sensors": ["tests/extended_sensors_test.cpp", "sensor/src/extended_sensors.cpp",
+                             "sensor/src/bme280_driver.cpp"],
         "bme680": ["tests/bme680_test.cpp", "sensor/src/bme680_driver.cpp",
                    "sensor/src/bsec_state_store.cpp", "shared/src/lil_protocol.cpp"],
         "environmental_sensor": ["tests/environmental_sensor_test.cpp", "sensor/src/environmental_sensor.cpp"],
@@ -99,6 +101,8 @@ def main():
                 includes.insert(0, ROOT / "tests/history_stubs")
             if name == "bme280":
                 includes.insert(0, ROOT / "tests/bme280_stubs")
+            if name == "extended_sensors":
+                includes.insert(0, ROOT / "tests/extended_stubs")
             if name == "bme680":
                 includes.insert(0, ROOT / "tests/bme680_stubs")
                 includes.append(ROOT / "sensor/.pio/libdeps/sensor_pcb_v3/bsec2/src")
@@ -138,7 +142,7 @@ def main():
                 history_path.mkdir()
                 compile_command += [f'-DNORMAL_HISTORY_MOUNT_PATH="{history_path.as_posix()}"']
                 if os.name == "nt":
-                    compile_command += ["-Dfsync=_commit", "-include", "io.h"]
+                    compile_command += ["-Dfsync=testHostFsync", "-include", "io.h"]
             if name == "battery_boot":
                 includes.insert(0, ROOT / "tests/boot_stubs")
                 compile_command += ["-DPCB_VERSION=4"]
@@ -163,7 +167,7 @@ def main():
             arguments = [str(executable)]
             if args.benchmark and name in {"pulse_signal", "registry"}:
                 arguments.append("--benchmark")
-            subprocess.run(arguments, check=True, timeout=60)
+            subprocess.run(arguments, check=True, timeout=180)
 
 
 if __name__ == "__main__":

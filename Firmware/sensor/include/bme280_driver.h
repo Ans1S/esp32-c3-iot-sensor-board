@@ -19,6 +19,8 @@ class Bme280Driver {
   uint8_t h1_ = 0, h3_ = 0;
   int16_t h2_ = 0, h4_ = 0, h5_ = 0;
   int8_t h6_ = 0;
+  bool repeatedCalibration_ = false;
+  bool isBmp280_ = false;
   bool initialized_ = false;
 };
 

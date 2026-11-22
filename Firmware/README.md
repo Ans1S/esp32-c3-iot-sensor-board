@@ -6,14 +6,14 @@ retired experiments are intentionally excluded from Git.
 
 ```text
 Firmware/
-â”œâ”€â”€ shared/   versioned ESP-NOW protocol
-â”œâ”€â”€ station/  ESP32-S3 home station
-â””â”€â”€ sensor/   ESP32-C3 sensor firmware for PCB V3 and V4
+├── shared/   versioned ESP-NOW protocol
+├── station/  ESP32-S3 home station
+└── sensor/   ESP32-C3 sensor firmware for PCB V3 and V4
 ```
 
 The station and sensor are independent PlatformIO projects. Flash the station
 first, then the sensor target matching PCB V3 or V4. One sensor codebase
-supports BME280, BME680, LSM6DSOX, TMP117, MAX30102 and battery-only nodes; the attached
+supports BMP280, BME280, BME680, BME688, CCS811, VL53L1X, AS7341, LSM6DSOX, TMP117, MAX30102 and battery-only nodes; the attached
 sensor is selected in the station UI rather than compiled into a separate
 image. Configure Wi-Fi, reporting intervals, sensor calibration and optional
 ThingSpeak integration only through the station UI. Never add credentials to
@@ -29,10 +29,9 @@ verify a target without writing to a connected device.
 - [Architecture](ARCHITECTURE.md)
 - [Hardware test plan](HARDWARE_TESTPLAN.md)
 
-The station and sensor source identifies as **4.4.5 / 40405**, protocol V5.
-Station changes improve dashboard transfer, history paging and chart responsiveness
-without changing stored formats. The [release archive](releases/README.md) lists
-the complete 4.4.5 downloads.
+The current full release is **4.4.10 / 40410**, protocol V5. The
+[release archive](releases/README.md) lists the complete bundle, both signed
+sensor OTA packages and the application-only station image.
 For an installed station, `python Firmware/upload.py station --application-only`
 updates only its application and preserves Wi-Fi, sensors, settings and files.
 Initialize the installation signing key as described
@@ -60,14 +59,11 @@ Pulse estimates update once per second. Saved recordings load as complete,
 stable snapshots; full-session CSV retains the original samples. See [operation, accuracy limits and OTA migration](PRECISION_SENSORS.md).
 
 
-## Changes and publication checks
+## Changes since 4.4.5
 
-See [the complete change inventory](CHANGELOG.md),
-[4.4.5 performance and regression checks](PERFORMANCE_FOLLOWUP_2026-11-09.md) and
-[publication review](PUBLICATION_REVIEW.md). Build diagnostics use relative
-paths; installation keys and device data must stay local. Software tests do not
-replace physical accuracy, rail-voltage and sleep-current acceptance.
+- **Five new I²C sensors** cover pressure (BMP280), indoor air quality (BME688 and CCS811), distance (VL53L1X) and spectral light (AS7341). Both PCB revisions use the same driver set.
+- **Sensor nodes** reject repeated Bosch factory calibration data, retry failed acquisitions within a bounded window and recover the radio channel after a link change. The V4 low-battery cutoff also applies to continuous CCS811 operation.
+- **Station** displays the new measurements, preserves compatible older latest-reading records during upgrades and caches history pages. CSV exports retain the underlying samples.
+- **Sensor updates** can use 1,024-byte data blocks on compatible links, fall back to 192 bytes during a transfer and retry the handshake after a station restart.
 
-Efficiency evidence: [first audit](EFFICIENCY_AUDIT.md), [MCU review](MCU_OPTIMIZATION_REVIEW.md),
-and [main/radio/OTA review](FLOW_TRANSFER_REVIEW.md). These retain measured
-software counts and native code/stack costs separately from physical acceptance.
+[Change inventory](CHANGELOG.md) · [Publication checks](PUBLICATION_REVIEW.md)

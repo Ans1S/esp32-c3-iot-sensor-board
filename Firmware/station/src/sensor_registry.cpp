@@ -1,4 +1,5 @@
 #include "sensor_registry.h"
+#include "sensor_timing.h"
 #include "normal_history_policy.h"
 #include "telemetry_validation.h"
 #include "precision_cadence.h"
@@ -8,6 +9,8 @@
 #include <esp_timer.h>
 #include <iterator>
 #include <limits.h>
+#include <memory>
+#include <new>
 #include <string.h>
 #include <time.h>
 
@@ -117,8 +120,34 @@ uint32_t encodeGasResistance(float value) {
   // Legacy history also receives unsupported/failed-reading placeholders.
   // Keep ordinary truncation, but never cast NaN or an out-of-range float.
   if (!isfinite(value) || value <= 0.0F) return 0;
-  if (double(value) >= double(UINT32_MAX)) return UINT32_MAX;
+  if (value >= 4294967040.0F) return UINT32_MAX;
   return static_cast<uint32_t>(value);
+}
+
+bool sensorConfigEquals(const SensorConfig& a, const SensorConfig& b) {
+  return a.occupied == b.occupied &&
+         memcmp(a.mac, b.mac, sizeof(a.mac)) == 0 &&
+         strncmp(a.name, b.name, sizeof(a.name)) == 0 &&
+         a.revision == b.revision &&
+         a.sleepSeconds == b.sleepSeconds &&
+         a.thingSpeakChannelId == b.thingSpeakChannelId &&
+         strncmp(a.thingSpeakWriteKey, b.thingSpeakWriteKey,
+                 sizeof(a.thingSpeakWriteKey)) == 0 &&
+         a.pendingFlags == b.pendingFlags &&
+         a.cloudUploadEnabled == b.cloudUploadEnabled &&
+         a.thingSpeakFields.temperature == b.thingSpeakFields.temperature &&
+         a.thingSpeakFields.humidity == b.thingSpeakFields.humidity &&
+         a.thingSpeakFields.pressure == b.thingSpeakFields.pressure &&
+         a.thingSpeakFields.iaq == b.thingSpeakFields.iaq &&
+         a.thingSpeakFields.battery == b.thingSpeakFields.battery &&
+         a.thingSpeakFields.gasResistance == b.thingSpeakFields.gasResistance &&
+         a.provisioned == b.provisioned &&
+         a.thingSpeakProfileSlot == b.thingSpeakProfileSlot &&
+         a.environmentalSensorType == b.environmentalSensorType &&
+         a.temperatureOffsetC == b.temperatureOffsetC &&
+         a.batteryCalibrationFactor == b.batteryCalibrationFactor &&
+         a.bme680QuickStartComplete == b.bme680QuickStartComplete &&
+         a.storageVersion == b.storageVersion;
 }
 
 HistorySample compactLegacySample(const LegacyHistorySampleV2& source) {
@@ -129,11 +158,13 @@ HistorySample compactLegacySample(const LegacyHistorySampleV2& source) {
   sample.humidityCentiPercent = encodeUnsigned(source.humidity, 100.0F);
   sample.pressureDeciHpa = encodeUnsigned(source.pressure, 10.0F);
   sample.iaqDeci = encodeUnsigned(source.iaq, 10.0F);
-  sample.gasResistanceOhms =
-      source.gasKohms <= 0.0F || !isfinite(source.gasKohms)
-          ? 0
-          : static_cast<uint32_t>(
-                min<double>(UINT32_MAX, round(source.gasKohms * 1000.0)));
+  if (source.gasKohms <= 0.0F || !isfinite(source.gasKohms)) {
+    sample.gasResistanceOhms = 0;
+  } else {
+    const float ohms = source.gasKohms * 1000.0F;
+    sample.gasResistanceOhms =
+        ohms >= 4294967040.0F ? UINT32_MAX : static_cast<uint32_t>(roundf(ohms));
+  }
   sample.batteryMillivolts =
       encodeUnsigned(source.batteryVolts, 1000.0F);
   sample.iaqAccuracy = source.iaqAccuracy;
@@ -225,6 +256,55 @@ void SensorRegistry::updateTxPowerLocked(size_t index, int8_t rssi,
   }
 }
 
+SensorRegistry::~SensorRegistry() {
+  if (identitiesScratch_) {
+#ifdef ESP_PLATFORM
+    heap_caps_free(identitiesScratch_);
+#else
+    delete[] identitiesScratch_;
+#endif
+    identitiesScratch_ = nullptr;
+  }
+  for (auto& h : history_) {
+    if (h.samples) { heap_caps_free(h.samples); h.samples = nullptr; }
+  }
+  for (auto& l : live_) {
+    if (l.samples) { heap_caps_free(l.samples); l.samples = nullptr; }
+  }
+}
+
+SensorIdentity* SensorRegistry::ensureIdentitiesScratchLocked() {
+  if (!identitiesScratch_) {
+#ifdef ESP_PLATFORM
+    identitiesScratch_ = static_cast<SensorIdentity*>(heap_caps_malloc(
+        sizeof(identities_), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!identitiesScratch_) {
+      identitiesScratch_ = static_cast<SensorIdentity*>(
+          heap_caps_malloc(sizeof(identities_), MALLOC_CAP_8BIT));
+    }
+#else
+    identitiesScratch_ = new (std::nothrow) SensorIdentity[kMaxSensorIdentities];
+#endif
+  }
+  return identitiesScratch_;
+}
+
+void SensorRegistry::resetForFactory() {
+  if (!mutex_ || !storageMutex_) return;
+  LockGuard storage(storageMutex_);
+  LockGuard lock(mutex_);
+  for (size_t i = 0; i < kMaxSensors; ++i) {
+    ++generations_[i];
+    configs_[i] = SensorConfig{};
+    runtime_[i] = SensorRuntime{};
+    if (live_[i].samples) { heap_caps_free(live_[i].samples); live_[i] = LiveHistory{}; }
+    if (history_[i].samples) { heap_caps_free(history_[i].samples); history_[i] = StoredHistory{}; }
+  }
+  for (auto& id : identities_) id = SensorIdentity{};
+  pagedConfigDirty_ = true;
+  if (paged_) paged_->resetForFactory();
+}
+
 bool SensorRegistry::begin(ConfigStore& store, uint32_t defaultSleepSeconds, PagedHistory* paged) {
   store_ = &store;
   defaultSleepSeconds_ = constrain(defaultSleepSeconds, kMinSleepSeconds,
@@ -248,12 +328,82 @@ bool SensorRegistry::begin(ConfigStore& store, uint32_t defaultSleepSeconds, Pag
   if (identitiesChanged && !store_->saveSensorIdentities(identities_, kMaxSensorIdentities)) return false;
   for (size_t i = 0; i < kMaxSensors; ++i) {
     if (configs_[i].occupied && !loadHistoryLocked(i) &&
-        !configureHistoryLocked(i, configs_[i].sleepSeconds, false)) {
+        !paged && !configureHistoryLocked(i, configs_[i].sleepSeconds, false)) {
       Serial.printf("[History] Could not allocate history for sensor %u\n",
                     static_cast<unsigned>(i));
     }
     LatestTelemetry latest{};
-    bool loaded = configs_[i].occupied && store_->loadLatestTelemetry(i, &latest, sizeof(latest));
+    bool loaded = false;
+    if (configs_[i].occupied) {
+      LatestTelemetryV2 latestV2{};
+      if (store_->loadLatestTelemetry(i, &latestV2, sizeof(latestV2)) &&
+          latestV2.crc32 == lil::protocol::crc32(
+                                reinterpret_cast<const uint8_t*>(&latestV2.base),
+                                sizeof(latestV2.base))) {
+        latest = latestV2.base;
+        loaded = true;
+      } else if (store_->loadLatestTelemetry(i, &latest, sizeof(latest))) {
+        loaded = true;
+      }
+    }
+    if (configs_[i].occupied && !loaded) {
+      struct PreviousMotionFeedback {
+        uint32_t magic;
+        uint8_t version;
+        uint8_t payload[lil::protocol::kMotionFeedbackTelemetryPayloadSize];
+        int8_t rssi;
+      };
+      struct PreviousMotionFeedbackV2 {
+        PreviousMotionFeedback base;
+        uint32_t crc32;
+      } previousV2{};
+      PreviousMotionFeedback previous{};
+      if (store_->loadLatestTelemetry(i, &previousV2, sizeof(previousV2)) &&
+          previousV2.crc32 == lil::protocol::crc32(
+                                  reinterpret_cast<const uint8_t*>(&previousV2.base),
+                                  sizeof(previousV2.base))) {
+        latest.magic = previousV2.base.magic;
+        latest.protocolVersion = previousV2.base.version;
+        memcpy(&latest.telemetry, previousV2.base.payload, sizeof(previousV2.base.payload));
+        latest.stationRssi = previousV2.base.rssi;
+        loaded = true;
+      } else if (store_->loadLatestTelemetry(i, &previous, sizeof(previous))) {
+        latest.magic = previous.magic;
+        latest.protocolVersion = previous.version;
+        memcpy(&latest.telemetry, previous.payload, sizeof(previous.payload));
+        latest.stationRssi = previous.rssi;
+        loaded = true;
+      }
+    }
+    if (configs_[i].occupied && !loaded) {
+      struct PreviousTimed {
+        uint32_t magic;
+        uint8_t version;
+        uint8_t payload[lil::protocol::kTimedTelemetryPayloadSize];
+        int8_t rssi;
+      };
+      struct PreviousTimedV2 {
+        PreviousTimed base;
+        uint32_t crc32;
+      } previousV2{};
+      PreviousTimed previous{};
+      if (store_->loadLatestTelemetry(i, &previousV2, sizeof(previousV2)) &&
+          previousV2.crc32 == lil::protocol::crc32(
+                                  reinterpret_cast<const uint8_t*>(&previousV2.base),
+                                  sizeof(previousV2.base))) {
+        latest.magic = previousV2.base.magic;
+        latest.protocolVersion = previousV2.base.version;
+        memcpy(&latest.telemetry, previousV2.base.payload, sizeof(previousV2.base.payload));
+        latest.stationRssi = previousV2.base.rssi;
+        loaded = true;
+      } else if (store_->loadLatestTelemetry(i, &previous, sizeof(previous))) {
+        latest.magic = previous.magic;
+        latest.protocolVersion = previous.version;
+        memcpy(&latest.telemetry, previous.payload, sizeof(previous.payload));
+        latest.stationRssi = previous.rssi;
+        loaded = true;
+      }
+    }
     if (configs_[i].occupied && !loaded) {
       struct PreviousPrecision { uint32_t magic; uint8_t version;
         uint8_t payload[lil::protocol::kPrecisionTelemetryPayloadSize]; int8_t rssi; } previous{};
@@ -274,7 +424,8 @@ bool SensorRegistry::begin(ConfigStore& store, uint32_t defaultSleepSeconds, Pag
     }
     if (loaded &&
         latest.magic == kLatestTelemetryMagic &&
-        latest.protocolVersion == lil::protocol::kVersion) {
+        latest.protocolVersion == lil::protocol::kVersion &&
+        lil::protocol::validTelemetryValues(latest.telemetry)) {
       runtime_[i].telemetry = latest.telemetry;
       runtime_[i].stationRssi = latest.stationRssi;
       runtime_[i].hasPersistedTelemetry = true;
@@ -294,7 +445,7 @@ bool SensorRegistry::begin(ConfigStore& store, uint32_t defaultSleepSeconds, Pag
           ok=paged->appendLegacy(configs_[i].mac,h.samples[row],h.bucketSeconds);++imported;
           if (row % 32 == 0) delay(1);
         }
-        if(ok&&imported&&paged->flush(configs_[i].mac)){
+        if(ok&&(!imported||paged->flush(configs_[i].mac))){
           const size_t bytes=store_->historyBytesLength(i);
           if(store_->deleteHistory(i)){legacyBytes=legacyBytes>bytes?legacyBytes-bytes:0;paged->setLegacyBytes(legacyBytes);}
         }
@@ -304,6 +455,84 @@ bool SensorRegistry::begin(ConfigStore& store, uint32_t defaultSleepSeconds, Pag
     paged_=paged;
   }
   return true;
+}
+
+#if defined(__GNUC__) && !defined(__clang__)
+[[gnu::noinline]]
+#endif
+bool SensorRegistry::loadLegacyHistoryV2Locked(size_t index,
+                                               uint32_t desiredBucketSeconds) {
+  std::unique_ptr<LegacyStoredHistoryV2> legacy(new (std::nothrow) LegacyStoredHistoryV2());
+  if (!legacy ||
+      !store_->loadHistory(index, legacy.get(), sizeof(LegacyStoredHistoryV2)) ||
+      legacy->magic != kHistoryMagic || legacy->version != 2 ||
+      !configureHistoryLocked(index, desiredBucketSeconds, false, false)) {
+    return false;
+  }
+  history_[index].revision = legacy->revision;
+  for (const LegacyHistorySampleV2& source : legacy->samples) {
+    if (source.timestamp == 0) {
+      continue;
+    }
+    HistorySample sample = compactLegacySample(source);
+    const uint32_t bucket = sample.timestamp / desiredBucketSeconds *
+                            desiredBucketSeconds;
+    const size_t slot =
+        (bucket / desiredBucketSeconds) % history_[index].capacity;
+    HistorySample& destination = history_[index].samples[slot];
+    if (destination.timestamp == 0 ||
+        sample.timestamp >= destination.timestamp) {
+      destination = sample;
+    }
+  }
+  if (!persistHistoryLocked(index)) {
+    Serial.printf("[History] Could not migrate history for sensor %u\n",
+                  static_cast<unsigned>(index));
+  }
+  return true;
+}
+
+#if defined(__GNUC__) && !defined(__clang__)
+[[gnu::noinline]]
+#endif
+bool SensorRegistry::loadLegacyHistoryV3Locked(size_t index,
+                                               uint32_t desiredBucketSeconds,
+                                               size_t storedLength) {
+  PersistedHistoryHeader header{};
+  if (storedLength < sizeof(header) ||
+      !store_->loadHistoryRange(index, 0, &header, sizeof(header)) ||
+      header.magic != kHistoryMagic || header.version != 3 ||
+      header.sampleSize != 23 || header.bucketSeconds < 30 ||
+      header.bucketSeconds > kMaxSleepSeconds ||
+      header.capacity != (kHistoryWindowSeconds + header.bucketSeconds - 1) / header.bucketSeconds ||
+      storedLength != sizeof(header) + header.capacity * 23) {
+    return false;
+  }
+  if (!configureHistoryLocked(index, desiredBucketSeconds, false, false)) return false;
+  constexpr size_t kV3SampleBytes = 23;
+  constexpr size_t kV3BatchSlots = 64;
+  std::unique_ptr<uint8_t[]> v3Heap(new (std::nothrow) uint8_t[kV3BatchSlots * kV3SampleBytes]);
+  uint8_t v3Stack[8 * kV3SampleBytes];
+  uint8_t* const v3Batch = v3Heap ? v3Heap.get() : v3Stack;
+  const size_t batchLimit = v3Heap ? kV3BatchSlots : 8;
+  for (size_t slot = 0; slot < header.capacity;) {
+    const size_t batch = min<size_t>(batchLimit, header.capacity - slot);
+    if (!store_->loadHistoryRange(index, sizeof(header) + slot * kV3SampleBytes,
+                                  v3Batch, batch * kV3SampleBytes)) {
+      return false;
+    }
+    for (size_t j = 0; j < batch; ++j) {
+      HistorySample sample{};
+      memcpy(&sample, v3Batch + j * kV3SampleBytes, kV3SampleBytes);
+      if (!sample.timestamp) continue;
+      const size_t destination = (sample.timestamp / desiredBucketSeconds) % history_[index].capacity;
+      if (sample.timestamp >= history_[index].samples[destination].timestamp)
+        history_[index].samples[destination] = sample;
+    }
+    slot += batch;
+  }
+  history_[index].revision = header.revision;
+  return persistHistoryLocked(index);
 }
 
 bool SensorRegistry::loadHistoryLocked(size_t index) {
@@ -318,56 +547,12 @@ bool SensorRegistry::loadHistoryLocked(size_t index) {
       normalizedHistoryBucketSeconds(configs_[index].sleepSeconds);
 
   if (storedLength == sizeof(LegacyStoredHistoryV2)) {
-    LegacyStoredHistoryV2 legacy{};
-    if (!store_->loadHistory(index, &legacy, sizeof(legacy)) ||
-        legacy.magic != kHistoryMagic || legacy.version != 2 ||
-        !configureHistoryLocked(index, desiredBucketSeconds, false, false)) {
-      return false;
-    }
-    history_[index].revision = legacy.revision;
-    for (const LegacyHistorySampleV2& source : legacy.samples) {
-      if (source.timestamp == 0) {
-        continue;
-      }
-      HistorySample sample = compactLegacySample(source);
-      const uint32_t bucket = sample.timestamp / desiredBucketSeconds *
-                              desiredBucketSeconds;
-      const size_t slot =
-          (bucket / desiredBucketSeconds) % history_[index].capacity;
-      HistorySample& destination = history_[index].samples[slot];
-      if (destination.timestamp == 0 ||
-          sample.timestamp >= destination.timestamp) {
-        destination = sample;
-      }
-    }
-    if (!persistHistoryLocked(index)) {
-      Serial.printf("[History] Could not migrate history for sensor %u\n",
-                    static_cast<unsigned>(index));
-    }
+    return loadLegacyHistoryV2Locked(index, desiredBucketSeconds);
+  }
+  if (loadLegacyHistoryV3Locked(index, desiredBucketSeconds, storedLength)) {
     return true;
   }
-
   PersistedHistoryHeader header{};
-  // Expand the V3 environmental prefix without discarding existing history.
-  if (storedLength >= sizeof(header) &&
-      store_->loadHistoryRange(index, 0, &header, sizeof(header)) &&
-      header.magic == kHistoryMagic && header.version == 3 &&
-      header.sampleSize == 23 && header.bucketSeconds >= 30 &&
-      header.bucketSeconds <= kMaxSleepSeconds &&
-      header.capacity == (kHistoryWindowSeconds + header.bucketSeconds - 1) / header.bucketSeconds &&
-      storedLength == sizeof(header) + header.capacity * 23) {
-    if (!configureHistoryLocked(index, desiredBucketSeconds, false, false)) return false;
-    for (size_t slot = 0; slot < header.capacity; ++slot) {
-      HistorySample sample{};
-      if (!store_->loadHistoryRange(index, sizeof(header) + slot * 23, &sample, 23)) return false;
-      if (!sample.timestamp) continue;
-      const size_t destination = (sample.timestamp / desiredBucketSeconds) % history_[index].capacity;
-      if (sample.timestamp >= history_[index].samples[destination].timestamp)
-        history_[index].samples[destination] = sample;
-    }
-    history_[index].revision = header.revision;
-    return persistHistoryLocked(index);
-  }
   if (storedLength < sizeof(header) ||
       !store_->loadHistoryRange(index, 0, &header, sizeof(header)) ||
       header.magic != kHistoryMagic || header.version != kHistoryVersion ||
@@ -533,7 +718,9 @@ void SensorRegistry::commitConfigLocked(size_t index,
   // acknowledgements of old commands received during that non-blocking save.
   committed.pendingFlags &= ~(previous.pendingFlags & ~configs_[index].pendingFlags);
   configs_[index] = committed;
-  runtime_[index].configPersistencePending = true;
+  // Only re-persist if an in-flight radio ACK modified pendingFlags after NVS write.
+  runtime_[index].configPersistencePending = committed.pendingFlags != saved.pendingFlags;
+  pagedConfigDirty_ = true;
 }
 
 int SensorRegistry::allocateIndexLocked(const uint8_t mac[6]) {
@@ -548,10 +735,11 @@ int SensorRegistry::allocateIndexLocked(const uint8_t mac[6]) {
       snprintf(configs_[i].name, sizeof(configs_[i].name),
                "Sensor %02X:%02X:%02X", mac[3], mac[4], mac[5]);
       const int identity = identityIndexLocked(mac);
-      if (identity >= 0) copyText(configs_[i].name, String(identities_[identity].name));
+      if (identity >= 0) copyText(configs_[i].name, identities_[identity].name);
       ++generations_[i];
       runtime_[i].configPersistencePending = true;
       runtime_[i].storageInitializationPending = true;
+      pagedConfigDirty_ = true;
       return static_cast<int>(i);
     }
   }
@@ -581,14 +769,14 @@ bool SensorRegistry::registerTelemetry(
   // ESP-NOW receive callbacks and the sensor's configuration response cross
   // asynchronously. A discovery packet assembled immediately before the
   // provisioning response can therefore arrive after the first configured
-  // measurement. Never let such an older packet replace real telemetry with
-  // the discovery snapshot (PCB V0/zero values) or undo provisioning. The
-  // boot counter keeps a real later reboot valid even when its sequence starts
-  // over after a complete power loss.
+  // measurement. Reject a bounded trailing window of sequences within the same
+  // bootCount so stale/duplicate frames are dropped without rejecting half of
+  // all random sequence numbers after a cold boot (bootCount == 1).
+  const uint32_t sequenceLag = current.lastSequence - sequence;
   const bool staleWithinSameBoot =
       current.hasSequence &&
       telemetry.bootCount == current.telemetry.bootCount &&
-      static_cast<int32_t>(sequence - current.lastSequence) <= 0;
+      sequenceLag < 1024U;
   if (staleWithinSameBoot) {
     duplicate = true;
     responseConfig = config;
@@ -623,6 +811,7 @@ bool SensorRegistry::registerTelemetry(
       config.revision = 1;
     }
     current.configPersistencePending = true;
+    pagedConfigDirty_ = true;
   }
 
   const bool rawFallback =
@@ -649,9 +838,13 @@ bool SensorRegistry::registerTelemetry(
   duplicate = false;
   current.hasTelemetry = true;
   current.stationRssi = rssi;
-  const uint64_t monotonicMs = static_cast<uint64_t>(esp_timer_get_time()) / 1000;
+  const uint64_t monotonicMs = lil::timing::signedUsToMs(esp_timer_get_time());
+  const uint64_t elapsedMonotonicMs =
+      monotonicMs >= current.lastSeenMonotonicMs
+          ? monotonicMs - current.lastSeenMonotonicMs
+          : 0;
   current.receivedIntervalMs = current.receivedPackets ?
-      static_cast<uint32_t>(min<uint64_t>(UINT32_MAX, monotonicMs - current.lastSeenMonotonicMs)) : 0;
+      static_cast<uint32_t>(min<uint64_t>(UINT32_MAX, elapsedMonotonicMs)) : 0;
   current.lastSeenMs = millis();
   current.lastSeenMonotonicMs = monotonicMs;
   current.receivedPackets++;
@@ -673,14 +866,17 @@ bool SensorRegistry::registerTelemetry(
     if (live.samples && live.capacity != capacity) { heap_caps_free(live.samples); live = LiveHistory{}; }
     // A 32-bit sample ID can wrap after a long outage. Expire the old ring
     // before either a cached contact or a fresh sample can make it look recent.
-    if (live.count && monotonicMs - live.lastSampleMonotonicMs > 60000) {
+    if (live.count && monotonicMs >= live.lastSampleMonotonicMs &&
+        monotonicMs - live.lastSampleMonotonicMs > 60000) {
       live.head = live.count = 0;
     }
     live.capacity = capacity;
-    if (storeSample && !live.samples) live.samples = static_cast<LiveSample*>(heap_caps_calloc(
-        capacity, sizeof(LiveSample), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    // Only slots 0..count-1 are ever read; malloc avoids zeroing up to ~180 KiB
+    // while holding the registry mutex.
+    if (storeSample && !live.samples) live.samples = static_cast<LiveSample*>(heap_caps_malloc(
+        capacity * sizeof(LiveSample), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (storeSample && !live.samples && heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) > capacity * sizeof(LiveSample) + 96U * 1024U)
-      live.samples = static_cast<LiveSample*>(heap_caps_calloc(capacity, sizeof(LiveSample), MALLOC_CAP_8BIT));
+      live.samples = static_cast<LiveSample*>(heap_caps_malloc(capacity * sizeof(LiveSample), MALLOC_CAP_8BIT));
     if (storeSample && live.samples) {
       live.samples[live.head] = {current.lastSeenMs, telemetry};
       live.lastSampleMonotonicMs = monotonicMs;
@@ -715,8 +911,11 @@ bool SensorRegistry::persistTelemetry(
   if (index < 0 || generations_[index] != generation) return false;
   const SensorRuntime snapshot = runtime_[index];
   const SensorConfig config = configs_[index];
-  static SensorConfig historyConfigs[kMaxSensors];
-  if(paged_)memcpy(historyConfigs,configs_,sizeof(historyConfigs));
+  const bool needPagedConfigure = paged_ != nullptr && pagedConfigDirty_;
+  if (needPagedConfigure) {
+    memcpy(storageConfigScratch_, configs_, sizeof(storageConfigScratch_));
+    pagedConfigDirty_ = false;
+  }
   lock.unlock();
   bool success = true;
   bool initialized = !snapshot.storageInitializationPending;
@@ -740,18 +939,30 @@ bool SensorRegistry::persistTelemetry(
     latestSaved = saveLatestTelemetryLocked(index, snapshot.telemetry, rssi);
     success = latestSaved && success;
   }
-  if (!discovery && initialized && !live) {
-    if(paged_){
-      paged_->configure(historyConfigs,kMaxSensors);
-      if(!precisionNormal||freshNormal)success=paged_->append(mac,receivedAt,telemetry,
-          batteryProtection?86400:config.sleepSeconds)&&success;
-    }else success = recordHistoryLocked(index, telemetry,
-                                  batteryProtection && config.sleepSeconds < 60 ? 86400 : config.sleepSeconds,
-                                  receivedAt) && success;
+  if (needPagedConfigure) {
+    paged_->configure(storageConfigScratch_, kMaxSensors);
+  }
+  // Pre-NTP packets carry receivedAt == 0 and cannot be indexed in UTC history;
+  // skip history append cleanly without flagging a dropped packet.
+  if (!discovery && initialized && !live && receivedAt >= static_cast<uint32_t>(kMinimumValidTime)) {
+    if (paged_) {
+      const bool supportedByPaged =
+          config.provisioned &&
+          config.environmentalSensorType != lil::protocol::EnvironmentalSensorType::kMax30102 &&
+          telemetry.sensorType != lil::protocol::EnvironmentalSensorType::kMax30102;
+      if (supportedByPaged && (!precisionNormal || freshNormal)) {
+        success = paged_->append(mac, receivedAt, telemetry,
+            batteryProtection ? 86400 : config.sleepSeconds) && success;
+      }
+    } else {
+      success = recordHistoryLocked(index, telemetry,
+                    batteryProtection && config.sleepSeconds < 60 ? 86400 : config.sleepSeconds,
+                    receivedAt) && success;
+    }
   }
   lock.relock();
   // A new radio packet can change pending commands while the flash is busy.
-  if (configSaved && memcmp(&config, &configs_[index], sizeof(config)) == 0) {
+  if (configSaved && sensorConfigEquals(config, configs_[index])) {
     runtime_[index].configPersistencePending = false;
   }
   runtime_[index].storageInitializationPending = !initialized;
@@ -766,13 +977,17 @@ size_t SensorRegistry::liveHistory(const uint8_t mac[6], LiveSample* output,
   const int index = findIndexLocked(mac);
   if (index < 0 || !live_[index].samples) return 0;
   const auto& live = live_[index];
-  const uint64_t monotonicMs = static_cast<uint64_t>(esp_timer_get_time()) / 1000;
-  if (monotonicMs - live.lastSampleMonotonicMs > 60000) return 0;
+  const uint64_t monotonicMs = lil::timing::signedUsToMs(esp_timer_get_time());
+  if (monotonicMs >= live.lastSampleMonotonicMs &&
+      monotonicMs - live.lastSampleMonotonicMs > 60000) return 0;
   size_t count = 0;
   const uint32_t now = millis();
   const auto selected = [now, afterMs](uint32_t receivedMs) {
-    return now - receivedMs <= 60000 &&
-        (!afterMs || static_cast<int32_t>(receivedMs - *afterMs) > 0);
+    const uint32_t sampleAge = now - receivedMs;
+    if (sampleAge > 60000U) return false;
+    if (!afterMs) return true;
+    const uint32_t cursorAge = now - *afterMs;
+    return sampleAge < cursorAge;
   };
   size_t position = live.head >= live.count ? live.head - live.count :
       live.capacity - (live.count - live.head);
@@ -823,10 +1038,7 @@ bool SensorRegistry::updateConfig(const uint8_t mac[6], const String& name,
                                   lil::protocol::EnvironmentalSensorType sensorType,
                                   float temperatureOffsetC,
                                   float batteryCalibrationFactor) {
-  const bool validType = sensorType == lil::protocol::EnvironmentalSensorType::kAutoDetect ||
-      sensorType == lil::protocol::EnvironmentalSensorType::kBme280 ||
-      sensorType == lil::protocol::EnvironmentalSensorType::kBme680 ||
-      lil::protocol::isLiveSensor(sensorType) || sensorType == lil::protocol::EnvironmentalSensorType::kDisabled;
+  const bool validType = lil::protocol::isValidSensorType(sensorType);
   if (!validType || !name.length() || !isfinite(temperatureOffsetC) ||
       !isfinite(batteryCalibrationFactor)) return false;
   uint16_t assigned = 0;
@@ -878,8 +1090,12 @@ bool SensorRegistry::updateConfig(const uint8_t mac[6], const String& name,
   if (config.revision == 0) {
     config.revision = 1;
   }
-  SensorIdentity identities[kMaxSensorIdentities];
-  memcpy(identities, identities_, sizeof(identities));
+  SensorIdentity* identities = ensureIdentitiesScratchLocked();
+  if (!identities) {
+    identities_[identity] = previousIdentity;
+    return false;
+  }
+  memcpy(identities, identities_, sizeof(identities_));
   identities_[identity] = previousIdentity;
   const SensorConfig snapshot = config;
   lock.unlock();
@@ -903,13 +1119,15 @@ bool SensorRegistry::updateConfig(const uint8_t mac[6], const String& name,
     live_[index] = LiveHistory{};
     runtime_[index].hasRecordingStatus = false;
   }
+  if (paged_) {
+    memcpy(storageConfigScratch_, configs_, sizeof(storageConfigScratch_));
+    pagedConfigDirty_ = false;
+  }
   lock.unlock();
-  if(paged_){
+  if (paged_) {
     // Typed pages keep earlier measurements available after a sensor change.
     // A settings acknowledgement depends only on the durable settings writes.
-    static SensorConfig historyConfigs[kMaxSensors];
-    lock.relock();memcpy(historyConfigs,configs_,sizeof(historyConfigs));lock.unlock();
-    paged_->configure(historyConfigs,kMaxSensors);
+    paged_->configure(storageConfigScratch_, kMaxSensors);
     return true;
   }
   if (lil::protocol::isLiveSensor(snapshot.environmentalSensorType)) {
@@ -950,7 +1168,16 @@ bool SensorRegistry::setThingSpeakChannel(const uint8_t mac[6],
   const SensorConfig snapshot = config;
   lock.unlock();
   const bool saved = store_->saveSensorConfig(index, snapshot);
-  if (saved) { lock.relock(); commitConfigLocked(index, previousConfig, snapshot); }
+  if (saved) {
+    lock.relock();
+    commitConfigLocked(index, previousConfig, snapshot);
+    if (paged_) {
+      memcpy(storageConfigScratch_, configs_, sizeof(storageConfigScratch_));
+      pagedConfigDirty_ = false;
+    }
+    lock.unlock();
+    if (paged_) paged_->configure(storageConfigScratch_, kMaxSensors);
+  }
   return saved;
 }
 
@@ -962,8 +1189,9 @@ bool SensorRegistry::syncThingSpeakProfile(
   LockGuard storage(storageMutex_);
   LockGuard lock(mutex_);
   bool success = true;
-  SensorConfig previous[kMaxSensors];
-  memcpy(previous, configs_, sizeof(previous));
+  // Reuse storageConfigScratch_ under storageMutex_ instead of placing a
+  // 2 KiB SensorConfig[19] array on the 8 KiB loopTask stack.
+  memcpy(storageConfigScratch_, configs_, sizeof(storageConfigScratch_));
   bool changed[kMaxSensors]{};
   for (size_t i = 0; i < kMaxSensors; ++i) {
     if (!configs_[i].occupied ||
@@ -979,19 +1207,26 @@ bool SensorRegistry::syncThingSpeakProfile(
     changed[i] = true;
     const SensorConfig snapshot = configs_[i];
     lock.unlock();
-    success = store_->saveSensorConfig(i, snapshot) && success;
+    const bool saved = store_->saveSensorConfig(i, snapshot);
+    success = saved && success;
     lock.relock();
+    if (saved && sensorConfigEquals(snapshot, configs_[i])) {
+      runtime_[i].configPersistencePending = false;
+    }
   }
   if (!success) {
     for (size_t i = 0; i < kMaxSensors; ++i) if (changed[i]) {
-      configs_[i].thingSpeakChannelId = previous[i].thingSpeakChannelId;
-      copyText(configs_[i].thingSpeakWriteKey, previous[i].thingSpeakWriteKey);
-      configs_[i].cloudUploadEnabled = previous[i].cloudUploadEnabled;
+      configs_[i].thingSpeakChannelId = storageConfigScratch_[i].thingSpeakChannelId;
+      copyText(configs_[i].thingSpeakWriteKey, storageConfigScratch_[i].thingSpeakWriteKey);
+      configs_[i].cloudUploadEnabled = storageConfigScratch_[i].cloudUploadEnabled;
       const SensorConfig restored = configs_[i];
       lock.unlock();
       // Preserve command acknowledgements which arrived while flash was busy.
-      store_->saveSensorConfig(i, restored);
+      const bool restoredSaved = store_->saveSensorConfig(i, restored);
       lock.relock();
+      if (restoredSaved && sensorConfigEquals(restored, configs_[i])) {
+        runtime_[i].configPersistencePending = false;
+      }
     }
   }
   return success;
@@ -1004,8 +1239,7 @@ bool SensorRegistry::removeThingSpeakProfile(uint8_t slot) {
   LockGuard storage(storageMutex_);
   LockGuard lock(mutex_);
   bool success = true;
-  SensorConfig previous[kMaxSensors];
-  memcpy(previous, configs_, sizeof(previous));
+  memcpy(storageConfigScratch_, configs_, sizeof(storageConfigScratch_));
   bool changed[kMaxSensors]{};
   for (size_t i = 0; i < kMaxSensors; ++i) {
     if (!configs_[i].occupied ||
@@ -1020,19 +1254,26 @@ bool SensorRegistry::removeThingSpeakProfile(uint8_t slot) {
     changed[i] = true;
     const SensorConfig snapshot = configs_[i];
     lock.unlock();
-    success = store_->saveSensorConfig(i, snapshot) && success;
+    const bool saved = store_->saveSensorConfig(i, snapshot);
+    success = saved && success;
     lock.relock();
+    if (saved && sensorConfigEquals(snapshot, configs_[i])) {
+      runtime_[i].configPersistencePending = false;
+    }
   }
   if (!success) {
     for (size_t i = 0; i < kMaxSensors; ++i) if (changed[i]) {
-      configs_[i].thingSpeakProfileSlot = previous[i].thingSpeakProfileSlot;
-      configs_[i].thingSpeakChannelId = previous[i].thingSpeakChannelId;
-      copyText(configs_[i].thingSpeakWriteKey, previous[i].thingSpeakWriteKey);
-      configs_[i].cloudUploadEnabled = previous[i].cloudUploadEnabled;
+      configs_[i].thingSpeakProfileSlot = storageConfigScratch_[i].thingSpeakProfileSlot;
+      configs_[i].thingSpeakChannelId = storageConfigScratch_[i].thingSpeakChannelId;
+      copyText(configs_[i].thingSpeakWriteKey, storageConfigScratch_[i].thingSpeakWriteKey);
+      configs_[i].cloudUploadEnabled = storageConfigScratch_[i].cloudUploadEnabled;
       const SensorConfig restored = configs_[i];
       lock.unlock();
-      store_->saveSensorConfig(i, restored);
+      const bool restoredSaved = store_->saveSensorConfig(i, restored);
       lock.relock();
+      if (restoredSaved && sensorConfigEquals(restored, configs_[i])) {
+        runtime_[i].configPersistencePending = false;
+      }
     }
   }
   return success;
@@ -1057,7 +1298,16 @@ bool SensorRegistry::requestFactoryReset(const uint8_t mac[6]) {
   const SensorConfig snapshot = config;
   lock.unlock();
   const bool saved = store_->saveSensorConfig(index, snapshot);
-  if (saved) { lock.relock(); commitConfigLocked(index, previousConfig, snapshot); }
+  if (saved) {
+    lock.relock();
+    commitConfigLocked(index, previousConfig, snapshot);
+    if (paged_) {
+      memcpy(storageConfigScratch_, configs_, sizeof(storageConfigScratch_));
+      pagedConfigDirty_ = false;
+    }
+    lock.unlock();
+    if (paged_) paged_->configure(storageConfigScratch_, kMaxSensors);
+  }
   return saved;
 }
 
@@ -1109,9 +1359,11 @@ bool SensorRegistry::deleteSensor(const uint8_t mac[6]) {
   }
   history_[index] = StoredHistory{};
   if(paged_){
-    static SensorConfig historyConfigs[kMaxSensors];
-    lock.relock();memcpy(historyConfigs,configs_,sizeof(historyConfigs));lock.unlock();
-    paged_->configure(historyConfigs,kMaxSensors);
+    lock.relock();
+    memcpy(storageConfigScratch_, configs_, sizeof(storageConfigScratch_));
+    pagedConfigDirty_ = false;
+    lock.unlock();
+    paged_->configure(storageConfigScratch_, kMaxSensors);
   }
   return true;
 }
@@ -1127,7 +1379,10 @@ bool SensorRegistry::setMotionReference(const uint8_t mac[6], bool clear) {
         configs_[index].environmentalSensorType != lil::protocol::EnvironmentalSensorType::kLsm6dsox) return false;
     const auto& current = runtime_[index];
     const auto& t = current.telemetry;
-    const uint64_t age = static_cast<uint64_t>(esp_timer_get_time()) / 1000 - current.lastSeenMonotonicMs;
+    const uint64_t nowMonotonic = lil::timing::signedUsToMs(esp_timer_get_time());
+    const uint64_t age = nowMonotonic >= current.lastSeenMonotonicMs
+                             ? nowMonotonic - current.lastSeenMonotonicMs
+                             : 0;
     const uint32_t limit = configs_[index].sleepSeconds * 1000UL + 2000UL;
     if (!current.hasTelemetry || t.sensorType != lil::protocol::EnvironmentalSensorType::kLsm6dsox ||
         !(t.capabilities & lil::protocol::kMotion) || (t.flags & (lil::protocol::kSensorReadFailed | lil::protocol::kBatteryProtectionActive)) ||
@@ -1139,26 +1394,33 @@ bool SensorRegistry::setMotionReference(const uint8_t mac[6], bool clear) {
     if (!validMotionReference(reference)) return false;
     reference.enabled = true;
   }
-  const int identity = rememberIdentityLocked(mac, configs_[index].name);
+  SensorIdentity previousIdentity{};
+  const int identity = rememberIdentityLocked(mac, configs_[index].name, &previousIdentity);
   if (identity < 0) return false;
-  const MotionReference previous = identities_[identity].motion;
-  identities_[identity].motion = reference;
-  SensorIdentity snapshot[kMaxSensorIdentities];
-  memcpy(snapshot, identities_, sizeof(snapshot));
+  SensorIdentity* snapshot = ensureIdentitiesScratchLocked();
+  if (!snapshot) {
+    identities_[identity] = previousIdentity;
+    return false;
+  }
+  memcpy(snapshot, identities_, sizeof(identities_));
+  snapshot[identity].motion = reference;
+  identities_[identity] = previousIdentity;
   lock.unlock();
   const bool saved = store_->saveSensorIdentities(snapshot, kMaxSensorIdentities);
-  if (!saved) { lock.relock(); identities_[identity].motion = previous; }
+  if (saved) { lock.relock(); identities_[identity] = snapshot[identity]; }
   return saved;
 }
 
 bool SensorRegistry::saveLatestTelemetryLocked(
     size_t index, const lil::protocol::TelemetryPayload& telemetry,
     int8_t stationRssi) {
-  LatestTelemetry latest{};
-  latest.magic = kLatestTelemetryMagic;
-  latest.protocolVersion = lil::protocol::kVersion;
-  latest.telemetry = telemetry;
-  latest.stationRssi = stationRssi;
+  LatestTelemetryV2 latest{};
+  latest.base.magic = kLatestTelemetryMagic;
+  latest.base.protocolVersion = lil::protocol::kVersion;
+  latest.base.telemetry = telemetry;
+  latest.base.stationRssi = stationRssi;
+  latest.crc32 = lil::protocol::crc32(
+      reinterpret_cast<const uint8_t*>(&latest.base), sizeof(latest.base));
   return store_->saveLatestTelemetry(index, &latest, sizeof(latest));
 }
 
@@ -1176,11 +1438,9 @@ bool SensorRegistry::recordHistoryLocked(
       !configureHistoryLocked(index, desiredBucketSeconds, true)) {
     return false;
   }
-  const uint32_t bucket = static_cast<uint32_t>(now) /
-                              history_[index].bucketSeconds *
-                          history_[index].bucketSeconds;
-  const size_t slot =
-      (bucket / history_[index].bucketSeconds) % history_[index].capacity;
+  const uint32_t bucketIndex =
+      static_cast<uint32_t>(now) / history_[index].bucketSeconds;
+  const size_t slot = bucketIndex % history_[index].capacity;
   HistorySample& sample = history_[index].samples[slot];
   // A bucket contains the newest received measurement in one configured
   // sensor interval. The ring size changes with that interval while its time

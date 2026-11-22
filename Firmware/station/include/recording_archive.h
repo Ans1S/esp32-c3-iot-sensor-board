@@ -24,6 +24,7 @@ class RecordingArchive {
   bool remove(const uint8_t mac[6], uint64_t session);
   size_t freeBytes() const;
  private:
+  size_t freeBytesLocked() const;
   SemaphoreHandle_t mutex_ = nullptr;
 };
 extern RecordingArchive recordingArchive;

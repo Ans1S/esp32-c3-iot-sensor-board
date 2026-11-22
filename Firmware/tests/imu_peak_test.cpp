@@ -64,7 +64,7 @@ int main() {
   testSqrtCalls = 0;
   assert(driver.read().valid);
   const size_t balancedRoots = testSqrtCalls;
-  assert(balancedRoots == (EXPECT_DEFERRED_GYRO_SQRT ? 105 : 208));
+  assert(balancedRoots == (EXPECT_DEFERRED_GYRO_SQRT ? 2 : 208));
   printf("IMU peak: %zu gyro vectors in 1024 windows match original sqrt/max bits; mixed 104-gyro/1-accel window uses %zu sqrt calls; fault/reset passed\n", compared, roots);
   printf("IMU balanced 104-gyro/104-accel window: %zu sqrt calls\n", balancedRoots);
 }

@@ -73,5 +73,17 @@ int main() {
   recordingFailReadAfterWrite = true;
   assert(!recoveredWrite.acknowledge(upload.record));
   assert(!recoveredWrite.next(upload) && recoveredWrite.status(0).state == State::Synced);
-  puts("Recording lifecycle: manual start, stop-only sync, reboot recovery, UTC uncertainty, replacement and ACK reclamation passed");
+  // Factory reset must clear orphaned flash records so the next boot starts Ready
+  // rather than loading pre-reset records into State::Fault.
+  assert(recoveredWrite.start());
+  testMillis += 1000;
+  assert(recoveredWrite.append(testMillis, payload));
+  recoveredWrite.stop();
+  assert(recoveredWrite.status(0).pending == 1);
+  recoveredWrite.clearForReset();
+  sensor::RecordingStore afterReset;
+  assert(afterReset.begin(Type::kTmp117));
+  assert(afterReset.status(0).state == State::Ready && afterReset.status(0).pending == 0);
+  assert(!afterReset.next(upload) && afterReset.status(0).state == State::Ready);
+  puts("Recording lifecycle: manual start, stop-only sync, reboot recovery, UTC uncertainty, replacement, reset and ACK reclamation passed");
 }

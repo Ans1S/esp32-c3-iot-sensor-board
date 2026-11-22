@@ -20,7 +20,7 @@ class AdcReader {
 
  private:
   PowerController* power_ = nullptr;
-  uint32_t settleStartedUs_ = 0;
+  uint64_t settleStartedUs_ = 0;
   bool measurementPending_ = false;
 };
 

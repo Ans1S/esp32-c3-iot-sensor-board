@@ -1,6 +1,7 @@
 #pragma once
 #include <ArduinoJson.h>
 #include <Preferences.h>
+#include <atomic>
 #include <esp_partition.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -19,6 +20,8 @@ class OtaService {
   void forget(const uint8_t* mac = nullptr);
   bool respond(const uint8_t mac[6], const lil::ota::Packet& request,
                lil::ota::Packet& response);
+  size_t respondWire(const uint8_t mac[6], const lil::ota::Packet& request,
+                     uint8_t* wireOut, size_t wireCap);
   void json(JsonObject output);
  private:
   struct Job {
@@ -32,20 +35,28 @@ class OtaService {
   struct Node { uint8_t mac[6]{}; lil::ota::Identity identity{}; } nodes_[19]{};
   bool save();
   bool readImage(uint32_t offset, uint8_t* output, size_t size);
-  void clearReadCache() { readCache_.reset(); readCacheBytes_ = 0; }
+  void clearReadCache();
   static constexpr size_t kReadCacheSize = 8 * lil::ota::kBlockSize;
+#ifdef ESP_PLATFORM
+  static constexpr size_t kPsramReadCacheSize = 32768;
+  uint8_t* readCache_ = nullptr;
+  size_t readCacheCapacity_ = 0;
+  bool readCachePsram_ = false;
+#else
   std::unique_ptr<uint8_t[]> readCache_;
+#endif
   uint32_t readCacheOffset_ = 0;
   size_t readCacheBytes_ = 0;
   SemaphoreHandle_t mutex_ = nullptr;
   Preferences preferences_;
   const esp_partition_t* partition_ = nullptr;
-  bool uploading_ = false;
+  std::atomic<bool> uploading_{false};
   bool uploadFailed_ = false;
   uint32_t written_ = 0;
   uint32_t erased_ = 0;
-  uint32_t lastRequestMs_ = 0;
+  uint64_t lastRequestMs_ = 0;
   uint32_t activeNonce_ = 0;
+  bool hasActiveNonce_ = false;
 };
 extern OtaService otaService;
 }

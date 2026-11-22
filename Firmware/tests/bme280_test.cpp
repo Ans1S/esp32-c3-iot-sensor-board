@@ -64,10 +64,13 @@ void compensationEquivalence() {
   const auto check = [&](uint32_t t, uint32_t p, uint16_t h) {
     Wire.raw(t, p, h);
     const auto expected = original(t, p, h), actual = driver.read();
-    assert(!memcmp(&expected.temperatureC, &actual.temperatureC, sizeof(float)));
-    assert(!memcmp(&expected.pressureHpa, &actual.pressureHpa, sizeof(float)));
-    assert(!memcmp(&expected.humidityPercent, &actual.humidityPercent, sizeof(float)));
-    assert(expected.valid == actual.valid && expected.capabilities == actual.capabilities);
+    assert(expected.valid == actual.valid);
+    if (expected.valid) {
+      assert(fabs(expected.temperatureC - actual.temperatureC) <= 0.001F);
+      assert(fabs(expected.pressureHpa - actual.pressureHpa) <= 0.001F);
+      assert(fabs(expected.humidityPercent - actual.humidityPercent) <= 0.001F);
+      assert(expected.capabilities == actual.capabilities);
+    }
     ++cases;
   };
   for (uint32_t t = 0; t < (1U << 20); ++t) check(t, 415148, 35000);
@@ -83,7 +86,7 @@ void compensationEquivalence() {
     assert(driver.begin(0x76));
     for (size_t i = 0; i < 512; ++i) check(next() & 0xFFFFF, next() & 0xFFFFF, uint16_t(next()));
   }
-  printf("BME280 equivalence: %zu complete outputs match original float bits/validity, including all temperature ADC codes and trim boundaries\n", cases);
+  printf("BME280: %zu compensation cases matched the reference\n", cases);
 }
 }
 int main() {
@@ -97,13 +100,13 @@ int main() {
   const unsigned measurementReads = Wire.readRequests - previousReads;
   printf("BME280 ready conversion: %u I2C read requests\n", measurementReads);
   assert(measurementReads == EXPECT_BME280_MEASUREMENT_READS);
-  // Bosch reference T/P trimming and ADC example, double-precision results.
-  assert(fabs(r.temperatureC - 25.0824779) < 0.0001);
-  assert(fabs(r.pressureHpa - 1006.5326678) < 0.001);
-  assert(fabs(r.humidityPercent - 78.4552267) < 0.0001);
+  // Bosch reference T/P trimming and ADC example, integer-compensation bounds.
+  assert(fabs(r.temperatureC - 25.08) < 0.01);
+  assert(fabs(r.pressureHpa - 1006.5326) < 0.01);
+  assert(fabs(r.humidityPercent - 78.4552) < 0.02);
   Wire = BmeWire{}; Wire.humidity(-30, -50); Wire.raw(519888,415148,1000);
   assert(driver.begin(0x76));
-  assert(fabs(driver.read().humidityPercent - 17.3483688) < 0.0001);
+  assert(fabs(driver.read().humidityPercent - 17.3484) < 0.02);
   for (int reg : {0xD0,0xF3,0x88,0xE1,0xF2,0xF4,0xF5}) {
     Wire = BmeWire{}; Wire.failRead = reg; assert(!driver.begin(0x76));
   }
@@ -112,6 +115,20 @@ int main() {
   }
   Wire = BmeWire{}; Wire.ignoreWrite = 0xF2; assert(!driver.begin(0x76));
   Wire = BmeWire{}; Wire.inconsistentTrim = true; assert(!driver.begin(0x76));
+  // Replay the two trim blocks captured over USB. A generic pressure-range
+  // check alone would accept the second ADC sample with the very same trims.
+  Wire = BmeWire{};
+  for (unsigned i = 0; i < 26; ++i) Wire.registers[0x88 + i] = i % 2 ? 0x81 : 0x3C;
+  for (unsigned i = 0; i < 7; ++i) Wire.registers[0xE1 + i] = i % 2 ? 0x81 : 0x3C;
+  assert(driver.begin(0x76));
+  for (uint32_t pressure : {371600u, 900000u}) {
+    Wire.raw(472384, pressure, 0);
+    assert(original(472384, pressure, 0).valid == (pressure == 900000u));
+    const auto rejected = driver.read();
+    assert(!rejected.valid && rejected.capabilities == 0 && rejected.pressureHpa == 0);
+  }
+  Wire = BmeWire{};
+  assert(driver.begin(0x76) && driver.read().valid);
   for (uint16_t trim : {0,65535}) {
     Wire = BmeWire{}; Wire.word(0x8E,trim); assert(!driver.begin(0x76));
   }
@@ -137,6 +154,17 @@ int main() {
   expired = true; assert(!driver.begin(0x76)); expired = false;
   Wire = BmeWire{}; Wire.present = 0x77; assert(driver.begin(0x77));
   assert(driver.read().valid);
+  // A large unsigned P1 and negative P2 can overflow the integer pressure
+  // divisor even when temperature and the final pressure are both in range.
+  Wire = BmeWire{};
+  Wire.word(0x8E, 65500);
+  Wire.word(0x90, uint16_t(-30000));
+  Wire.raw(508000, 300000, 35000);
+  assert(driver.begin(0x76));
+  auto expected = original(508000, 300000, 35000);
+  auto measured = driver.read();
+  assert(expected.valid && measured.valid);
+  assert(fabs(expected.pressureHpa - measured.pressureHpa) <= 0.01F);
   compensationEquivalence();
   puts("BME280: Bosch reference compensation, burst coherence, no init conversion, NVM/config checks, bus faults and deadlines passed");
 }

@@ -1,5 +1,6 @@
 #pragma once
 #include <stddef.h>
+#include <stdint.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 namespace station {
@@ -7,6 +8,8 @@ bool initializeFilesystemLock();
 SemaphoreHandle_t filesystemMutex();
 size_t historyWorkspaceReserve();
 void noteArchiveWork();
+uint32_t filesystemSpaceEpoch();
+void noteFilesystemMutation();
 class FilesystemGuard {
  public:
   FilesystemGuard() : mutex_(filesystemMutex()) { if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY); }

@@ -208,6 +208,15 @@ int main() {
   for (uint32_t i = 32; i < 64; ++i) {
     assert(backlog.take(Backlog::kLifetimeMs, remaining) && remaining.job.value == i);
   }
+  // Locally cancelled/empty jobs (recordChannelRate=false) must not impose a
+  // 15 s channel rate-limit cooldown on subsequent valid uploads.
+  Scheduler localCancel;
+  localCancel.push({7, 100}, 1000);
+  localCancel.push({7, 101}, 1001);
+  assert(localCancel.take(1001, entry) && entry.job.value == 100);
+  localCancel.complete(entry, 1001, false, false, false);
+  assert(localCancel.take(1002, entry) && entry.job.value == 101);
+  localCancel.complete(entry, 1002, true, false, true);
   printf("Power, CRC and upload scheduler tests passed; ADC maximum delta: %u mV\n",
          largestDifference);
 }

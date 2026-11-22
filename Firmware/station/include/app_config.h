@@ -84,8 +84,22 @@ struct SensorConfig {
 };
 
 template <size_t N>
+inline void copyText(char (&destination)[N], const char* source) {
+  if (!source) {
+    destination[0] = '\0';
+    return;
+  }
+  size_t length = 0;
+  while (length + 1 < N && source[length] != '\0') {
+    destination[length] = source[length];
+    ++length;
+  }
+  destination[length] = '\0';
+}
+
+template <size_t N>
 inline void copyText(char (&destination)[N], const String& source) {
-  source.substring(0, N - 1).toCharArray(destination, N);
+  copyText(destination, source.c_str());
 }
 
 // Separate NVS key: dashboard preferences do not alter existing Wi-Fi or nodes.

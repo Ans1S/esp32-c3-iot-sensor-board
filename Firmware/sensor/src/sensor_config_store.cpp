@@ -112,13 +112,7 @@ void migrateRuntimeConfig(const Legacy& legacy, SensorRuntimeConfig& config) {
 }
 
 bool validSensorType(lil::protocol::EnvironmentalSensorType type) {
-  return type == lil::protocol::EnvironmentalSensorType::kAutoDetect ||
-         type == lil::protocol::EnvironmentalSensorType::kBme280 ||
-      type == lil::protocol::EnvironmentalSensorType::kLsm6dsox ||
-      type == lil::protocol::EnvironmentalSensorType::kTmp117 ||
-      type == lil::protocol::EnvironmentalSensorType::kMax30102 ||
-         type == lil::protocol::EnvironmentalSensorType::kBme680 ||
-         type == lil::protocol::EnvironmentalSensorType::kDisabled;
+  return lil::protocol::isValidSensorType(type);
 }
 
 bool validRuntimeConfig(const SensorRuntimeConfig& config) {
@@ -126,7 +120,8 @@ bool validRuntimeConfig(const SensorRuntimeConfig& config) {
          config.version == kSensorConfigVersion &&
          config.sleepSeconds >= kMinSleepSeconds &&
          config.sleepSeconds <= kMaxSleepSeconds && config.wifiChannel >= 1 &&
-         config.wifiChannel <= 13 &&
+         config.wifiChannel <= 13 && config.txPowerQuarterDbm >= 8 &&
+         config.txPowerQuarterDbm <= 84 &&
          validSensorType(config.environmentalSensorType) &&
          isfinite(config.temperatureOffsetC) &&
          config.temperatureOffsetC >= -10.0F &&
@@ -134,6 +129,38 @@ bool validRuntimeConfig(const SensorRuntimeConfig& config) {
          isfinite(config.batteryCalibrationFactor) &&
          config.batteryCalibrationFactor >= 0.7F &&
          config.batteryCalibrationFactor <= 1.3F;
+}
+
+bool configEquals(const SensorRuntimeConfig& a, const SensorRuntimeConfig& b) {
+  return a.magic == b.magic && a.version == b.version &&
+         a.revision == b.revision && a.sleepSeconds == b.sleepSeconds &&
+         memcmp(a.stationMac, b.stationMac, sizeof(a.stationMac)) == 0 &&
+         a.wifiChannel == b.wifiChannel &&
+         a.txPowerQuarterDbm == b.txPowerQuarterDbm &&
+         a.stationKnown == b.stationKnown && a.provisioned == b.provisioned &&
+         a.bme680QuickStartComplete == b.bme680QuickStartComplete &&
+         a.environmentalSensorType == b.environmentalSensorType &&
+         a.temperatureOffsetC == b.temperatureOffsetC &&
+         a.batteryCalibrationFactor == b.batteryCalibrationFactor;
+}
+
+SensorRuntimeConfig normalizedCopy(const SensorRuntimeConfig& source) {
+  SensorRuntimeConfig clean{};
+  memset(static_cast<void*>(&clean), 0, sizeof(clean));
+  clean.magic = source.magic;
+  clean.version = source.version;
+  clean.revision = source.revision;
+  clean.sleepSeconds = source.sleepSeconds;
+  memcpy(clean.stationMac, source.stationMac, sizeof(clean.stationMac));
+  clean.wifiChannel = source.wifiChannel;
+  clean.txPowerQuarterDbm = source.txPowerQuarterDbm;
+  clean.stationKnown = source.stationKnown;
+  clean.provisioned = source.provisioned;
+  clean.bme680QuickStartComplete = source.bme680QuickStartComplete;
+  clean.environmentalSensorType = source.environmentalSensorType;
+  clean.temperatureOffsetC = source.temperatureOffsetC;
+  clean.batteryCalibrationFactor = source.batteryCalibrationFactor;
+  return clean;
 }
 
 void updateRtcConfigCache(const uint8_t firmwareSha[32],
@@ -280,33 +307,39 @@ SensorRuntimeConfig SensorConfigStore::load() {
     config = SensorRuntimeConfig{};
     recognized = migrated = false;
   }
-  lastStored_ = config;
+  const SensorRuntimeConfig clean = normalizedCopy(config);
+  lastStored_ = clean;
   hasStoredCopy_ = recognized && (!migrated ||
-      preferences_.putBytes(kConfigKey, &config, sizeof(config)) == sizeof(config));
-  updateRtcConfigCache(currentFirmwareSha_, config, hasStoredCopy_);
+      preferences_.putBytes(kConfigKey, &clean, sizeof(clean)) == sizeof(clean));
+  updateRtcConfigCache(currentFirmwareSha_, clean, hasStoredCopy_);
   rtcConfigAvailable_ = true;
-  return config;
+  return clean;
 }
 
 bool SensorConfigStore::saveIfChanged(const SensorRuntimeConfig& config) {
   if (!validRuntimeConfig(config)) return false;
-  if (hasStoredCopy_ && memcmp(&lastStored_, &config, sizeof(config)) == 0) {
+  if (hasStoredCopy_ && configEquals(lastStored_, config)) {
     return true;
   }
+  const SensorRuntimeConfig clean = normalizedCopy(config);
   if (!ensurePreferencesOpen() ||
-      preferences_.putBytes(kConfigKey, &config, sizeof(config)) !=
-      sizeof(config)) {
+      preferences_.putBytes(kConfigKey, &clean, sizeof(clean)) !=
+      sizeof(clean)) {
     return false;
   }
-  lastStored_ = config;
+  lastStored_ = clean;
   hasStoredCopy_ = true;
-  updateRtcConfigCache(currentFirmwareSha_, config);
+  updateRtcConfigCache(currentFirmwareSha_, clean);
   rtcConfigAvailable_ = true;
   return true;
 }
 
 bool SensorConfigStore::factoryReset() {
   if (!ensurePreferencesOpen() || !preferences_.clear()) return false;
+  // Re-store the running firmware digest so the next wake after factory reset
+  // does not trigger a redundant NVS write for firmware-change detection.
+  (void)preferences_.putBytes(kFirmwareKey, currentFirmwareSha_,
+                              sizeof(currentFirmwareSha_));
   rtcConfigCache.signature = 0;
   hasStoredCopy_ = false;
   rtcConfigAvailable_ = false;

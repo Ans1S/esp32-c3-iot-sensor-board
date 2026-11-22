@@ -24,6 +24,7 @@ class EnvironmentalSensor {
   void end() { powered = false; ++ends; }
   void resetMotionFeedback() { ++resets; }
   bool pollLive() { assert(powered); ++polls; pollTimes.push_back(millis()); return true; }
+  bool liveInitialized() const { return powered; }
   bool freshTemperature() const {
     return powered && millis() - conversionStarted >= 124 + consumed * 1000;
   }

@@ -6,10 +6,7 @@
 namespace lil::protocol {
 inline bool validTelemetryValues(const TelemetryPayload& telemetry) {
   const auto type = telemetry.sensorType;
-  if (type != EnvironmentalSensorType::kAutoDetect &&
-      type != EnvironmentalSensorType::kBme280 && type != EnvironmentalSensorType::kBme680 &&
-      type != EnvironmentalSensorType::kLsm6dsox && type != EnvironmentalSensorType::kTmp117 &&
-      type != EnvironmentalSensorType::kMax30102 && type != EnvironmentalSensorType::kDisabled)
+  if (!isValidSensorType(type))
     return false;
   if (static_cast<uint8_t>(telemetry.operatingMode) >
           static_cast<uint8_t>(SensorOperatingMode::kBatteryProtection) ||
@@ -23,6 +20,7 @@ inline bool validTelemetryValues(const TelemetryPayload& telemetry) {
   if ((capabilities & kPressure) && !isfinite(telemetry.pressureHpa)) return false;
   if ((capabilities & kIaq) && (!(telemetry.flags & kBme680RawFallback)) &&
       (!isfinite(telemetry.iaq) || telemetry.iaqAccuracy > 3)) return false;
+  if ((capabilities & kGasResistance) && !isfinite(telemetry.gasResistanceOhms)) return false;
   if (capabilities & kMotion) {
     for (size_t i = 0; i < 3; ++i)
       if (!isfinite(telemetry.motion.accelerationG[i]) ||

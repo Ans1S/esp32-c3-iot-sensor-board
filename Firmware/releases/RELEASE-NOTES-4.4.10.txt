@@ -1,0 +1,34 @@
+W-Charger 4.4.10 / 40410 - 2026-11-22
+ESP32-S3 station, ESP32-C3 sensor PCB V3 and PCB V4, ESP-NOW protocol V5.
+
+NEW SENSORS
+BMP280 measures temperature and pressure. BME688 adds Bosch gas resistance
+and Static IAQ alongside climate readings. CCS811 estimates eCO2 and TVOC
+with its heater powered between reports. VL53L1X (TOF400C) measures distance,
+signal and ambient rates. AS7341 measures eight visible bands, clear and NIR.
+
+STATION AND SENSOR CHANGES SINCE 4.4.5
+- The station displays the five new types, saves their normal history, clears
+  incompatible fields after a type change and migrates older latest readings
+  after validating their CRC. History paging can use a PSRAM page cache.
+- Sensor nodes check Bosch calibration and reject repeated trim words even
+  when compensation could otherwise yield plausible values. Bounded retries
+  handle failed transfers and conversions. BME680/BME688 keep their five-
+  minute maintenance cycle and separate report interval.
+- Compatible OTA peers can transfer 1024-byte blocks and fall back to 192
+  bytes when a link deteriorates. Peers can resume after a station restart.
+  Channel recovery, peer refresh and trial-boot confirmation were improved.
+- V4 still pauses acquisition on low or invalid battery voltage. SW2 controls
+  fast recordings for TMP117, LSM6DSOX and MAX30102. Closing the dashboard
+  leaves acquisition running. Exports preserve original samples.
+
+INSTALLATION AND VERIFICATION
+Install the station first, then the matching signed sensor package. See the
+included installation guide and SHA-256 manifest. The 4.4.10 release integer
+also permits updates from intermediate 4.4.6 through 4.4.9 builds.
+
+The three production targets built. The host regression suite ran with
+sanitizers. All 14 embedded browser suites, script syntax, OTA crypto,
+station upload, library-patch and dashboard gzip checks passed. No physical
+board was flashed for this release. Sensor accuracy, current draw, RF range
+and power-cut recovery require tests on hardware.

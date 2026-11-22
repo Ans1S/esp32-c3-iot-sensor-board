@@ -53,14 +53,19 @@ class ThingSpeakService {
   static String urlEncode(const String& value);
   int lastHttpStatus() const;
   int lastEntryId() const;
+  bool lastUploadFailed() const;
   uint32_t successfulUploads() const;
   uint32_t failedUploads() const;
-  uint32_t lastAttemptMs() const;
-  uint32_t lastSuccessMs() const;
+  uint64_t lastAttemptMs() const;
+  uint64_t lastSuccessMs() const;
+  uint64_t lastAttemptAgeMs() const;
+  uint64_t lastSuccessAgeMs() const;
   uint32_t droppedJobs() const;
 
  private:
+  using Scheduler = lil::UploadScheduler<CloudUploadJob, 64>;
   static void taskEntry(void* context);
+  bool ensureScheduler();
   bool ensureTask();
   void taskLoop();
   bool upload(const CloudUploadJob& job);
@@ -68,19 +73,23 @@ class ThingSpeakService {
                                      const String& userApiKey,
                                      const String& encodedSettings = "");
 
-  lil::UploadScheduler<CloudUploadJob, 64> scheduler_;
+  Scheduler* scheduler_ = nullptr;
   ThingSpeakAccountJob accountJob_;
   SensorRegistry* registry_ = nullptr;
   SemaphoreHandle_t queueMutex_ = nullptr;
   SemaphoreHandle_t tlsMutex_ = nullptr;
   TaskHandle_t task_ = nullptr;
+#ifdef ESP_PLATFORM
+  mutable portMUX_TYPE statsMux_ = portMUX_INITIALIZER_UNLOCKED;
+#endif
   std::atomic<bool> mutationReady_{false};
+  std::atomic<bool> lastUploadFailed_{false};
   std::atomic<int> lastHttpStatus_{0};
   std::atomic<int> lastEntryId_{0};
   std::atomic<uint32_t> successfulUploads_{0};
   std::atomic<uint32_t> failedUploads_{0};
-  std::atomic<uint32_t> lastAttemptMs_{0};
-  std::atomic<uint32_t> lastSuccessMs_{0};
+  uint64_t lastAttemptMs_ = 0;
+  uint64_t lastSuccessMs_ = 0;
   std::atomic<uint32_t> droppedJobs_{0};
 };
 

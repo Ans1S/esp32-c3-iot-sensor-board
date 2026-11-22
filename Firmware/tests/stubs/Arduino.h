@@ -42,4 +42,8 @@ inline uint32_t testMillis = 100;
 inline uint32_t millis() { return testMillis; }
 void testRadioTick();
 inline void delay(uint32_t ms) { while (ms--) testRadioTick(); }
+#ifdef _WIN32
+#include <io.h>
+inline int testHostFsync(int fd) { return _tell(fd) >= 0 ? 0 : -1; }
+#endif
 #define RTC_DATA_ATTR

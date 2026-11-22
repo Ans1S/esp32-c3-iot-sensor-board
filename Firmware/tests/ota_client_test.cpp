@@ -20,7 +20,9 @@ void reset() {
   failOtaBufferAllocation = false; otaBufferAllocations = 0;
   failPrefixReadAt = 0; prefixReadSizes.clear();
   testTime=0; readDelayMs=0;
-  offerCompactRead=false; readRequestBytes=readRequests=0;
+  offerCompactRead=false; offerLargeBlock=false;
+  largeFailAt=idleOnceAt=idleCancelAt=UINT32_MAX;
+  readRequestBytes=readRequests=largeRequests=helloRequests=0;
   failCheckpointSave=false; lastStatusOffset=0;
   kHardware.pcbVersion = 4; updateBattery = {}; writeSizes.clear();
   values.clear(); states.clear(); failures.clear(); image.resize(70000);
@@ -127,4 +129,27 @@ int main() {
   p.putUInt("attempted",lil::ota::kRelease);
   assert(confirmOtaBootAfterContact() && bootConfirmed && !otaBootPending());
   assert(!began && states.empty()); // No OTA request on a battery-only wake.
+
+  // Full 1024-byte LargePacket OTA transfer succeeds cleanly.
+  reset(); offerCompactRead=true; offerLargeBlock=true;
+  complete();
+  assert(largeRequests == (image.size() + lil::ota::kLargeBlockSize - 1) / lil::ota::kLargeBlockSize);
+  assert(readRequests == 0);
+
+  // Mid-session LargePacket transport loss automatically falls back to 192-byte
+  // blocks at the failing offset and completes in the same wake.
+  reset(); offerCompactRead=true; offerLargeBlock=true; largeFailAt=20480;
+  complete();
+  assert(largeRequests == 21 && readRequests > 0 && !aborted);
+
+  // Mid-session station reboot (single Op::Idle) triggers one bounded Hello
+  // re-handshake and finishes seamlessly in the same wake.
+  reset(); offerCompactRead=true; offerLargeBlock=true; idleOnceAt=20480;
+  complete();
+  assert(helloRequests == 2 && !aborted);
+
+  // Mid-session station cancellation (Op::Idle followed by Idle on Hello) stops cleanly.
+  reset(); offerCompactRead=true; offerLargeBlock=true; idleCancelAt=20480;
+  run();
+  assert(aborted && !selected && helloRequests == 2);
 }

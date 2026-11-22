@@ -4,8 +4,10 @@
 
 | Mode | Measurement and radio behavior | Between measurements |
 | --- | --- | --- |
-| BME280 | Forced measurement with 1x oversampling; battery and radio at the configured report interval | Sensor rail off, Wi-Fi off, ESP32-C3 deep sleep |
-| BME680 | BSEC ULP maintenance approximately every 300 seconds; V4 checks the battery first on every wake; radio only when a report is due | Sensor rail off and deep sleep until the next maintenance/report deadline |
+| BME280 / BMP280 | Forced measurement with 1x oversampling; battery and radio at the configured report interval | Sensor rail off, Wi-Fi off, ESP32-C3 deep sleep |
+| BME680 / BME688 | BSEC ULP maintenance approximately every 300 seconds; V4 checks the battery first on every wake; radio only when a report is due | Sensor rail off and deep sleep until the next maintenance/report deadline |
+| CCS811 | Paired nodes keep the gas heater powered and report at the configured interval | Radio off between reports, V4 battery protection takes priority |
+| AS7341 / VL53L1X | Two spectral passes or one range acquisition per normal window | Rail off between windows |
 | Battery only | ADC and radio at the configured report interval | Sensor rail off, Wi-Fi off, deep sleep |
 | LSM6DSOX | Normal: fresh 100 ms summary after startup at the configured interval. SW2 recording: continuous 104 Hz FIFO acquisition with faster summaries | Sensor rail off between normal windows; CPU and sensor active during manual recording |
 | TMP117 | Normal: a fresh eight-conversion result at the configured interval. SW2 recording: the existing one-second cycle | Sensor rail off between normal windows; active during manual recording |

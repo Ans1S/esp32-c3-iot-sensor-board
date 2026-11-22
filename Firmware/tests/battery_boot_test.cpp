@@ -4,7 +4,7 @@
 #include "../sensor/src/main.cpp"
 void testRadioTick() { ++testMillis; }
 void resetBoot(bool cold = true) {
-  sensorStarts = batteryReads = otaChecks = configWrites = 0;
+  sensorStarts = batteryReads = otaChecks = otaConfirmations = configWrites = 0;
   radioStarts = normalExchanges = lowPowerExchanges = 0;
   radioAvailable = true; stationReplies = false; powerOff = true;
   sensor::otaReplacesBattery = false; sensor::otaBattery = {};
@@ -167,6 +167,30 @@ int main() {
   resetBoot(); sensor::savedConfig.environmentalSensorType = lil::protocol::EnvironmentalSensorType::kBme680;
   sensorReadSucceeded = false; sensor::batteries.push_back({true,3500});
   assert(boot() == 300 && !rtcState.sensorRecoveryPending && rtcState.sensorStartAttemptsRemaining == 3);
+  // BMP280 and extended one-shot sensors use the same bounded read-failure recovery as BME280.
+  for (auto oneShotType : {lil::protocol::EnvironmentalSensorType::kBmp280,
+                           lil::protocol::EnvironmentalSensorType::kVl53l1x,
+                           lil::protocol::EnvironmentalSensorType::kAs7341}) {
+    resetBoot(); sensor::savedConfig.environmentalSensorType = oneShotType;
+    sensorReadSucceeded = false; sensor::batteries.push_back({true,3500});
+    assert(boot() == 5 && rtcState.sensorRecoveryPending && rtcState.sensorStartAttemptsRemaining == 2);
+  }
+  // CCS811 uses bounded 5 s recovery when startup fails, and shuts down its continuous
+  // powered loop immediately into 24 h battery protection if V4 voltage drops below 2800 mV.
+  resetBoot(); sensor::savedConfig.environmentalSensorType = lil::protocol::EnvironmentalSensorType::kCcs811;
+  sensorStartSucceeded = false; sensor::batteries.push_back({true,3500});
+  assert(boot() == 5 && rtcState.sensorRecoveryPending && rtcState.sensorStartAttemptsRemaining == 2);
+  resetBoot(); sensor::savedConfig.environmentalSensorType = lil::protocol::EnvironmentalSensorType::kCcs811;
+  sensor::batteries.push_back({true,3500});
+  sensor::batteries.push_back({true,2799});
+  assert(boot() == 86400 && powerOff && rtcState.batteryPaused);
+  // Confirmed station contact confirms trial-boot OTA even if deprovisioned.
+  resetBoot(); sensor::batteries.push_back({true,3500});
+  sensor::ExchangeResult deprov{}; deprov.configReceived = true; deprov.config.provisioned = 0;
+  deprov.config.sleepIntervalSeconds = 600; deprov.config.wifiChannel = 6;
+  deprov.config.txPowerQuarterDbm = 52; deprov.config.batteryCalibrationFactor = 1.0F;
+  sensor::configurationReplies.push_back(deprov);
+  assert(boot() > 0 && otaConfirmations == 1 && otaChecks == 0);
   resetBoot(); sensor::savedConfig.environmentalSensorType = lil::protocol::EnvironmentalSensorType::kAutoDetect;
   sensorReadSucceeded = false; sensor::batteries.push_back({true,3500});
   assert(boot() == 5 && rtcState.lastSensorType == lil::protocol::EnvironmentalSensorType::kBme280);

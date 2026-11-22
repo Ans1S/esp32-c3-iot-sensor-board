@@ -1,6 +1,7 @@
 """Check the generated dashboard payload and HTTP content negotiation on the host."""
 import gzip
 import importlib.util
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -33,6 +34,7 @@ with tempfile.TemporaryDirectory(prefix="dashboard-gzip-") as tmp:
 #include <cassert>
 int main() {
   using station::acceptsDashboardGzip;
+  assert(!acceptsDashboardGzip(nullptr));
   assert(!acceptsDashboardGzip(""));
   assert(!acceptsDashboardGzip("br, deflate"));
   assert(!acceptsDashboardGzip("xgzip, gzip;q=0"));
@@ -48,7 +50,9 @@ int main() {
   assert(acceptsDashboardGzip("gzip;q=0.5 \t"));
 }
 ''', encoding="utf-8")
-    executable = folder / "negotiation"
-    subprocess.run(["c++", "-std=c++17", "-Wall", "-Wextra", "-Werror", "-I", str(root / "station/include"), str(test), "-o", str(executable)], check=True)
+    executable = folder / ("negotiation.exe" if os.name == "nt" else "negotiation")
+    compiler = os.environ.get("CXX", "c++")
+    command = [compiler, "c++"] if Path(compiler).stem == "zig" else [compiler]
+    subprocess.run(command + ["-std=c++17", "-Wall", "-Wextra", "-Werror", "-I", str(root / "station/include"), str(test), "-o", str(executable)], check=True)
     subprocess.run([str(executable)], check=True)
     print(f"Dashboard: {len(original)} bytes; gzip: {len(payload)} bytes; round-trip and negotiation passed")

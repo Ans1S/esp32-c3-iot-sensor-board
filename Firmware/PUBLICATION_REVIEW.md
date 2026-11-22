@@ -1,4 +1,8 @@
-# Publication and privacy review — 2026-10-25
+# Publication and privacy review
+
+## Firmware 4.4.10 — 2026-11-22
+
+The release uses the existing installation key. The build and package checks cover the station application, both signed node payloads, ZIP members and checksum manifests. Public dashboard images are rendered locally from synthetic fixtures. Private keys, hardware captures, local guidance and intermediate builds stay outside Git. The publication checker scans the current tree and new Git objects. Earlier historical findings are documented below.
 
 ## Firmware 4.4.4 preparation - 2026-11-07
 

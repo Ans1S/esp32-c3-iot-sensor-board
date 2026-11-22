@@ -1,4 +1,9 @@
 #include "ota_service.h"
+#include "sensor_timing.h"
+#ifdef ESP_PLATFORM
+#include <esp_heap_caps.h>
+#include <esp_timer.h>
+#endif
 #include <mbedtls/sha256.h>
 #include <new>
 
@@ -6,6 +11,13 @@ namespace station {
 OtaService otaService;
 namespace {
 constexpr uint32_t kJobMagic = 0x31424f4a;
+uint64_t monotonicNowMs() {
+#ifdef ESP_PLATFORM
+  return lil::timing::signedUsToMs(esp_timer_get_time());
+#else
+  return static_cast<uint64_t>(millis());
+#endif
+}
 struct Lock {
   SemaphoreHandle_t mutex;
   bool held;
@@ -16,12 +28,24 @@ bool active(lil::ota::State s) {
   using S = lil::ota::State;
   return s != S::Success && s != S::Cancelled && s != S::Rejected && s != S::RolledBack;
 }
-String macText(const uint8_t* mac) {
-  char text[18];
+void formatMacText(const uint8_t* mac, char (&text)[18]) {
   snprintf(text, sizeof(text), "%02X:%02X:%02X:%02X:%02X:%02X",
            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-  return text;
 }
+}
+void OtaService::clearReadCache() {
+#ifdef ESP_PLATFORM
+  if (readCache_) {
+    if (readCachePsram_) heap_caps_free(readCache_);
+    else delete[] readCache_;
+    readCache_ = nullptr;
+  }
+  readCacheCapacity_ = 0;
+  readCachePsram_ = false;
+#else
+  readCache_.reset();
+#endif
+  readCacheBytes_ = 0;
 }
 bool OtaService::begin() {
   clearReadCache();
@@ -42,6 +66,9 @@ bool OtaService::begin() {
   if (preferences_.getBytesLength("job") == sizeof(job_))
     preferences_.getBytes("job", &job_, sizeof(job_));
   if (job_.magic != kJobMagic || !lil::ota::verifyManifest(job_.manifest)) job_ = Job{};
+  activeNonce_ = 0;
+  hasActiveNonce_ = false;
+  lastRequestMs_ = 0;
   return partition_ != nullptr;
 }
 bool OtaService::save() {
@@ -49,8 +76,9 @@ bool OtaService::save() {
 }
 bool OtaService::startUpload(const uint8_t mac[6], String& error) {
   Lock lock(mutex_);
+  if (!lock.held) { error = "OTA service unavailable"; return false; }
   if (!partition_) { error = "OTA staging partition missing; install the station base image by USB"; return false; }
-  if (uploading_ || (job_.magic == kJobMagic && active(job_.state))) {
+  if (uploading_.load(std::memory_order_acquire) || (job_.magic == kJobMagic && active(job_.state))) {
     error = "Cancel or finish the existing update first"; return false;
   }
   bool known = false;
@@ -61,21 +89,28 @@ bool OtaService::startUpload(const uint8_t mac[6], String& error) {
   job_ = Job{};
   if (!save()) { job_ = previous; error = "Cannot persist update state"; return false; }
   clearReadCache();
+  activeNonce_ = 0;
+  hasActiveNonce_ = false;
+  lastRequestMs_ = 0;
   memcpy(job_.mac, mac, 6);
-  uploading_ = true;
+  uploading_.store(true, std::memory_order_release);
   uploadFailed_ = false;
   written_ = erased_ = 0;
   return true;
 }
 bool OtaService::upload(const uint8_t* bytes, size_t size) {
   Lock lock(mutex_);
+  if (!lock.held) return false;
   const size_t capacity = partition_ ? min(size_t(partition_->size), sizeof(lil::ota::Manifest) + size_t(lil::ota::kSlotSize)) : 0;
-  if (!uploading_ || uploadFailed_ || written_ > capacity || size > capacity - written_) {
+  if (!uploading_.load(std::memory_order_acquire) || uploadFailed_ || written_ > capacity || size > capacity - written_) {
     uploadFailed_ = true; return false;
   }
   const uint32_t end = written_ + size;
   while (erased_ < end) {
-    if (esp_partition_erase_range(partition_, erased_, 4096) != ESP_OK) { uploadFailed_ = true; return false; }
+    if (erased_ > partition_->size || partition_->size - erased_ < 4096U ||
+        esp_partition_erase_range(partition_, erased_, 4096) != ESP_OK) {
+      uploadFailed_ = true; return false;
+    }
     erased_ += 4096;
   }
   if (esp_partition_write(partition_, written_, bytes, size) != ESP_OK) { uploadFailed_ = true; return false; }
@@ -84,8 +119,14 @@ bool OtaService::upload(const uint8_t* bytes, size_t size) {
 }
 bool OtaService::finishUpload(String& error) {
   Lock lock(mutex_);
-  if (!uploading_) { error = "No firmware upload is active."; return false; }
-  uploading_ = false;
+  if (!lock.held) { error = "OTA service unavailable."; return false; }
+  if (!uploading_.load(std::memory_order_acquire)) { error = "No firmware upload is active."; return false; }
+  // Keep uploading_ asserted throughout flash read and SHA-256 verification so
+  // radio pull requests decline immediately without waiting on mutex_.
+  struct ClearUpload {
+    std::atomic<bool>& flag;
+    ~ClearUpload() { flag.store(false, std::memory_order_release); }
+  } clearUpload{uploading_};
   if (uploadFailed_) { job_ = Job{}; error = "The package could not be written to station storage."; return false; }
   if (written_ < sizeof(job_.manifest)) { job_ = Job{}; error = "The selected file is incomplete and contains no OTA manifest."; return false; }
   if (esp_partition_read(partition_, 0, &job_.manifest, sizeof(job_.manifest)) != ESP_OK) {
@@ -127,13 +168,23 @@ bool OtaService::finishUpload(String& error) {
     mbedtls_sha256_context hash;
     mbedtls_sha256_init(&hash);
     mbedtls_sha256_starts(&hash, 0);
-    uint8_t buffer[1024], digest[32];
+    constexpr size_t kVerifyChunkSize = 8192;
+    std::unique_ptr<uint8_t[]> chunkBuffer(new (std::nothrow) uint8_t[kVerifyChunkSize]);
+    uint8_t stackBuffer[1024];
+    uint8_t* buffer = chunkBuffer ? chunkBuffer.get() : stackBuffer;
+    const size_t chunkSize = chunkBuffer ? kVerifyChunkSize : sizeof(stackBuffer);
+    uint8_t digest[32];
+    uint32_t sinceYield = 0;
     for (uint32_t offset = 0; offset < job_.manifest.imageSize && ok;) {
-      size_t count = min(sizeof(buffer), static_cast<size_t>(job_.manifest.imageSize - offset));
+      const size_t count = min(chunkSize, static_cast<size_t>(job_.manifest.imageSize - offset));
       ok = esp_partition_read(partition_, sizeof(job_.manifest) + offset, buffer, count) == ESP_OK &&
            mbedtls_sha256_update(&hash, buffer, count) == 0;
       offset += count;
-      delay(1);
+      sinceYield += count;
+      if (sinceYield >= 65536U) {
+        sinceYield = 0;
+        delay(1);
+      }
     }
     ok = ok && mbedtls_sha256_finish(&hash, digest) == 0 && !memcmp(digest, job_.manifest.sha256, 32);
     mbedtls_sha256_free(&hash);
@@ -143,29 +194,76 @@ bool OtaService::finishUpload(String& error) {
   job_.state = lil::ota::State::Waiting;
   job_.failure = lil::ota::Failure::None;
   job_.confirmed = 0;
+  activeNonce_ = 0;
+  hasActiveNonce_ = false;
+  lastRequestMs_ = 0;
   if (!save()) { job_.magic = 0; error = "Cannot persist update job"; return false; }
   return true;
 }
-void OtaService::abortUpload() { Lock lock(mutex_); uploading_ = false; uploadFailed_ = true; clearReadCache(); }
+void OtaService::abortUpload() {
+  Lock lock(mutex_);
+  if (!lock.held) return;
+  uploading_.store(false, std::memory_order_release); uploadFailed_ = true; written_ = erased_ = 0; clearReadCache();
+}
 bool OtaService::cancel() {
   Lock lock(mutex_);
-  if (uploading_) return false;
+  if (!lock.held || uploading_.load(std::memory_order_acquire) || job_.magic != kJobMagic) return false;
   const Job previous = job_;
   job_.state = lil::ota::State::Cancelled;
   const bool saved = save();
   if (!saved) job_ = previous;
-  else clearReadCache();
+  else {
+    activeNonce_ = 0;
+    hasActiveNonce_ = false;
+    lastRequestMs_ = 0;
+    clearReadCache();
+  }
   return saved;
 }
 void OtaService::forget(const uint8_t* mac) {
   Lock lock(mutex_);
+  if (!lock.held || uploading_.load(std::memory_order_acquire)) return;
   for (auto& node : nodes_) if (!mac || !memcmp(node.mac, mac, 6)) node = Node{};
   preferences_.putBytes("nodes", nodes_, sizeof(nodes_));
-  if (!mac || !memcmp(job_.mac, mac, 6)) { job_ = Job{}; save(); activeNonce_ = 0; clearReadCache(); }
+  if (!mac || !memcmp(job_.mac, mac, 6)) {
+    job_ = Job{};
+    save();
+    activeNonce_ = 0;
+    hasActiveNonce_ = false;
+    lastRequestMs_ = 0;
+    clearReadCache();
+  }
 }
 bool OtaService::readImage(uint32_t offset, uint8_t* output, size_t size) {
   // Called only with the job lock held and after the usual target/nonce checks.
   // A failed allocation or speculative read must retain the direct-read path.
+#ifdef ESP_PLATFORM
+  if (!readCache_) {
+    readCache_ = static_cast<uint8_t*>(
+        heap_caps_malloc(kPsramReadCacheSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (readCache_) {
+      readCacheCapacity_ = kPsramReadCacheSize;
+      readCachePsram_ = true;
+    } else {
+      readCache_ = new (std::nothrow) uint8_t[kReadCacheSize];
+      readCacheCapacity_ = readCache_ ? kReadCacheSize : 0;
+      readCachePsram_ = false;
+    }
+  }
+  if (readCache_ && readCacheCapacity_ >= size) {
+    bool hit = offset >= readCacheOffset_ && readCacheBytes_ >= size &&
+        offset - readCacheOffset_ <= readCacheBytes_ - size;
+    if (!hit) {
+      readCacheBytes_ = 0;
+      const size_t count = min(readCacheCapacity_, size_t(job_.manifest.imageSize - offset));
+      if (esp_partition_read(partition_, sizeof(lil::ota::Manifest) + offset,
+                             readCache_, count) == ESP_OK) {
+        readCacheOffset_ = offset; readCacheBytes_ = count; hit = true;
+      }
+    }
+    if (hit) { memcpy(output, readCache_ + (offset - readCacheOffset_), size); return true; }
+  }
+#else
   if (!readCache_) readCache_.reset(new (std::nothrow) uint8_t[kReadCacheSize]);
   if (readCache_) {
     bool hit = offset >= readCacheOffset_ && readCacheBytes_ >= size &&
@@ -180,14 +278,21 @@ bool OtaService::readImage(uint32_t offset, uint8_t* output, size_t size) {
     }
     if (hit) { memcpy(output, readCache_.get() + (offset - readCacheOffset_), size); return true; }
   }
+#endif
   return esp_partition_read(partition_, sizeof(lil::ota::Manifest) + offset, output, size) == ESP_OK;
 }
 bool OtaService::respond(const uint8_t mac[6], const lil::ota::Packet& request,
                         lil::ota::Packet& response) {
   using namespace lil::ota;
-  Lock lock(mutex_, 0);
   // Upload erases and package verification must not stall normal telemetry.
-  // The node retries its pull request when the staging lock is available.
+  // Allow a brief bounded wait when no upload is active so short /api/ota web
+  // polls cannot drop in-flight ESP-NOW OTA blocks.
+  if (uploading_.load(std::memory_order_acquire)) return false;
+#ifdef ESP_PLATFORM
+  Lock lock(mutex_, pdMS_TO_TICKS(5));
+#else
+  Lock lock(mutex_, 0);
+#endif
   if (!lock.held) return false;
   const auto& q = request.payload;
   auto& r = response.payload;
@@ -198,7 +303,7 @@ bool OtaService::respond(const uint8_t mac[6], const lil::ota::Packet& request,
   if (q.op == Op::Hello && q.size == sizeof(Identity)) {
     Identity identity{};
     memcpy(&identity, q.data, sizeof(identity));
-    if (!validIdentity(identity)) return false;
+    if (!validIdentity(identity) || !identity.release) return false;
     Node* slot = nullptr;
     for (auto& n : nodes_) {
       if (!memcmp(n.mac, mac, 6)) { slot = &n; break; }
@@ -206,15 +311,20 @@ bool OtaService::respond(const uint8_t mac[6], const lil::ota::Packet& request,
     }
     if (slot) {
       // Battery changes are live diagnostics, not reasons to wear NVS.
-      const bool changed = slot->identity.release != identity.release ||
+      const bool changed = memcmp(slot->mac, mac, 6) != 0 ||
+                           slot->identity.release != identity.release ||
+                           slot->identity.pcb != identity.pcb ||
+                           strncmp(slot->identity.version, identity.version,
+                                   sizeof(identity.version)) != 0 ||
                            memcmp(slot->identity.build, identity.build, 32) != 0;
       memcpy(slot->mac, mac, 6); slot->identity = identity;
       if (changed) preferences_.putBytes("nodes", nodes_, sizeof(nodes_));
     }
     if (target && active(job_.state)) {
       activeNonce_ = q.nonce;
+      hasActiveNonce_ = true;
       if (identity.pcb != job_.manifest.pcb) { job_.state = State::Rejected; save(); }
-      else if (identity.release == job_.manifest.release && q.state == State::Success) {
+      else if (identity.release >= job_.manifest.release && q.state == State::Success) {
         job_.state = State::Success; job_.confirmed = job_.manifest.imageSize; save();
       } else if (q.state == State::RolledBack) {
         job_.state = State::RolledBack;
@@ -223,11 +333,15 @@ bool OtaService::respond(const uint8_t mac[6], const lil::ota::Packet& request,
       }
       else if (identity.release < job_.manifest.release) {
         r.op = Op::Offer; r.size = sizeof(Manifest);
+#ifdef ESP_PLATFORM
+        r.offset = kOfferCompactRead | kOfferLargeBlock;
+#else
         r.offset = kOfferCompactRead;
+#endif
         memcpy(r.data, &job_.manifest, sizeof(Manifest));
       }
     }
-  } else if (target && q.nonce == activeNonce_ && active(job_.state) && !uploading_ && partition_) {
+  } else if (target && hasActiveNonce_ && q.nonce == activeNonce_ && active(job_.state) && !uploading_.load(std::memory_order_acquire) && partition_) {
     if (q.op == Op::Read && q.offset < job_.manifest.imageSize) {
       r.size = min(static_cast<uint32_t>(kBlockSize), job_.manifest.imageSize - q.offset);
       if (!readImage(q.offset, r.data, r.size)) return false;
@@ -247,27 +361,91 @@ bool OtaService::respond(const uint8_t mac[6], const lil::ota::Packet& request,
   }
   if (target) {
     if (!active(job_.state)) clearReadCache();
-    lastRequestMs_ = millis();
+    lastRequestMs_ = monotonicNowMs();
   }
   lil::protocol::finalize(response, kMessageType, request.header.sequence);
   return true;
 }
+
+size_t OtaService::respondWire(const uint8_t mac[6],
+                               const lil::ota::Packet& request,
+                               uint8_t* wireOut, size_t wireCap) {
+  using namespace lil::ota;
+  if (request.payload.op == Op::Read &&
+      request.payload.size == kLargeBlockSize &&
+      wireCap >= sizeof(LargePacket)) {
+    bool fallthroughToIdle = false;
+    {
+      if (uploading_.load(std::memory_order_acquire)) return 0;
+#ifdef ESP_PLATFORM
+      Lock lock(mutex_, pdMS_TO_TICKS(5));
+#else
+      Lock lock(mutex_, 0);
+#endif
+      if (!lock.held) return 0;
+      const auto& q = request.payload;
+      const bool target = job_.magic == kJobMagic && !memcmp(mac, job_.mac, 6);
+      if (!target || !hasActiveNonce_ || q.nonce != activeNonce_ || !active(job_.state) ||
+          uploading_.load(std::memory_order_acquire) || !partition_ || q.offset >= job_.manifest.imageSize) {
+        fallthroughToIdle = true;
+      } else {
+        auto* large = reinterpret_cast<LargePacket*>(wireOut);
+        memset(large, 0, sizeof(LargePacket));
+        large->payload.nonce = q.nonce;
+        large->payload.offset = q.offset;
+        large->payload.op = Op::Data;
+        large->payload.size = static_cast<uint16_t>(
+            min(static_cast<uint32_t>(kLargeBlockSize),
+                job_.manifest.imageSize - q.offset));
+        if (!readImage(q.offset, large->payload.data, large->payload.size)) {
+          return 0;
+        }
+        job_.confirmed = q.offset;
+        job_.state = State::Transferring;
+        lastRequestMs_ = monotonicNowMs();
+        const size_t payloadLen = offsetof(LargePayload, data) + large->payload.size;
+        const size_t wireLen = sizeof(lil::protocol::PacketHeader) + payloadLen;
+        lil::protocol::finalizePacket(large, wireLen, kMessageType,
+                                      request.header.sequence, payloadLen);
+        return wireLen;
+      }
+    }
+    if (!fallthroughToIdle) return 0;
+  }
+  if (wireCap < sizeof(Packet)) return 0;
+  Packet response{};
+  if (!respond(mac, request, response)) return 0;
+  memcpy(wireOut, &response, sizeof(Packet));
+  return sizeof(Packet);
+}
 void OtaService::json(JsonObject output) {
   Lock lock(mutex_);
+  if (!lock.held) {
+    output["available"] = false;
+    output["uploading"] = false;
+    return;
+  }
   output["available"] = partition_ != nullptr;
-  output["uploading"] = uploading_;
+  output["uploading"] = uploading_.load(std::memory_order_acquire);
   JsonArray nodes = output["nodes"].to<JsonArray>();
+  char macBuf[18];
   for (const auto& n : nodes_) if (n.identity.release) {
     JsonObject node = nodes.add<JsonObject>();
-    node["mac"] = macText(n.mac); node["pcb"] = n.identity.pcb;
+    formatMacText(n.mac, macBuf);
+    node["mac"] = macBuf; node["pcb"] = n.identity.pcb;
     node["version"] = n.identity.version; node["release"] = uint32_t(n.identity.release);
     char build[17]; for (size_t i = 0; i < 8; ++i) snprintf(build + i * 2, 3, "%02x", n.identity.build[i]);
     node["build"] = build;
   }
   if (job_.magic == kJobMagic) {
-    output["mac"] = macText(job_.mac); output["targetVersion"] = job_.manifest.version;
+    formatMacText(job_.mac, macBuf);
+    output["mac"] = macBuf; output["targetVersion"] = job_.manifest.version;
     auto state = job_.state;
-    if (state == lil::ota::State::Transferring && millis() - lastRequestMs_ > 15000) state = lil::ota::State::Paused;
+    const uint64_t nowMs = monotonicNowMs();
+    if (state == lil::ota::State::Transferring &&
+        nowMs >= lastRequestMs_ && nowMs - lastRequestMs_ > 15000ULL) {
+      state = lil::ota::State::Paused;
+    }
     output["state"] = lil::ota::stateName(state);
     output["reason"] = lil::ota::failureName(job_.failure);
     output["bytes"] = job_.confirmed; output["total"] = uint32_t(job_.manifest.imageSize);
