@@ -57,7 +57,7 @@ applies a confirmed mutation to the local configuration, independently of
 browser polling. The legacy API remains available in synchronous mode, where
 TLS, response headers and a pending cloud upload can still delay local web
 requests. See the
-[background mutation comparison](PERFORMANCE_FOLLOWUP_2026-11-09.md#background-thingspeak-channel-mutations).
+[background mutation comparison](https://github.com/Ans1S/esp32-c3-iot-sensor-board/blob/v4.4.5/Firmware/PERFORMANCE_FOLLOWUP_2026-11-09.md#background-thingspeak-channel-mutations).
 
 The sensor waits for its acquisition task to release the rail before battery
 protection, OTA or sleep, and restarts if cooperative waiting exceeds ten

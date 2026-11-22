@@ -125,12 +125,21 @@ int main() {
   assert(!service.cancel()); checkData(send(service, request), image, 60000);
   assert(service.cancel());
   for (auto& byte : image) byte ^= 0x7A;
-  stage(service, image, kRelease + 2); assert(send(service, hello(102)).payload.op == Op::Offer);
+  stage(service, image, kRelease + 2);
+  // Stale reads carrying the previous session's nonce must be rejected until a
+  // fresh Op::Hello handshake establishes a new active session nonce.
+  request.payload.nonce = 91; request.payload.offset = 0;
+  assert(send(service, request).payload.op == Op::Idle);
+  assert(send(service, hello(102)).payload.op == Op::Offer);
   request.payload.nonce = 102; request.payload.offset = 0;
   checkData(send(service, request), image, 0);
   request.payload.nonce = 91; assert(send(service, request).payload.op == Op::Idle);
   station::OtaService reboot;
-  assert(reboot.begin()); assert(send(reboot, hello(103)).payload.op == Op::Offer);
+  assert(reboot.begin());
+  // After reboot, nonce 0 must not bypass Op::Hello.
+  request.payload.nonce = 0; request.payload.offset = 0;
+  assert(send(reboot, request).payload.op == Op::Idle);
+  assert(send(reboot, hello(103)).payload.op == Op::Offer);
   request.payload.nonce = 103; request.payload.offset = 16384;
   checkData(send(reboot, request), image, 16384);
   assert(reboot.cancel());
@@ -154,5 +163,27 @@ int main() {
   request.payload.offset = image.size(); assert(send(reboot, request).payload.op == Op::Idle);
   request.payload.offset = UINT32_MAX; assert(send(reboot, request).payload.op == Op::Idle);
   assert(stagingReads.size() == endReads);
+  // Exercise 1024-byte LargePacket wire framing, readPacketType and CRC validation.
+  Packet largeReq{};
+  largeReq.header.sequence = 9001;
+  largeReq.payload.nonce = 106;
+  largeReq.payload.op = Op::Read;
+  largeReq.payload.offset = 0;
+  largeReq.payload.size = kLargeBlockSize;
+  lil::protocol::finalizePacket(&largeReq, kCompactReadPacketSize, kMessageType,
+                                largeReq.header.sequence, kCompactReadPayloadSize);
+  Packet decodedLargeReq{};
+  assert(decodeRequest(reinterpret_cast<const uint8_t*>(&largeReq), kCompactReadPacketSize, decodedLargeReq));
+  LargePacket largeWire{};
+  const size_t wireLen = reboot.respondWire(mac, decodedLargeReq,
+                                            reinterpret_cast<uint8_t*>(&largeWire), sizeof(largeWire));
+  assert(wireLen == sizeof(LargePacket));
+  lil::protocol::MessageType wireType{};
+  assert(lil::protocol::readPacketType(reinterpret_cast<const uint8_t*>(&largeWire), wireLen, wireType));
+  assert(wireType == kMessageType);
+  assert(lil::protocol::validatePacket(&largeWire, wireLen, kMessageType,
+                                       wireLen - sizeof(lil::protocol::PacketHeader)));
+  assert(largeWire.payload.op == Op::Data && largeWire.payload.size == kLargeBlockSize);
+  assert(!memcmp(largeWire.payload.data, image.data(), kLargeBlockSize));
   puts("Station OTA: exact blocks/CRCs, tail/retry/resume, job replacement, nonce, busy lock, read/allocation fallbacks, durable cancel and signature/digest guards passed");
 }

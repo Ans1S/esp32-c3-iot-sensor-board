@@ -4,22 +4,53 @@
 #include <LittleFS.h>
 #include <WiFi.h>
 #include <esp_partition.h>
+#include <memory>
+#include <new>
 
 namespace station {
 
 namespace {
 constexpr char kNamespace[] = "lil_station";
 constexpr char kStationKey[] = "station";
+constexpr uint32_t kCompactIdentitiesMagic = 0x32444953UL;  // "SID2"
+
+#pragma pack(push, 1)
+struct CompactIdentitiesHeader {
+  uint32_t magic = kCompactIdentitiesMagic;
+  uint16_t count = 0;
+  uint16_t reserved = 0;
+};
+#pragma pack(pop)
+
+struct NvsLock {
+  SemaphoreHandle_t mutex;
+  explicit NvsLock(SemaphoreHandle_t m) : mutex(m) {
+    if (mutex) xSemaphoreTake(mutex, portMAX_DELAY);
+  }
+  ~NvsLock() {
+    if (mutex) xSemaphoreGive(mutex);
+  }
+};
 
 bool filesystemPartitionErased() {
   const esp_partition_t* partition = esp_partition_find_first(
       ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, "spiffs");
   if (!partition || !partition->size) return false;
-  uint8_t bytes[1024];
-  for (size_t offset = 0; offset < partition->size; offset += sizeof(bytes)) {
-    const size_t count = min(sizeof(bytes), size_t(partition->size) - offset);
+  constexpr size_t kChunkBytes = 4096;
+  std::unique_ptr<uint8_t[]> heapBuffer(new (std::nothrow) uint8_t[kChunkBytes]);
+  uint8_t stackFallback[1024];
+  uint8_t* bytes = heapBuffer ? heapBuffer.get() : stackFallback;
+  const size_t chunkSize = heapBuffer ? kChunkBytes : sizeof(stackFallback);
+  for (size_t offset = 0; offset < partition->size; offset += chunkSize) {
+    const size_t count = min(chunkSize, size_t(partition->size) - offset);
     if (esp_partition_read(partition, offset, bytes, count) != ESP_OK) return false;
-    for (size_t i = 0; i < count; ++i) if (bytes[i] != 0xFF) return false;
+    size_t i = 0;
+    for (; i + sizeof(uint32_t) <= count; i += sizeof(uint32_t)) {
+      uint32_t word;
+      memcpy(&word, bytes + i, sizeof(word));
+      if (word != 0xFFFFFFFFUL) return false;
+    }
+    for (; i < count; ++i) if (bytes[i] != 0xFF) return false;
     if (offset && offset % (64U * 1024U) == 0) delay(1);
   }
   return true;
@@ -190,26 +221,20 @@ void migrateStationBase(const Legacy& legacy, StationConfig& config) {
   config.setupPortalRequired = true;
 }
 
-String sensorKey(size_t index) {
-  return "node" + String(index);
+void formatSensorKey(size_t index, char (&out)[16]) {
+  snprintf(out, sizeof(out), "node%u", static_cast<unsigned>(index));
 }
 
-String historyKey(size_t index) {
-  return "/history-" + String(index) + ".bin";
+void formatHistoryPath(size_t index, char (&out)[32]) {
+  snprintf(out, sizeof(out), "/history-%u.bin", static_cast<unsigned>(index));
 }
 
-String latestTelemetryKey(size_t index) {
-  return "/latest-" + String(index) + ".bin";
+void formatLatestTelemetryPath(size_t index, char (&out)[32]) {
+  snprintf(out, sizeof(out), "/latest-%u.bin", static_cast<unsigned>(index));
 }
 
 bool validSensorType(lil::protocol::EnvironmentalSensorType type) {
-  return type == lil::protocol::EnvironmentalSensorType::kAutoDetect ||
-         type == lil::protocol::EnvironmentalSensorType::kBme280 ||
-      type == lil::protocol::EnvironmentalSensorType::kLsm6dsox ||
-      type == lil::protocol::EnvironmentalSensorType::kTmp117 ||
-      type == lil::protocol::EnvironmentalSensorType::kMax30102 ||
-         type == lil::protocol::EnvironmentalSensorType::kBme680 ||
-         type == lil::protocol::EnvironmentalSensorType::kDisabled;
+  return lil::protocol::isValidSensorType(type);
 }
 
 bool validAdminPasswordHash(const char* hash) {
@@ -233,15 +258,20 @@ bool validAdminPasswordHash(const char* hash) {
 }  // namespace
 
 bool ConfigStore::begin() {
-  if(!initializeFilesystemLock())return false;
+  if (!initializeFilesystemLock()) return false;
+  if (!nvsMutex_) nvsMutex_ = xSemaphoreCreateMutex();
+  if (!nvsMutex_) return false;
+  NvsLock nvsLock(nvsMutex_);
   if (!preferences_.begin(kNamespace, false)) return false;
-  storageAvailable_ = LittleFS.begin(false);
+  FilesystemGuard fsGuard;
+  bool mounted = LittleFS.begin(false);
   // A mount error must never erase existing recordings. Initialize storage
   // automatically only when every byte belongs to an erased new partition.
-  if (!storageAvailable_ && filesystemPartitionErased()) {
-    storageAvailable_ = LittleFS.format() && LittleFS.begin(false);
+  if (!mounted && filesystemPartitionErased()) {
+    mounted = LittleFS.format() && LittleFS.begin(false);
   }
-  if (!storageAvailable_) {
+  storageAvailable_.store(mounted, std::memory_order_release);
+  if (!mounted) {
     Serial.printf("[Storage] Filesystem unavailable; existing data preserved. History and recording synchronization are disabled until recovery.\n");
   }
   // NVS settings, radio acknowledgements and the recovery UI remain usable.
@@ -298,8 +328,11 @@ void ConfigStore::applyDefaults(StationConfig& config) {
 }
 
 StationConfig ConfigStore::loadStationConfig() {
+  NvsLock lock(nvsMutex_);
   StationConfig config{};
-  const size_t stored = preferences_.getBytesLength(kStationKey);
+  const size_t stored = preferences_.isKey(kStationKey)
+                            ? preferences_.getBytesLength(kStationKey)
+                            : 0;
   if (stored == sizeof(config)) {
     if (preferences_.getBytes(kStationKey, &config, sizeof(config)) != sizeof(config)) {
       applyDefaults(config);
@@ -322,17 +355,17 @@ StationConfig ConfigStore::loadStationConfig() {
       copyStoredText(profile.readApiKey, legacy.thingSpeakReadApiKey);
       copyStoredText(profile.writeApiKey, legacy.thingSpeakWriteApiKey);
     }
-    saveStationConfig(config);
+    saveStationConfigLocked(config);
   } else if (stored == sizeof(LegacyStationConfigV3)) {
     LegacyStationConfigV3 legacy{};
     if (preferences_.getBytes(kStationKey, &legacy, sizeof(legacy)) != sizeof(legacy)) {
       applyDefaults(config); return config;
     }
     migrateStationBase(legacy, config);
-    saveStationConfig(config);
+    saveStationConfigLocked(config);
   } else {
     applyDefaults(config);
-    saveStationConfig(config);
+    saveStationConfigLocked(config);
     return config;
   }
 
@@ -342,39 +375,61 @@ StationConfig ConfigStore::loadStationConfig() {
       config.defaultSleepSeconds > kMaxSleepSeconds ||
       config.fallbackWifiChannel < 1 || config.fallbackWifiChannel > 13) {
     applyDefaults(config);
-    saveStationConfig(config);
-  } else if (!validAdminPasswordHash(config.adminPassword)) {
-    // Older development builds never stored a usable website password. Avoid
-    // locking the owner out if that previously reserved field contains data.
-    config.adminPassword[0] = '\0';
-    saveStationConfig(config);
+    saveStationConfigLocked(config);
+  } else {
+    bool repaired = false;
+    if (!validAdminPasswordHash(config.adminPassword)) {
+      // Older development builds never stored a usable website password. Avoid
+      // locking the owner out if that previously reserved field contains data.
+      config.adminPassword[0] = '\0';
+      repaired = true;
+    }
+    if (config.hostname[0] == '\0') {
+      strlcpy(config.hostname, "w-charger", sizeof(config.hostname));
+      repaired = true;
+    }
+    if (strlen(config.accessPointPassword) < 8) {
+      strlcpy(config.accessPointPassword, kDefaultSetupPassword,
+              sizeof(config.accessPointPassword));
+      repaired = true;
+    }
+    if (repaired) saveStationConfigLocked(config);
   }
   return config;
 }
 
-bool ConfigStore::saveStationConfig(const StationConfig& config) {
+bool ConfigStore::saveStationConfigLocked(const StationConfig& config) {
   return preferences_.putBytes(kStationKey, &config, sizeof(config)) == sizeof(config);
+}
+
+bool ConfigStore::saveStationConfig(const StationConfig& config) {
+  NvsLock lock(nvsMutex_);
+  return saveStationConfigLocked(config);
 }
 
 bool ConfigStore::loadSensorConfigs(SensorConfig* configs, size_t count) {
   if (configs == nullptr) {
     return false;
   }
+  NvsLock lock(nvsMutex_);
 
   for (size_t i = 0; i < count; ++i) {
-    const String key = sensorKey(i);
+    char key[16];
+    formatSensorKey(i, key);
     // Preferences reports each absent node as an error.  Empty registry slots
     // are expected on every normal boot, so check the key before asking NVS
     // for its size.
-    const size_t stored = preferences_.isKey(key.c_str())
-                              ? preferences_.getBytesLength(key.c_str())
+    const size_t stored = preferences_.isKey(key)
+                              ? preferences_.getBytesLength(key)
                               : 0;
     if (stored == sizeof(SensorConfig)) {
-      if (preferences_.getBytes(key.c_str(), &configs[i], sizeof(SensorConfig)) != sizeof(SensorConfig)) {
+      if (preferences_.getBytes(key, &configs[i], sizeof(SensorConfig)) != sizeof(SensorConfig)) {
         configs[i] = SensorConfig{}; continue;
       }
       if (configs[i].storageVersion != kSensorStorageVersion) {
         configs[i] = SensorConfig{};
+        preferences_.remove(key);
+        continue;
       } else if (configs[i].thingSpeakProfileSlot >= kMaxThingSpeakChannels) {
         configs[i].thingSpeakProfileSlot = 0xFF;
       }
@@ -389,11 +444,11 @@ bool ConfigStore::loadSensorConfigs(SensorConfig* configs, size_t count) {
             lil::protocol::EnvironmentalSensorType::kAutoDetect;
         configs[i].temperatureOffsetC = 0.466F;
         configs[i].batteryCalibrationFactor = 1.0F;
-        saveSensorConfig(i, configs[i]);
+        saveSensorConfigLocked(i, configs[i]);
       }
     } else if (stored == sizeof(LegacySensorConfigV5)) {
       LegacySensorConfigV5 legacy{};
-      if (preferences_.getBytes(key.c_str(), &legacy, sizeof(legacy)) != sizeof(legacy)) {
+      if (preferences_.getBytes(key, &legacy, sizeof(legacy)) != sizeof(legacy)) {
         configs[i] = SensorConfig{}; continue;
       }
       migrateSensorBase(legacy, configs[i]);
@@ -407,10 +462,10 @@ bool ConfigStore::loadSensorConfigs(SensorConfig* configs, size_t count) {
       configs[i].environmentalSensorType = legacy.environmentalSensorType;
       configs[i].temperatureOffsetC = legacy.temperatureOffsetC;
       configs[i].batteryCalibrationFactor = legacy.batteryCalibrationFactor;
-      saveSensorConfig(i, configs[i]);
+      saveSensorConfigLocked(i, configs[i]);
     } else if (stored == sizeof(LegacySensorConfigV4)) {
       LegacySensorConfigV4 legacy{};
-      if (preferences_.getBytes(key.c_str(), &legacy, sizeof(legacy)) != sizeof(legacy)) {
+      if (preferences_.getBytes(key, &legacy, sizeof(legacy)) != sizeof(legacy)) {
         configs[i] = SensorConfig{}; continue;
       }
       migrateSensorBase(legacy, configs[i]);
@@ -423,10 +478,10 @@ bool ConfigStore::loadSensorConfigs(SensorConfig* configs, size_t count) {
               : 0xFF;
       configs[i].environmentalSensorType = legacy.environmentalSensorType;
       configs[i].temperatureOffsetC = legacy.temperatureOffsetC;
-      saveSensorConfig(i, configs[i]);
+      saveSensorConfigLocked(i, configs[i]);
     } else if (stored == sizeof(LegacySensorConfigV3)) {
       LegacySensorConfigV3 legacy{};
-      if (preferences_.getBytes(key.c_str(), &legacy, sizeof(legacy)) != sizeof(legacy)) {
+      if (preferences_.getBytes(key, &legacy, sizeof(legacy)) != sizeof(legacy)) {
         configs[i] = SensorConfig{}; continue;
       }
       migrateSensorBase(legacy, configs[i]);
@@ -438,10 +493,10 @@ bool ConfigStore::loadSensorConfigs(SensorConfig* configs, size_t count) {
           legacy.thingSpeakProfileSlot < kMaxThingSpeakChannels
               ? legacy.thingSpeakProfileSlot
               : 0xFF;
-      saveSensorConfig(i, configs[i]);
+      saveSensorConfigLocked(i, configs[i]);
     } else if (stored == sizeof(LegacySensorConfigV2)) {
       LegacySensorConfigV2 legacy{};
-      if (preferences_.getBytes(key.c_str(), &legacy, sizeof(legacy)) != sizeof(legacy)) {
+      if (preferences_.getBytes(key, &legacy, sizeof(legacy)) != sizeof(legacy)) {
         configs[i] = SensorConfig{}; continue;
       }
       migrateSensorBase(legacy, configs[i]);
@@ -450,17 +505,17 @@ bool ConfigStore::loadSensorConfigs(SensorConfig* configs, size_t count) {
                        configs[i].thingSpeakFields);
       configs[i].provisioned = false;
       configs[i].thingSpeakProfileSlot = 0xFF;
-      saveSensorConfig(i, configs[i]);
+      saveSensorConfigLocked(i, configs[i]);
     } else if (stored == sizeof(LegacySensorConfig)) {
       LegacySensorConfig legacy{};
-      if (preferences_.getBytes(key.c_str(), &legacy, sizeof(legacy)) != sizeof(legacy)) {
+      if (preferences_.getBytes(key, &legacy, sizeof(legacy)) != sizeof(legacy)) {
         configs[i] = SensorConfig{}; continue;
       }
       migrateSensorBase(legacy, configs[i]);
       configs[i].cloudUploadEnabled = false;
       configs[i].provisioned = false;
       configs[i].thingSpeakProfileSlot = 0xFF;
-      saveSensorConfig(i, configs[i]);
+      saveSensorConfigLocked(i, configs[i]);
     } else {
       configs[i] = SensorConfig{};
     }
@@ -468,84 +523,156 @@ bool ConfigStore::loadSensorConfigs(SensorConfig* configs, size_t count) {
     // control radio timing, string operations or cloud field selection.
     const SensorConfig previous = configs[i];
     sanitizeSensorConfig(configs[i]);
-    if (memcmp(&previous, &configs[i], sizeof(previous))) saveSensorConfig(i, configs[i]);
+    if (memcmp(&previous, &configs[i], sizeof(previous))) saveSensorConfigLocked(i, configs[i]);
   }
   return true;
 }
 
-bool ConfigStore::saveSensorConfig(size_t index, const SensorConfig& config) {
+bool ConfigStore::saveSensorConfigLocked(size_t index, const SensorConfig& config) {
   if (index >= kMaxSensors) {
     return false;
   }
-  const String key = sensorKey(index);
-  return preferences_.putBytes(key.c_str(), &config, sizeof(config)) == sizeof(config);
+  char key[16];
+  formatSensorKey(index, key);
+  return preferences_.putBytes(key, &config, sizeof(config)) == sizeof(config);
+}
+
+bool ConfigStore::saveSensorConfig(size_t index, const SensorConfig& config) {
+  NvsLock lock(nvsMutex_);
+  return saveSensorConfigLocked(index, config);
 }
 
 bool ConfigStore::deleteSensorConfig(size_t index) {
   if (index >= kMaxSensors) {
     return false;
   }
-  const String key = sensorKey(index);
-  return !preferences_.isKey(key.c_str()) || preferences_.remove(key.c_str());
+  NvsLock lock(nvsMutex_);
+  char key[16];
+  formatSensorKey(index, key);
+  return !preferences_.isKey(key) || preferences_.remove(key);
 }
 
 bool ConfigStore::loadSensorIdentities(SensorIdentity* identities, size_t count) {
   if (!identities || count != kMaxSensorIdentities) return false;
-  const size_t bytes = count * sizeof(SensorIdentity);
+  NvsLock lock(nvsMutex_);
+  for (size_t i = 0; i < count; ++i) identities[i] = SensorIdentity{};
   if (!preferences_.isKey("identities1")) return true;
-  if (preferences_.getBytesLength("identities1") != bytes ||
-      preferences_.getBytes("identities1", identities, bytes) != bytes) return false;
+  const size_t fullBytes = count * sizeof(SensorIdentity);
+  const size_t stored = preferences_.getBytesLength("identities1");
+  if (stored == fullBytes) {
+    if (preferences_.getBytes("identities1", identities, fullBytes) != fullBytes) {
+      return false;
+    }
+  } else if (stored >= sizeof(CompactIdentitiesHeader) &&
+             (stored - sizeof(CompactIdentitiesHeader)) % sizeof(SensorIdentity) == 0) {
+    const size_t entries = (stored - sizeof(CompactIdentitiesHeader)) / sizeof(SensorIdentity);
+    if (entries > count) return false;
+    std::unique_ptr<uint8_t[]> raw(new (std::nothrow) uint8_t[stored]);
+    if (!raw || preferences_.getBytes("identities1", raw.get(), stored) != stored) {
+      return false;
+    }
+    CompactIdentitiesHeader header{};
+    memcpy(&header, raw.get(), sizeof(header));
+    if (header.magic != kCompactIdentitiesMagic || header.count != entries) {
+      return false;
+    }
+    if (entries > 0) {
+      memcpy(identities, raw.get() + sizeof(header),
+             entries * sizeof(SensorIdentity));
+    }
+  } else {
+    return false;
+  }
   for (size_t i = 0; i < count; ++i) {
     identities[i].name[24] = '\0';
-    if (identities[i].motion.enabled && !validMotionReference(identities[i].motion)) identities[i].motion = {};
+    if (identities[i].motion.enabled && !validMotionReference(identities[i].motion)) {
+      identities[i].motion = {};
+    }
   }
   return true;
 }
 
 bool ConfigStore::saveSensorIdentities(const SensorIdentity* identities, size_t count) {
   if (!identities || count != kMaxSensorIdentities) return false;
-  const size_t bytes = count * sizeof(SensorIdentity);
-  return preferences_.putBytes("identities1", identities, bytes) == bytes;
+  NvsLock lock(nvsMutex_);
+  // Pack only occupied identity slots to save several kilobytes in the 20 KiB
+  // NVS partition while keeping the reader backwards-compatible with legacy
+  // full-array blobs.
+  size_t occupied = 0;
+  for (size_t i = 0; i < count; ++i) {
+    if (identities[i].name[0] != '\0') ++occupied;
+  }
+  const size_t totalBytes =
+      sizeof(CompactIdentitiesHeader) + occupied * sizeof(SensorIdentity);
+  std::unique_ptr<uint8_t[]> blob(new (std::nothrow) uint8_t[totalBytes]);
+  if (!blob) return false;
+  CompactIdentitiesHeader header{};
+  header.count = static_cast<uint16_t>(occupied);
+  memcpy(blob.get(), &header, sizeof(header));
+  size_t cursor = sizeof(header);
+  for (size_t i = 0; i < count; ++i) {
+    if (identities[i].name[0] != '\0') {
+      memcpy(blob.get() + cursor, &identities[i], sizeof(SensorIdentity));
+      cursor += sizeof(SensorIdentity);
+    }
+  }
+  return preferences_.putBytes("identities1", blob.get(), totalBytes) == totalBytes;
 }
 
 size_t ConfigStore::historyBytesLength(size_t index) {
-  if (index >= kMaxSensors) {
+  if (index >= kMaxSensors || !storageAvailable()) {
     return 0;
   }
-  const String key = historyKey(index);
+  FilesystemGuard guard;
+  char key[32];
+  formatHistoryPath(index, key);
   File file = LittleFS.open(key, FILE_READ);
   return file ? file.size() : 0;
 }
 
 DashboardLayout ConfigStore::loadDashboardLayout() {
+  NvsLock lock(nvsMutex_);
   DashboardLayout layout{};
-  if(preferences_.getBytesLength("dashboard1")!=sizeof(layout)||
-     preferences_.getBytes("dashboard1",&layout,sizeof(layout))!=sizeof(layout)||
-     layout.magic!=0x31424457||layout.version!=1||layout.columns>3||layout.comfortable>1||layout.count>kMaxSensors||
-     layout.crc!=lil::protocol::crc32(reinterpret_cast<const uint8_t*>(&layout),offsetof(DashboardLayout,crc)))return {};
+  if (!preferences_.isKey("dashboard1") ||
+      preferences_.getBytesLength("dashboard1") != sizeof(layout) ||
+      preferences_.getBytes("dashboard1", &layout, sizeof(layout)) != sizeof(layout) ||
+      layout.magic != 0x31424457 || layout.version != 1 || layout.columns > 3 ||
+      layout.comfortable > 1 || layout.count > kMaxSensors ||
+      layout.crc != lil::protocol::crc32(reinterpret_cast<const uint8_t*>(&layout),
+                                         offsetof(DashboardLayout, crc))) {
+    return {};
+  }
   return layout;
 }
 bool ConfigStore::saveDashboardLayout(DashboardLayout layout) {
-  if(layout.columns>3||layout.comfortable>1||layout.count>kMaxSensors)return false;
-  layout.magic=0x31424457;layout.version=1;
-  layout.crc=lil::protocol::crc32(reinterpret_cast<const uint8_t*>(&layout),offsetof(DashboardLayout,crc));
-  return preferences_.putBytes("dashboard1",&layout,sizeof(layout))==sizeof(layout);
+  if (layout.columns > 3 || layout.comfortable > 1 || layout.count > kMaxSensors) return false;
+  NvsLock lock(nvsMutex_);
+  layout.magic = 0x31424457; layout.version = 1;
+  layout.crc = lil::protocol::crc32(reinterpret_cast<const uint8_t*>(&layout),
+                                    offsetof(DashboardLayout, crc));
+  return preferences_.putBytes("dashboard1", &layout, sizeof(layout)) == sizeof(layout);
 }
 
 bool ConfigStore::loadHistory(size_t index, void* output, size_t length) {
-  if (index >= kMaxSensors || output == nullptr || length == 0 ||
-      historyBytesLength(index) != length) {
+  if (index >= kMaxSensors || output == nullptr || length == 0 || !storageAvailable()) {
     return false;
   }
-  return loadHistoryRange(index, 0, output, length);
+  FilesystemGuard guard;
+  char key[32];
+  formatHistoryPath(index, key);
+  File file = LittleFS.open(key, FILE_READ);
+  return file && file.size() == length &&
+         file.read(static_cast<uint8_t*>(output), length) == length;
 }
 
 bool ConfigStore::loadHistoryRange(size_t index, size_t offset, void* output,
                                    size_t length) {
-  if (index >= kMaxSensors || output == nullptr || length == 0) {
+  if (index >= kMaxSensors || output == nullptr || length == 0 || !storageAvailable()) {
     return false;
   }
-  const String key = historyKey(index);
+  FilesystemGuard guard;
+  char key[32];
+  formatHistoryPath(index, key);
   File file = LittleFS.open(key, FILE_READ);
   if (!file || offset > file.size() || length > file.size() - offset ||
       !file.seek(offset)) {
@@ -555,11 +682,13 @@ bool ConfigStore::loadHistoryRange(size_t index, size_t offset, void* output,
 }
 
 bool ConfigStore::saveHistory(size_t index, const void* data, size_t length) {
-  if (index >= kMaxSensors || data == nullptr || length == 0) {
+  if (index >= kMaxSensors || data == nullptr || length == 0 || !storageAvailable()) {
     return false;
   }
-  const String key = historyKey(index);
-  const String temporary = key + ".tmp";
+  FilesystemGuard guard;
+  char key[32], temporary[40];
+  formatHistoryPath(index, key);
+  snprintf(temporary, sizeof(temporary), "%s.tmp", key);
   File file = LittleFS.open(temporary, FILE_WRITE);
   if (!file || file.write(static_cast<const uint8_t*>(data), length) != length) {
     if (file) {
@@ -569,18 +698,25 @@ bool ConfigStore::saveHistory(size_t index, const void* data, size_t length) {
     return false;
   }
   file.close();
-  return LittleFS.rename(temporary, key);
+  if (!LittleFS.rename(temporary, key)) {
+    LittleFS.remove(temporary);
+    return false;
+  }
+  noteFilesystemMutation();
+  return true;
 }
 
 bool ConfigStore::saveHistoryParts(size_t index, const void* header,
                                    size_t headerLength, const void* samples,
                                    size_t samplesLength) {
   if (index >= kMaxSensors || header == nullptr || headerLength == 0 ||
-      (samplesLength > 0 && samples == nullptr)) {
+      (samplesLength > 0 && samples == nullptr) || !storageAvailable()) {
     return false;
   }
-  const String key = historyKey(index);
-  const String temporary = key + ".tmp";
+  FilesystemGuard guard;
+  char key[32], temporary[40];
+  formatHistoryPath(index, key);
+  snprintf(temporary, sizeof(temporary), "%s.tmp", key);
   File file = LittleFS.open(temporary, FILE_WRITE);
   const bool headerWritten =
       file && file.write(static_cast<const uint8_t*>(header), headerLength) ==
@@ -598,7 +734,12 @@ bool ConfigStore::saveHistoryParts(size_t index, const void* header,
     return false;
   }
   file.close();
-  return LittleFS.rename(temporary, key);
+  if (!LittleFS.rename(temporary, key)) {
+    LittleFS.remove(temporary);
+    return false;
+  }
+  noteFilesystemMutation();
+  return true;
 }
 
 bool ConfigStore::updateHistory(size_t index, size_t expectedLength,
@@ -608,10 +749,12 @@ bool ConfigStore::updateHistory(size_t index, size_t expectedLength,
   if (index >= kMaxSensors || header == nullptr || headerLength == 0 ||
       sample == nullptr || sampleLength == 0 || sampleOffset < headerLength ||
       sampleOffset > expectedLength ||
-      sampleLength > expectedLength - sampleOffset) {
+      sampleLength > expectedLength - sampleOffset || !storageAvailable()) {
     return false;
   }
-  const String key = historyKey(index);
+  FilesystemGuard guard;
+  char key[32];
+  formatHistoryPath(index, key);
   File file = LittleFS.open(key, "r+");
   if (!file || file.size() != expectedLength || !file.seek(sampleOffset) ||
       file.write(static_cast<const uint8_t*>(sample), sampleLength) !=
@@ -629,20 +772,26 @@ bool ConfigStore::updateHistory(size_t index, size_t expectedLength,
 }
 
 bool ConfigStore::deleteHistory(size_t index) {
-  if (index >= kMaxSensors || !storageAvailable_) {
+  if (index >= kMaxSensors || !storageAvailable()) {
     return false;
   }
   FilesystemGuard guard;
-  const String key = historyKey(index);
-  return !LittleFS.exists(key) || LittleFS.remove(key);
+  char key[32];
+  formatHistoryPath(index, key);
+  if (!LittleFS.exists(key)) return true;
+  const bool removed = LittleFS.remove(key);
+  if (removed) noteFilesystemMutation();
+  return removed;
 }
 
 bool ConfigStore::loadLatestTelemetry(size_t index, void* output,
                                       size_t length) {
-  if (index >= kMaxSensors || output == nullptr || length == 0) {
+  if (index >= kMaxSensors || output == nullptr || length == 0 || !storageAvailable()) {
     return false;
   }
-  const String key = latestTelemetryKey(index);
+  FilesystemGuard guard;
+  char key[32];
+  formatLatestTelemetryPath(index, key);
   File file = LittleFS.open(key, FILE_READ);
   return file && file.size() == length &&
          file.read(static_cast<uint8_t*>(output), length) == length;
@@ -650,12 +799,13 @@ bool ConfigStore::loadLatestTelemetry(size_t index, void* output,
 
 bool ConfigStore::saveLatestTelemetry(size_t index, const void* data,
                                       size_t length) {
-  if (index >= kMaxSensors || data == nullptr || length == 0) {
+  if (index >= kMaxSensors || data == nullptr || length == 0 || !storageAvailable()) {
     return false;
   }
   FilesystemGuard guard;
-  const String key = latestTelemetryKey(index);
-  const String temporary = key + ".tmp";
+  char key[32], temporary[40];
+  formatLatestTelemetryPath(index, key);
+  snprintf(temporary, sizeof(temporary), "%s.tmp", key);
   File file = LittleFS.open(temporary, FILE_WRITE);
   if (!file || file.write(static_cast<const uint8_t*>(data), length) != length) {
     if (file) {
@@ -665,22 +815,35 @@ bool ConfigStore::saveLatestTelemetry(size_t index, const void* data,
     return false;
   }
   file.close();
-  return LittleFS.rename(temporary, key);
+  if (!LittleFS.rename(temporary, key)) {
+    LittleFS.remove(temporary);
+    return false;
+  }
+  noteFilesystemMutation();
+  return true;
 }
 
 bool ConfigStore::deleteLatestTelemetry(size_t index) {
-  if (index >= kMaxSensors || !storageAvailable_) {
+  if (index >= kMaxSensors || !storageAvailable()) {
     return false;
   }
   FilesystemGuard guard;
-  const String key = latestTelemetryKey(index);
-  return !LittleFS.exists(key) || LittleFS.remove(key);
+  char key[32];
+  formatLatestTelemetryPath(index, key);
+  if (!LittleFS.exists(key)) return true;
+  const bool removed = LittleFS.remove(key);
+  if (removed) noteFilesystemMutation();
+  return removed;
 }
 
 bool ConfigStore::factoryReset() {
+  NvsLock nvsLock(nvsMutex_);
+  FilesystemGuard fsGuard;
   const bool preferencesCleared = preferences_.clear();
   const bool historyCleared = LittleFS.format();
-  storageAvailable_ = historyCleared && LittleFS.begin(false);
+  noteFilesystemMutation();
+  storageAvailable_.store(historyCleared && LittleFS.begin(false),
+                          std::memory_order_release);
   return preferencesCleared && historyCleared;
 }
 

@@ -83,6 +83,36 @@ int main() {
         const size_t start = chunk.size();
         assert(station::appendJson(point, append));
         assert(chunk.compare(start, expected.size(), expected) == 0 && chunk.size() - start == expected.size());
+        char directBuf[768];
+        size_t directLen = 0;
+        assert(station::appendRecordingPointJson(directBuf, sizeof(directBuf), directLen, record));
+        directBuf[directLen] = '\0';
+        JsonDocument directParsed;
+        assert(!deserializeJson(directParsed, directBuf, directLen));
+        assert(directParsed["sampleMs"].as<uint32_t>() == point["sampleMs"].as<uint32_t>());
+        assert(directParsed["t"].as<int64_t>() == point["t"].as<int64_t>());
+        assert(directParsed["estimateT"].as<int64_t>() == point["estimateT"].as<int64_t>());
+        assert(directParsed["windowMs"].as<uint16_t>() == point["windowMs"].as<uint16_t>());
+        assert(directParsed["gap"].as<bool>() == point["gap"].as<bool>());
+        assert(directParsed["pulseStatus"].as<uint8_t>() == point["pulseStatus"].as<uint8_t>());
+        assert(directParsed["quality"].as<uint8_t>() == point["quality"].as<uint8_t>());
+        assert(fabsf(directParsed["battery"].as<float>() - point["battery"].as<float>()) < 1e-6F);
+        assert(directParsed["wave"].size() == point["wave"].size());
+        if (type == protocol::EnvironmentalSensorType::kTmp117) {
+          assert(fabsf(directParsed["temperature"].as<float>() - point["temperature"].as<float>()) < 1e-5F);
+        } else if (type == protocol::EnvironmentalSensorType::kLsm6dsox) {
+          for (const char* axis : {"ax", "ay", "az", "gx", "gy", "gz", "peakAcceleration", "peakAngularRate"}) {
+            assert(fabsf(directParsed[axis].as<float>() - point[axis].as<float>()) < 1e-4F);
+          }
+          assert(directParsed["sampleCount"].as<uint16_t>() == point["sampleCount"].as<uint16_t>());
+        } else {
+          assert(fabsf(directParsed["heartRate"].as<float>() - point["heartRate"].as<float>()) < 1e-4F);
+          for (size_t j = 0; j < directParsed["wave"].size(); ++j) {
+            assert(directParsed["wave"][j]["t"].as<int64_t>() == point["wave"][j]["t"].as<int64_t>());
+            assert(directParsed["wave"][j]["red"].as<uint32_t>() == point["wave"][j]["red"].as<uint32_t>());
+            assert(directParsed["wave"][j]["infrared"].as<uint32_t>() == point["wave"][j]["infrared"].as<uint32_t>());
+          }
+        }
         pointBytes += expected.size();
         if (chunk.size() >= 4096) { response += chunk; chunk.clear(); ++flushes; }
       }
@@ -105,6 +135,21 @@ int main() {
         else { assert(point["wave"].size() == 2); assert(point["heartRate"] == 75); }
       }
     }
+  }
+  // Malformed optical frame count above kOpticalBatchSize must be clamped.
+  {
+    recording::Record malformed{};
+    malformed.type = protocol::EnvironmentalSensorType::kMax30102;
+    malformed.values.optical.count = 255;
+    JsonDocument point;
+    station::recordingPointJson(point, malformed);
+    assert(point["wave"].size() == protocol::kOpticalBatchSize);
+    char directBuf[768];
+    size_t directLen = 0;
+    assert(station::appendRecordingPointJson(directBuf, sizeof(directBuf), directLen, malformed));
+    JsonDocument directParsed;
+    assert(!deserializeJson(directParsed, directBuf, directLen));
+    assert(directParsed["wave"].size() == protocol::kOpticalBatchSize);
   }
   puts("Recording JSON: real ArduinoJson serializer, complete chunked pages and all three sensor types passed");
 }

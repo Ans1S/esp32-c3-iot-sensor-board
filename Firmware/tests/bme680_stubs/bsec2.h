@@ -11,6 +11,8 @@ struct bsecOutputs {
   uint8_t nOutputs = 0;
 };
 struct BsecScript {
+  bme68x_read_fptr_t readRegister = nullptr;
+  void* context = nullptr;
   bool beginOk = true, stateOk = true, emit = true, failRun = false;
   bool includeIaq = true, invalidOutputCount = false;
   float iaq = 42, temperature = 25, humidity = 50, pressure = 1000;
@@ -28,8 +30,9 @@ class Bsec2 {
   bsec_version_t version{};
   bsec_library_return_t status = BSEC_OK;
   void allocateMemory(uint8_t (&)[BSEC_INSTANCE_SIZE]) {}
-  bool begin(bme68x_intf, bme68x_read_fptr_t, bme68x_write_fptr_t,
-             bme68x_delay_us_fptr_t, void*, unsigned long (*clock)()) {
+  bool begin(bme68x_intf, bme68x_read_fptr_t readRegister, bme68x_write_fptr_t,
+             bme68x_delay_us_fptr_t, void* context, unsigned long (*clock)()) {
+    testBsec.readRegister = readRegister; testBsec.context = context;
     clock_ = clock; outputs_ = {}; return testBsec.beginOk;
   }
   bool setConfig(const uint8_t*) { return true; }

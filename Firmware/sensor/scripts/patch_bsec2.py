@@ -267,6 +267,18 @@ if "WCHARGER_BSEC2_FETCH_DEADLINE" not in source:
         "            wchargerEndFetchWindow();\n" + needle, 1)
     changed = True
 
+if "WCHARGER_BSEC2_FETCH_ERROR_ABORT" not in source:
+    fetch_cond = "                 fetchedFields == 0 &&\n"
+    if fetch_cond not in source:
+        raise RuntimeError("BSEC2 fetch retry condition layout changed")
+    source = source.replace(
+        fetch_cond,
+        "                 /* WCHARGER_BSEC2_FETCH_ERROR_ABORT */\n"
+        "                 fetchedFields == 0 && sensor.status >= BME68X_OK &&\n",
+        1,
+    )
+    changed = True
+
 if changed:
     source_path.write_text(source, encoding="utf-8")
 if header_changed:

@@ -49,8 +49,8 @@ class ThingSpeakAccountJob {
       const bool sameAccount = !strcmp(request.account, request_.account);
       if (sameAccount && !strcmp(owner, owner_) && request.operation == request_.operation &&
           (request.operation == Operation::List || request.nonce == request_.nonce)) return request_.ticket;
-      if (state_ != State::Ready || sameAccount) return 0;
-      // The station now uses a different account. Drop the obsolete result.
+      if (state_ != State::Ready) return 0;
+      // Drop an uncollected completed result when a newer or different request arrives.
       clear();
     }
     if (++sequence_ == 0) ++sequence_;

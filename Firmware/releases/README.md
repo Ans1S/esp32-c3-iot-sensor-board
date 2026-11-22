@@ -1,6 +1,17 @@
 # Firmware packages
 
-## Latest full release 4.4.5
+## Latest full release 4.4.10
+
+Install the station first to enable the five new sensor types. Use the application-only USB update on a compatible station, then select the matching signed package on its **Firmware updates** page. All three targets use release **40410**, ESP-NOW protocol V5.
+
+| Download | Use |
+| --- | --- |
+| [Complete update bundle](w-charger-4.4.10.zip) | Station, both sensor packages, instructions, release notes and SHA-256 manifest |
+| [Station application](station-4.4.10.bin) | ESP32-S3, application offset `0x10000` |
+| [PCB V3](sensor-v3-4.4.10.ota) · [PCB V4](sensor-v4-4.4.10.ota) | ESP32-C3 sensor OTA, choose the physical board revision |
+| [Install](INSTALL-4.4.10.txt) · [Release notes](RELEASE-NOTES-4.4.10.txt) · [Checksums](SHA256SUMS-4.4.10.txt) | Layout, changes and file verification |
+
+## Previous full release 4.4.5
 
 Station and PCB V3/V4 use **4.4.5 / 40405**, protocol V5. This release
 includes the station dashboard and history improvements and the 4.4.5 sensor
@@ -37,8 +48,8 @@ Final target builds, 30 sanitized host suites and package checks pass. Both new
 signatures match the trusted public header and existing installation key; prior
 packages still verify and retain their bytes. New payloads match the final
 builds. ZIP contents and all manifests were checked. See the
-[release evidence](../audit/2026-11-07-release/README.md) and
-[main/radio/OTA review](../FLOW_TRANSFER_REVIEW.md), with links to earlier passes.
+[release evidence](https://github.com/Ans1S/esp32-c3-iot-sensor-board/blob/v4.4.5/Firmware/audit/2026-11-07-release/README.md) and
+[main/radio/OTA review](https://github.com/Ans1S/esp32-c3-iot-sensor-board/blob/v4.4.5/Firmware/FLOW_TRANSFER_REVIEW.md), with links to earlier passes.
 No device was flashed or physically measured. Fewer API calls and smaller
 native frames do not establish MCU timing, RF throughput or energy savings.
 
@@ -240,14 +251,9 @@ Historical 4.3.1 behavior and validation are documented in
 
 ## Validation and licenses
 
-All three PlatformIO targets, 24 production C++ suites, ten embedded browser
-suites, six cryptographic OTA package tests, four upload tests, three pinned
-library-patch checks and publication regressions pass. Eight station script
-blocks parse. No hardware was flashed or measured. Accuracy, RF/power-loss,
-rollback behavior, rail discharge and current acceptance remain separate work;
-see [tests](../tests/README.md) and [the reliability review](../RELIABILITY_REVIEW.md).
+See the [regression checks](../tests/README.md) and [hardware acceptance plan](../HARDWARE_TESTPLAN.md). Radio range, power-cut recovery, current draw and physical sensor accuracy require measurements on the target boards.
 
-BME680 firmware includes Bosch BSEC2 binaries under their separate
+BME680/BME688 firmware includes Bosch BSEC2 binaries under their separate
 [license terms](https://github.com/boschsensortec/Bosch-BSEC2-Library/blob/4f559a6aa450f0ce436e602b42dc384f52128c66/LICENSE.md).
 The repository license does not relicense third-party components. Review the
 applicable terms before redistributing compiled packages.

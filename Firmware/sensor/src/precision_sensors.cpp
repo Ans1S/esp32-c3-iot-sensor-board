@@ -2,7 +2,11 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <math.h>
+#include <string.h>
 #include "pulse_signal.h"
+#ifdef ESP_PLATFORM
+#include "measurement_budget.h"
+#endif
 
 namespace sensor {
 using Type = lil::protocol::EnvironmentalSensorType;
@@ -22,11 +26,14 @@ uint8_t opticalCurrent(uint8_t current, uint32_t level) {
       current > 12 ? uint32_t(current - 8) : uint32_t(4), uint32_t(current) + 8));
 }
 }
-bool PrecisionSensors::readBytes(uint8_t reg, uint8_t* bytes, uint8_t count) {
-  Wire.beginTransmission(address_); Wire.write(reg);
-  if (Wire.endTransmission(false) || Wire.requestFrom(address_, count) != count) return false;
+bool PrecisionSensors::readBytesAt(uint8_t address, uint8_t reg, uint8_t* bytes, uint8_t count) {
+  Wire.beginTransmission(address); Wire.write(reg);
+  if (Wire.endTransmission(false) || Wire.requestFrom(address, count) != count) return false;
   for (uint8_t i = 0; i < count; ++i) bytes[i] = Wire.read();
   return true;
+}
+bool PrecisionSensors::readBytes(uint8_t reg, uint8_t* bytes, uint8_t count) {
+  return readBytesAt(address_, reg, bytes, count);
 }
 bool PrecisionSensors::write8(uint8_t reg, uint8_t value) {
   Wire.beginTransmission(address_); Wire.write(reg); Wire.write(value);
@@ -37,20 +44,35 @@ bool PrecisionSensors::write16(uint8_t reg, uint16_t value) {
   return Wire.endTransmission() == 0;
 }
 bool PrecisionSensors::probe(Type type, uint8_t& address) {
-  PrecisionSensors probe;
   uint8_t bytes[2];
   if (type == Type::kTmp117) {
     for (uint8_t a = 0x48; a <= 0x4B; ++a) {
-      probe.address_ = a;
-      if (probe.readBytes(0x0F, bytes, 2) && (((bytes[0] << 8) | bytes[1]) & 0xFFF) == 0x117) {
+      if (readBytesAt(a, 0x0F, bytes, 2) && (((bytes[0] << 8) | bytes[1]) & 0xFFF) == 0x117) {
         address = a; return true;
       }
     }
   } else if (type == Type::kMax30102) {
-    probe.address_ = 0x57;
-    if (probe.readBytes(0xFF, bytes, 1) && bytes[0] == 0x15) { address = 0x57; return true; }
+    if (readBytesAt(0x57, 0xFF, bytes, 1) && bytes[0] == 0x15) { address = 0x57; return true; }
   }
   return false;
+}
+void PrecisionSensors::resetState() {
+  type_ = Type::kAutoDetect;
+  address_ = 0;
+  redCurrent_ = 0x24;
+  infraredCurrent_ = 0x24;
+  initialized_ = failed_ = overflow_ = false;
+  lastSampleMs_ = lastAdjustMs_ = 0;
+  red_ = infrared_ = 0;
+  temperature_ = 0.0F;
+  hasTemperature_ = freshTemperature_ = hasOptical_ = false;
+  lastPollMs_ = lastEstimateMs_ = estimateSampleMs_ = 0;
+  estimate_ = {};
+  hasEstimate_ = hasCalculated_ = waveGap_ = false;
+  memset(wave_, 0, sizeof(wave_));
+  waveNext_ = waveCount_ = 0;
+  memset(signal_, 0, sizeof(signal_));
+  head_ = count_ = 0;
 }
 void PrecisionSensors::resetSignal() { head_ = count_ = 0; hasEstimate_ = hasCalculated_ = false; }
 bool PrecisionSensors::invalidateOpticalCapture() {
@@ -60,18 +82,23 @@ bool PrecisionSensors::invalidateOpticalCapture() {
   resetSignal();
   return false;
 }
-bool PrecisionSensors::clearOpticalFifo() {
+bool PrecisionSensors::clearOpticalFifo(bool alreadyShutdown) {
   // Stop conversions while changing pointers so a newly completed sample
   // cannot race the three register writes. SHDN preserves configuration.
-  return write8(9, 0x83) && write8(4, 0) && write8(5, 0) &&
-      write8(6, 0) && write8(9, 3);
+  uint8_t status = 0;
+  return (alreadyShutdown || write8(9, 0x83)) && write8(4, 0) && write8(5, 0) &&
+      write8(6, 0) && readBytes(0, &status, 1) && write8(9, 3);
 }
 bool PrecisionSensors::begin(Type type, uint8_t address) {
-  *this = PrecisionSensors{}; type_ = type; address_ = address;
+  resetState(); type_ = type; address_ = address;
   uint8_t bytes[2];
   if (type == Type::kTmp117) {
     if (!write16(1, 2)) return false;
+#ifdef ESP_PLATFORM
+    measurementWaitUs(5000);
+#else
     delay(5);
+#endif
     // TI accuracy test condition: eight averages, 1 Hz continuous conversion.
     // About 124 ms active + 876 ms standby limits self-heating.
     if (!write16(1, 0x0220) || !readBytes(1, bytes, 2) ||
@@ -115,8 +142,11 @@ bool PrecisionSensors::poll() {
         hasTemperature_ = freshTemperature_ = false;
         return false;
       }
-      temperature_ = static_cast<int16_t>((b[0] << 8) | b[1]) / 128.0F;
-      hasTemperature_ = temperature_ >= -55 && temperature_ <= 150;
+      const int16_t rawTemp = static_cast<int16_t>((b[0] << 8) | b[1]);
+      // Exact integer bounds for -55.0..150.0 C at 1/128 C/LSB avoid soft-float
+      // comparisons on FPU-less RV32IMC.
+      hasTemperature_ = rawTemp >= -7040 && rawTemp <= 19200;
+      temperature_ = rawTemp * (1.0F / 128.0F);
       lastSampleMs_ = millis(); freshTemperature_ = hasTemperature_;
       failed_ = false;
     }
@@ -184,7 +214,7 @@ bool PrecisionSensors::poll() {
       // Samples acquired before the gain change must not enter the new window.
       // Discard the FIFO and mark the discontinuity in the waveform explicitly.
       const bool changed = write8(9,0x83) && write8(0x0C,nextRed) && write8(0x0D,nextInfrared) &&
-          clearOpticalFifo();
+          clearOpticalFifo(true);
       if (!changed) return invalidateOpticalCapture();
       redCurrent_ = nextRed; infraredCurrent_ = nextInfrared;
       // Do not present pre-adjustment ADC values as a fresh settled capture.
@@ -230,21 +260,29 @@ EnvironmentalReading PrecisionSensors::read(bool pollFirst) {
       lastEstimateMs_ = millis(); hasCalculated_ = true;
       hasEstimate_ = false;
       constexpr int analyzed = pulse::kAnalyzedSamples;
-      float ac[analyzed];
-      const double energy = pulse::detrend(signal_, head_, ac);
-      float correlations[pulse::kMaximumLag + 1];
-      pulse::correlate(ac, correlations);
+      static_assert(sizeof(ac25_) / sizeof(ac25_[0]) == analyzed);
+      static_assert(sizeof(correlations_) / sizeof(correlations_[0]) == pulse::kMaximumLag + 1);
+      const int64_t energy625 = pulse::detrendInt25Energy(signal_, head_, ac25_);
+      pulse::correlateInt25(ac25_, correlations_);
       float best = 0; int lagBest = 0;
       for (int lag = pulse::kMinimumLag + 1; lag < pulse::kMaximumLag; ++lag) {
-        if (correlations[lag] > 0.75F && correlations[lag] > correlations[lag-1] &&
-            correlations[lag] >= correlations[lag+1] && correlations[lag] > best + 0.05F) {
-          best = correlations[lag]; lagBest = lag;
+        if (correlations_[lag] > 0.75F && correlations_[lag] > correlations_[lag-1] &&
+            correlations_[lag] >= correlations_[lag+1] && correlations_[lag] > best + 0.05F) {
+          best = correlations_[lag]; lagBest = lag;
         }
       }
-      const float rms = sqrt(energy / analyzed);
-      if (lagBest && rms > 20 && rms < infrared_ * 0.1F) {
+      // Exact integer squared-RMS bounds avoid software double sqrt/division:
+      // rms > 20  <=>  energy625 > 400 * 625 * analyzed
+      // rms < infrared * 0.1  <=>  energy625 * 100 < infrared^2 * 625 * analyzed
+      constexpr int64_t kScale625 =
+          static_cast<int64_t>(pulse::kMeanSamples * pulse::kMeanSamples) * analyzed;
+      constexpr int64_t kMinEnergy625 = 400LL * kScale625;
+      const int64_t irSq = static_cast<int64_t>(infrared_) * infrared_;
+      const bool rmsInRange = energy625 > kMinEnergy625 &&
+                              energy625 * 100LL < irSq * kScale625;
+      if (lagBest && rmsInRange) {
         // Sub-sample peak interpolation avoids 25 Hz integer-period quantization.
-        const float left = correlations[lagBest-1], right = correlations[lagBest+1];
+        const float left = correlations_[lagBest-1], right = correlations_[lagBest+1];
         const float denominator = left - 2*best + right;
         const float offset = denominator < -0.00001F ? 0.5F*(left-right)/denominator : 0;
         const float bpm = 1500.0F / (lagBest + offset);

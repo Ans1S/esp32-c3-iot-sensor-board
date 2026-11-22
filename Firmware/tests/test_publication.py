@@ -68,7 +68,7 @@ class PublicationTests(unittest.TestCase):
                    "Firmware/releases/station-unreviewed.bin"]
         public = ["Firmware/releases/station-4.4.1.bin", "Firmware/releases/station-4.4.3.bin",
                   "Firmware/releases/sensor-v4-4.4.1.ota", "Firmware/ota_package.py",
-                  "Firmware/sensor/platformio.ini", "Readme/station-history-4.4.1.webp"]
+                  "Firmware/sensor/platformio.ini", "Readme/station-history-4.4.10.webp"]
         result = subprocess.run(
             ["git", "check-ignore", "--no-index", "-z", "--stdin"], cwd=guard.ROOT,
             input=("\0".join(ignored + public) + "\0").encode(),

@@ -8,7 +8,7 @@
 
 struct Slept { uint32_t seconds; };
 struct Restarted {};
-inline int sensorStarts = 0, batteryReads = 0, otaChecks = 0, configWrites = 0;
+inline int sensorStarts = 0, batteryReads = 0, otaChecks = 0, otaConfirmations = 0, configWrites = 0;
 inline int radioStarts = 0, normalExchanges = 0, lowPowerExchanges = 0;
 inline bool radioAvailable = true, stationReplies = false, powerOff = true;
 inline bool configPersistenceSucceeded = true;
@@ -75,6 +75,8 @@ class SensorConfigStore {
 class EnvironmentalSensor {
  public:
   bool begin(PowerController&, lil::protocol::EnvironmentalSensorType, float) { ++sensorStarts; powerOff = !sensorStartSucceeded; return sensorStartSucceeded; }
+  EnvironmentalReading readForReport(float) { return read(); }
+  EnvironmentalReading readContinuous() { return read(); }
   EnvironmentalReading read() {
     EnvironmentalReading r{}; r.valid = sensorStartSucceeded && sensorReadSucceeded; r.sensorType = detectedType();
     if (r.valid) { r.temperatureC = 25; r.capabilities = lil::protocol::kTemperature; }
@@ -99,7 +101,7 @@ class EspNowTransport {
  public:
   bool begin() { ++radioStarts; return radioAvailable; }
   void end() {}
-  ExchangeResult exchange(const lil::protocol::TelemetryPacket&, const SensorRuntimeConfig&, bool) {
+  ExchangeResult exchange(const lil::protocol::TelemetryPacket&, const SensorRuntimeConfig&, bool, bool = false) {
     ++normalExchanges;
     if (configurationReplies.empty()) return {};
     const auto response = configurationReplies.front(); configurationReplies.pop_front(); return response;
@@ -115,7 +117,9 @@ class EspNowTransport {
     // Even a factory-reset command must not shorten the protection sleep.
     r.config.flags = lil::protocol::kFactoryReset; return r;
   }
-  bool recordingExchange(const SensorRuntimeConfig&, const void*, size_t, uint64_t, uint32_t, uint32_t, lil::recording::Ack&) { return false; }
+  bool recordingExchange(const SensorRuntimeConfig&, const void*, size_t, uint64_t, uint32_t, uint32_t, lil::recording::Ack&, uint32_t = 0) { return false; }
+  bool sendStalled(uint32_t, uint32_t = 5000) const { return false; }
+  bool configureLink(uint8_t, int8_t) { return true; }
 };
 class SleepController {
  public:
@@ -129,6 +133,7 @@ class RecordingStore {
   bool recording() { return false; }
   bool start() { return true; }
   void stop() {}
+  void clearForReset() {}
   bool append(uint64_t, const lil::protocol::TelemetryPayload&) { return true; }
   lil::recording::Status status(uint32_t) { return {}; }
   bool next(lil::recording::Upload&) { return false; }
@@ -149,11 +154,12 @@ class LiveAcquisition {
   bool normal() { return false; }
   void setNormalInterval(uint32_t) {}
   void pauseNormal(bool) {}
+  uint32_t nextNormalDueMs(uint32_t) const { return 100; }
 };
 inline void beginOtaBootGuard() {}
 inline void finishOtaBootGuard() {}
 inline bool otaBootPending() { return false; }
-inline bool confirmOtaBootAfterContact() { return true; }
+inline bool confirmOtaBootAfterContact() { ++otaConfirmations; return true; }
 inline bool otaReplacesBattery = false;
 inline BatteryReading otaBattery{};
 inline void checkOta(EspNowTransport&, const SensorRuntimeConfig&, AdcReader&, BatteryReading& battery) {
@@ -162,4 +168,6 @@ inline void checkOta(EspNowTransport&, const SensorRuntimeConfig&, AdcReader&, B
 inline void beginDiagnosticLogging() {}
 inline uint64_t logicalTimeMs() { return testMillis; }
 inline void lowPowerSensorWaitUs(uint32_t us) { testMillis += us / 1000; }
+inline void pushLowPowerWaitInhibit() {}
+inline void popLowPowerWaitInhibit() {}
 }

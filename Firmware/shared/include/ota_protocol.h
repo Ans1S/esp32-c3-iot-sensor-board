@@ -4,10 +4,12 @@
 
 namespace lil::ota {
 constexpr uint32_t kPackageMagic = 0x3141544f; // OTA1
-constexpr uint32_t kRelease = 40405;
-#define WCH_FIRMWARE_VERSION "4.4.5"
+constexpr uint32_t kRelease = 40410;
+#define WCH_FIRMWARE_VERSION "4.4.10"
 constexpr char kVersion[] = WCH_FIRMWARE_VERSION;
 constexpr size_t kBlockSize = 192;
+// ESP-NOW v2.0 (ESP-IDF 5.5, 1470-byte frames) optional 1024-byte OTA data block.
+constexpr size_t kLargeBlockSize = 1024;
 // Both sensor revisions reserve the rest of flash for the recording journal.
 constexpr uint32_t kSlotSize = 0x140000;
 constexpr uint32_t kSectorSize = 4096;
@@ -43,6 +45,14 @@ struct Payload {
   State state;
   uint8_t data[kBlockSize];
 };
+struct LargePayload {
+  uint32_t nonce;
+  uint32_t offset;
+  uint16_t size;
+  Op op;
+  State state;
+  uint8_t data[kLargeBlockSize];
+};
 struct Identity {
   uint32_t release;
   uint8_t pcb;
@@ -53,13 +63,16 @@ struct Identity {
 };
 #pragma pack(pop)
 using Packet = protocol::Packet<Payload>;
+using LargePacket = protocol::Packet<LargePayload>;
 constexpr auto kMessageType = static_cast<protocol::MessageType>(16);
 // Offer.offset is zero on legacy stations and ignored by legacy clients.
 constexpr uint32_t kOfferCompactRead = 1U << 0;
+constexpr uint32_t kOfferLargeBlock = 1U << 1;
 constexpr size_t kCompactReadPayloadSize = offsetof(Payload, data);
 constexpr size_t kCompactReadPacketSize = sizeof(protocol::PacketHeader) + kCompactReadPayloadSize;
 static_assert(sizeof(Manifest) == 160);
 static_assert(sizeof(Packet) <= protocol::kMaxPacketSize);
+static_assert(sizeof(LargePacket) <= 1470);
 inline bool requestSizeSupported(size_t length) {
   return length == sizeof(Packet) || length == kCompactReadPacketSize;
 }
@@ -68,7 +81,9 @@ inline bool decodeRequest(const uint8_t* data, size_t length, Packet& request) {
           length - sizeof(protocol::PacketHeader))) return false;
   memcpy(&request, data, length);
   if (length == sizeof(Packet)) return true;
-  return request.payload.op == Op::Read && request.payload.size == 0;
+  memset(request.payload.data, 0, sizeof(request.payload.data));
+  return request.payload.op == Op::Read &&
+         (request.payload.size == 0 || request.payload.size == kLargeBlockSize);
 }
 inline bool validIdentity(const Identity& identity) {
   return (identity.pcb == 3 || identity.pcb == 4) &&

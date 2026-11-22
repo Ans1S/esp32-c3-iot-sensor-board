@@ -10,12 +10,15 @@ class PrecisionSensors {
   bool poll();
   EnvironmentalReading read(bool pollFirst = true);
   bool freshTemperature() const { return freshTemperature_; }
+  bool initialized() const { return initialized_; }
  private:
+  static bool readBytesAt(uint8_t address, uint8_t reg, uint8_t* bytes, uint8_t count);
   bool readBytes(uint8_t reg, uint8_t* bytes, uint8_t count);
   bool write8(uint8_t reg, uint8_t value);
   bool write16(uint8_t reg, uint16_t value);
-  bool clearOpticalFifo();
+  bool clearOpticalFifo(bool alreadyShutdown = false);
   bool invalidateOpticalCapture();
+  void resetState();
   void resetSignal();
   lil::protocol::EnvironmentalSensorType type_ = lil::protocol::EnvironmentalSensorType::kAutoDetect;
   uint8_t address_ = 0, redCurrent_ = 0x24, infraredCurrent_ = 0x24;
@@ -31,6 +34,8 @@ class PrecisionSensors {
   WaveSample wave_[lil::protocol::kOpticalBatchSize]{};
   uint8_t waveNext_ = 0, waveCount_ = 0;
   uint32_t signal_[200]{};
+  int32_t ac25_[lil::timing::kPulseSamples - 24]{};
+  float correlations_[52]{};
   uint16_t head_ = 0, count_ = 0;
 };
 }

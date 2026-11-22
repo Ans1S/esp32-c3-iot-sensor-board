@@ -63,4 +63,79 @@ inline void correlate(const float* ac, float* correlations) {
     }
   }
 }
+
+// Exact scaled-integer detrending and autocorrelation for FPU-less RV32IMC.
+// ac25[i] = 25 * samples[center] - sum(25 samples) is exact in int32_t
+// (|ac25| <= 25 * 262143 < 6.6e6), and every sum of up to 176 squared/cross
+// products (<= 7.6e15) is exact in int64_t using hardware RV32IM mul/mulh.
+template <typename Samples>
+int64_t detrendInt25Energy(const Samples& samples, size_t head, int32_t* ac25) {
+  constexpr size_t count = lil::timing::kPulseSamples;
+  size_t first = head;
+  size_t next = head;
+  uint32_t sum = 0;
+  for (size_t i = 0; i < kMeanSamples; ++i) {
+    sum += samples[next];
+    if (++next == count) next = 0;
+  }
+  size_t center = (head + kMeanRadius) % count;
+  int64_t energy625 = 0;
+  for (size_t i = 0; i < kAnalyzedSamples; ++i) {
+    const int32_t residual =
+        static_cast<int32_t>(samples[center] * kMeanSamples) -
+        static_cast<int32_t>(sum);
+    ac25[i] = residual;
+    energy625 += static_cast<int64_t>(residual) * residual;
+    if (i + 1 < kAnalyzedSamples) {
+      sum -= samples[first];
+      sum += samples[next];
+      if (++first == count) first = 0;
+      if (++next == count) next = 0;
+      if (++center == count) center = 0;
+    }
+  }
+  return energy625;
+}
+
+template <typename Samples>
+double detrendInt25(const Samples& samples, size_t head, int32_t* ac25) {
+  return static_cast<double>(detrendInt25Energy(samples, head, ac25)) /
+         static_cast<double>(kMeanSamples * kMeanSamples);
+}
+
+#if defined(__GNUC__) && !defined(__clang__)
+[[gnu::optimize("O2")]]
+#endif
+inline void correlateInt25(const int32_t* ac25, float* correlations) {
+  constexpr int count = kAnalyzedSamples;
+  int64_t xx = 0, yy = 0;
+  for (int i = 0; i < count - kMaximumLag; ++i) {
+    const int32_t a = ac25[i];
+    const int32_t b = ac25[i + kMaximumLag];
+    xx += static_cast<int64_t>(a) * a;
+    yy += static_cast<int64_t>(b) * b;
+  }
+  for (int lag = kMaximumLag; lag >= kMinimumLag; --lag) {
+    int64_t xy = 0;
+    const int32_t* p = ac25;
+    const int32_t* q = ac25 + lag;
+    const int32_t* end = ac25 + (count - lag);
+    while (p < end) {
+      xy += static_cast<int64_t>(*p++) * (*q++);
+    }
+    if (xx > 0 && yy > 0) {
+      correlations[lag] = static_cast<float>(
+          static_cast<double>(xy) /
+          sqrt(static_cast<double>(xx) * static_cast<double>(yy)));
+    } else {
+      correlations[lag] = 0.0F;
+    }
+    if (lag != kMinimumLag) {
+      const int32_t a = ac25[count - lag];
+      const int32_t b = ac25[lag - 1];
+      xx += static_cast<int64_t>(a) * a;
+      yy += static_cast<int64_t>(b) * b;
+    }
+  }
+}
 }  // namespace sensor::pulse

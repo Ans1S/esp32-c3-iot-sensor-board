@@ -27,6 +27,7 @@ class PagedHistory {
   static constexpr size_t kReserveBytes = 256U * 1024U;
   static constexpr uint32_t kFlushMs = 30000;
   bool begin(bool mounted);
+  void resetForFactory();
   void configure(const SensorConfig* configs, size_t count);
   void setLegacyBytes(size_t bytes);
   bool appendLegacy(const uint8_t mac[6], const HistorySample& sample, uint32_t intervalSeconds);
@@ -35,6 +36,7 @@ class PagedHistory {
               bool batchImport = false);
   bool flush(const uint8_t mac[6]);
   void flushDue();
+  void flushAll();
   bool reserveForArchive();
   bool clear(const uint8_t mac[6]);
   NormalHistoryInfo info(const uint8_t mac[6]);
@@ -61,9 +63,10 @@ class PagedHistory {
   int nodeIndex(const uint8_t mac[6]) const;
   size_t quotaPages();
   size_t pagesFor(const uint8_t mac[6]) const;
-  size_t largestHistoryVictim() const;
+  size_t largestHistoryVictim(size_t excludeIndex = kMaxPages) const;
   bool erasePage(size_t index);
   bool makeSpace(const uint8_t mac[6], bool newPage);
+  size_t cachedFreeBytes();
   bool flushNode(Node& node);
   static void includeDurable(Node& node, const Page& page, size_t points);
   void rebuildDurable(Node& node) const;
@@ -72,6 +75,28 @@ class PagedHistory {
   std::array<Node, kMaxSensors> nodes_{};
   size_t pageCount_ = 0;
   size_t legacyBytes_ = 0;
+#ifdef ESP_PLATFORM
+  static constexpr size_t kPageCacheSlots = 128;
+  static constexpr size_t kPageDataBytes = kPageBytes - kHeaderBytes;
+  struct PageCacheSlot {
+    uint8_t mac[6]{};
+    uint8_t kind = 0;
+    bool valid = false;
+    uint32_t generation = 0;
+    uint16_t count = 0;
+    uint16_t width = 0;
+  };
+  bool ensurePageCache();
+  void clearPageCache();
+  void invalidatePageCache(const uint8_t mac[6], uint32_t generation);
+  const uint8_t* lookupPageCache(const Page& page) const;
+  void storePageCache(const Page& page, const uint8_t* bytes, size_t totalBytes);
+  PageCacheSlot* pageCacheMeta_ = nullptr;
+  uint8_t* pageCacheData_ = nullptr;
+  size_t cachedFreeBytes_ = 0;
+  uint32_t cachedSpaceEpoch_ = 0;
+  bool cachedFreeBytesValid_ = false;
+#endif
   size_t cachedQuota_ = 0, budgetPages_ = kMaxPages, flushCursor_ = 0;
   uint32_t generation_ = 0;
   SemaphoreHandle_t mutex_ = nullptr;

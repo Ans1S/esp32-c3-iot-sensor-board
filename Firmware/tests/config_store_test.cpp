@@ -80,5 +80,34 @@ int main() {
   layout.columns = 4; assert(!clean.saveDashboardLayout(layout));
   testPreferences["dashboard1"].back() ^= 1;
   assert(clean.loadDashboardLayout().count == 0);
+  // Compact SID2 identity storage keeps NVS blob size small and remains
+  // backward-compatible with legacy fixed-array identity blobs.
+  station::SensorIdentity identities[station::kMaxSensorIdentities]{};
+  identities[0].mac[0] = 0xAA; identities[0].mac[5] = 0x01;
+  station::copyText(identities[0].name, "Kitchen");
+  identities[0].motion.enabled = true;
+  identities[0].motion.accelerationG[2] = 1.0F;
+  identities[station::kMaxSensorIdentities - 1].mac[0] = 0xBB;
+  identities[station::kMaxSensorIdentities - 1].mac[5] = 0x40;
+  station::copyText(identities[station::kMaxSensorIdentities - 1].name, "Roof");
+  assert(clean.saveSensorIdentities(identities, station::kMaxSensorIdentities));
+  assert(testPreferences["identities1"].size() < 256);
+  station::SensorIdentity reloaded[station::kMaxSensorIdentities]{};
+  assert(clean.loadSensorIdentities(reloaded, station::kMaxSensorIdentities));
+  assert(reloaded[0].mac[0] == 0xAA && !strcmp(reloaded[0].name, "Kitchen") &&
+         reloaded[0].motion.enabled &&
+         reloaded[0].motion.accelerationG[2] == 1.0F);
+  assert(reloaded[1].mac[0] == 0xBB && !strcmp(reloaded[1].name, "Roof") &&
+         reloaded[1].mac[5] == 0x40);
+  assert(reloaded[2].mac[0] == 0 && reloaded[2].name[0] == '\0');
+  // Legacy fixed-array format still loads cleanly.
+  testPreferences["identities1"].assign(
+      reinterpret_cast<const uint8_t*>(identities),
+      reinterpret_cast<const uint8_t*>(identities) + sizeof(identities));
+  station::SensorIdentity fromLegacy[station::kMaxSensorIdentities]{};
+  assert(clean.loadSensorIdentities(fromLegacy, station::kMaxSensorIdentities));
+  assert(fromLegacy[0].mac[0] == 0xAA && !strcmp(fromLegacy[0].name, "Kitchen"));
+  assert(fromLegacy[station::kMaxSensorIdentities - 1].mac[0] == 0xBB &&
+         !strcmp(fromLegacy[station::kMaxSensorIdentities - 1].name, "Roof"));
   puts("Station configuration: preserved mount failures, erased-flash initialization, bounded strings and sensor settings passed");
 }

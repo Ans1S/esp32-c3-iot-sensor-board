@@ -6,6 +6,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
+#include <memory>
 
 #include "lil_protocol.h"
 #include "ota_protocol.h"
@@ -17,7 +18,10 @@
 
 namespace station {
 
-constexpr size_t kStationReceiveCapacity = sizeof(lil::ota::Packet);
+constexpr size_t kStationReceiveCapacity =
+    sizeof(lil::protocol::TelemetryPacket) > sizeof(lil::ota::Packet)
+        ? sizeof(lil::protocol::TelemetryPacket)
+        : sizeof(lil::ota::Packet);
 static_assert(sizeof(lil::protocol::TelemetryPacket) <= kStationReceiveCapacity &&
               sizeof(lil::recording::StatusPacket) <= kStationReceiveCapacity &&
               sizeof(lil::recording::UploadPacket) <= kStationReceiveCapacity &&
@@ -54,6 +58,7 @@ class EspNowGateway {
  public:
   bool begin(SensorRegistry& registry, ThingSpeakService& thingSpeak,
              WifiService& wifi);
+  void pauseForReset();
   uint32_t receivedPackets() const;
   uint32_t invalidPackets() const;
   uint32_t droppedPackets() const;
@@ -73,6 +78,10 @@ class EspNowGateway {
   void taskLoop();
   void persistenceTaskLoop();
   void handle(const EspNowRxEvent& event);
+  [[gnu::noinline]] void handleRecording(const EspNowRxEvent& event,
+                                         lil::protocol::MessageType type);
+  [[gnu::noinline]] void handleOta(const EspNowRxEvent& event);
+  [[gnu::noinline]] void handleTelemetry(const EspNowRxEvent& event);
   void persist(const EspNowPersistenceEvent& event);
   void persistArchive(const EspNowArchiveEvent& event);
   void sendResponse(const uint8_t mac[6], const void* packet, size_t size);
@@ -96,6 +105,10 @@ class EspNowGateway {
   std::atomic<uint32_t> receivedPackets_{0};
   std::atomic<uint32_t> invalidPackets_{0};
   std::atomic<uint32_t> droppedPackets_{0};
+  std::atomic<bool> pausedForReset_{false};
+  uint64_t peerCache_[20]{};
+  size_t peerCacheCount_ = 0;
+  std::unique_ptr<uint8_t[]> otaWireBuffer_;
 };
 
 }  // namespace station

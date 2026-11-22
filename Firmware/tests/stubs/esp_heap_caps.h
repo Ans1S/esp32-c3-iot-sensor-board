@@ -7,6 +7,11 @@ inline size_t testAllocations = 0;
 inline size_t testSpiramFreeBytes = 1024 * 1024;
 inline size_t testInternalFreeBytes = 1024 * 1024;
 inline size_t testHeapAllocationFailures = 0;
+inline void* heap_caps_malloc(size_t size, int) {
+  ++testAllocations;
+  if (testHeapAllocationFailures) { --testHeapAllocationFailures; return nullptr; }
+  return malloc(size);
+}
 inline void* heap_caps_calloc(size_t count, size_t size, int) {
   ++testAllocations;
   if (testHeapAllocationFailures) { --testHeapAllocationFailures; return nullptr; }

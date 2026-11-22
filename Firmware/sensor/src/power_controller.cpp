@@ -46,6 +46,12 @@ void PowerController::prepareForDeepSleep() {
   // Do not back-power the switched sensor rail through I2C pull-ups or pads.
   pinMode(static_cast<uint8_t>(kHardware.sdaPin), INPUT);
   pinMode(static_cast<uint8_t>(kHardware.sclPin), INPUT);
+#ifdef ESP_PLATFORM
+  // Disable input buffers on floating I2C pads to avoid CMOS shoot-through
+  // current during deep sleep.
+  gpio_set_direction(kHardware.sdaPin, GPIO_MODE_DISABLE);
+  gpio_set_direction(kHardware.sclPin, GPIO_MODE_DISABLE);
+#endif
 
   // GPIO6..21 are digital GPIOs on the ESP32-C3. Holding one of these pads
   // through deep sleep can keep its digital power domain supplied and increase

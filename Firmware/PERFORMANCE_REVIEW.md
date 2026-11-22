@@ -45,7 +45,7 @@ gain for every feature or prove that every path has been audited exhaustively.
 
 At the time of this storage comparison, ThingSpeak account requests executed
 synchronously in the web handler and used an unbounded response string. The
-[later body-reader comparison](PERFORMANCE_FOLLOWUP_2026-11-09.md#bounded-thingspeak-response-bodies)
+[later body-reader comparison](https://github.com/Ans1S/esp32-c3-iot-sensor-board/blob/v4.4.5/Firmware/PERFORMANCE_FOLLOWUP_2026-11-09.md#bounded-thingspeak-response-bodies)
 records the size and time bounds now applied to response bodies.
 
 Host tests and successful target builds do not establish hardware timings,

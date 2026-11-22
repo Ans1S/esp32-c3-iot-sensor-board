@@ -1,15 +1,21 @@
 #include "web_portal.h"
+#include "filesystem_guard.h"
 #include "recording_json.h"
 #include "ota_service.h"
 #include "ota_page.h"
 #include "recording_archive.h"
+#include "sensor_timing.h"
 #include <memory>
+#include <new>
 
 #include <ArduinoJson.h>
-#include <SHA2Builder.h>
 #include <esp_heap_caps.h>
 #include <esp_random.h>
 #include <esp_timer.h>
+#ifdef ESP_PLATFORM
+#include <esp_task_wdt.h>
+#endif
+#include <mbedtls/sha256.h>
 
 #include "web_pages.h"
 #include "web_input.h"
@@ -42,17 +48,127 @@ bool readFieldArgument(WebServer& server, const char* name, uint8_t& field) {
   return true;
 }
 
+struct PsramJsonAllocator : ArduinoJson::Allocator {
+  void* allocate(size_t size) override {
+    void* ptr = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return ptr ? ptr : malloc(size);
+  }
+  void deallocate(void* pointer) override { free(pointer); }
+  void* reallocate(void* ptr, size_t newSize) override {
+    void* resized =
+        heap_caps_realloc(ptr, newSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return resized ? resized : realloc(ptr, newSize);
+  }
+};
+
+PsramJsonAllocator* psramJsonAllocator() {
+  static PsramJsonAllocator allocator;
+  return &allocator;
+}
+
+// Stream an ArduinoJson document directly through WebServer::sendContent with
+// exact Content-Length, zero large internal-DRAM String allocation, and
+// Arduino-ESP32's built-in non-blocking lwIP retry loop (no premature socket
+// drops on transient TCP send-window pressure).
+class BufferedJsonClientWriter {
+ public:
+  explicit BufferedJsonClientWriter(WebServer& server) : server_(server) {
+    heapBuf_ = static_cast<uint8_t*>(
+        heap_caps_malloc(kHeapBufBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    buf_ = heapBuf_ ? heapBuf_ : stackBuf_;
+    cap_ = heapBuf_ ? kHeapBufBytes : sizeof(stackBuf_);
+  }
+  ~BufferedJsonClientWriter() {
+    if (heapBuf_) heap_caps_free(heapBuf_);
+  }
+  size_t write(uint8_t byte) {
+    if (failed_) return 0;
+    buf_[used_++] = byte;
+    return used_ < cap_ || flush() ? 1 : 0;
+  }
+  size_t write(const uint8_t* bytes, size_t size) {
+    size_t written = 0;
+    while (!failed_ && written < size) {
+      const size_t n = min(size - written, cap_ - used_);
+      memcpy(buf_ + used_, bytes + written, n);
+      used_ += n;
+      written += n;
+      if (used_ == cap_ && !flush()) break;
+    }
+    return written;
+  }
+  bool flush() {
+    if (failed_ || used_ == 0) {
+      used_ = 0;
+      return !failed_;
+    }
+#ifdef ESP_PLATFORM
+    (void)esp_task_wdt_reset();
+#endif
+    if (!server_.client().connected()) {
+      failed_ = true;
+      used_ = 0;
+      return false;
+    }
+    server_.sendContent(reinterpret_cast<const char*>(buf_), used_);
+    used_ = 0;
+    if (!server_.client().connected()) {
+      failed_ = true;
+      return false;
+    }
+    return true;
+  }
+
+ private:
+  static constexpr size_t kHeapBufBytes = 2920;  // 2 * 1460-byte TCP MSS.
+  WebServer& server_;
+  uint8_t* heapBuf_ = nullptr;
+  uint8_t* buf_ = nullptr;
+  size_t cap_ = 0;
+  size_t used_ = 0;
+  bool failed_ = false;
+  uint8_t stackBuf_[256];
+};
+
+void sendStreamedJsonDocument(WebServer& server, const JsonDocument& document) {
+  const size_t length = measureJson(document);
+  server.client().setNoDelay(true);
+  server.setContentLength(length);
+  server.send(200, "application/json", "");
+  BufferedJsonClientWriter writer(server);
+  serializeJson(document, writer);
+  (void)writer.flush();
+  server.setContentLength(CONTENT_LENGTH_NOT_SET);
+}
+
+// Allocate rollback snapshots off loopTask's stack so config handlers save
+// ~1 KiB of stack headroom during NVS/flash writes.
+std::unique_ptr<StationConfig> cloneStationConfig(const StationConfig& source) {
+  std::unique_ptr<StationConfig> copy(new (std::nothrow) StationConfig(source));
+  return copy;
+}
+
 void hashAdminPassword(const String& password, char output[65]) {
-  SHA256Builder hash;
-  hash.begin();
+  static constexpr char kHex[] = "0123456789abcdef";
+  mbedtls_sha256_context ctx;
+  mbedtls_sha256_init(&ctx);
+  mbedtls_sha256_starts(&ctx, 0);
   const uint64_t deviceId = ESP.getEfuseMac();
-  hash.add(reinterpret_cast<const uint8_t*>(kPasswordHashDomain),
-           strlen(kPasswordHashDomain));
-  hash.add(reinterpret_cast<const uint8_t*>(&deviceId), sizeof(deviceId));
-  hash.add(reinterpret_cast<const uint8_t*>(password.c_str()),
-           password.length());
-  hash.calculate();
-  hash.getChars(output);
+  mbedtls_sha256_update(&ctx,
+                        reinterpret_cast<const uint8_t*>(kPasswordHashDomain),
+                        strlen(kPasswordHashDomain));
+  mbedtls_sha256_update(&ctx, reinterpret_cast<const uint8_t*>(&deviceId),
+                        sizeof(deviceId));
+  mbedtls_sha256_update(&ctx, reinterpret_cast<const uint8_t*>(password.c_str()),
+                        password.length());
+  uint8_t digest[32]{};
+  mbedtls_sha256_finish(&ctx, digest);
+  mbedtls_sha256_free(&ctx);
+  for (size_t i = 0; i < sizeof(digest); ++i) {
+    output[i * 2] = kHex[digest[i] >> 4U];
+    output[i * 2 + 1] = kHex[digest[i] & 0x0FU];
+  }
+  output[64] = '\0';
 }
 
 bool constantTimeEquals(const char* first, const char* second,
@@ -222,14 +338,17 @@ bool WebPortal::begin(StationConfig& config, ConfigStore& store,
   gateway_ = &gateway;
   refreshCsrfToken();
   clearAuthSessions();
+  dashboardLayout_ = store_->loadDashboardLayout();
+  dashboardLayoutLoaded_ = true;
   const char* collectedHeaders[] = {"Cookie", "Origin", "Accept-Encoding"};
   server_.collectHeaders(collectedHeaders, 3);
+  server_.enableDelay(false);
 
   server_.on("/", HTTP_GET, [this]() {
-    sendNoCache(server_);
     if (config_->wifiSsid[0] != '\0' && !requireAuthentication(true)) {
       return;
     }
+    sendNoCache(server_);
     if (config_->wifiSsid[0] == '\0') {
       server_.send_P(200, "text/html; charset=utf-8", kSetupWizardPage);
     } else {
@@ -246,10 +365,10 @@ bool WebPortal::begin(StationConfig& config, ConfigStore& store,
     server_.send_P(200, "text/html; charset=utf-8", kSetupWizardPage);
   });
   server_.on("/dashboard", HTTP_GET, [this]() {
-    sendNoCache(server_);
     if (!requireAuthentication(true)) {
       return;
     }
+    sendNoCache(server_);
     sendDashboard(server_);
   });
   server_.on("/login", HTTP_GET, [this]() { handleLogin(); });
@@ -272,16 +391,52 @@ bool WebPortal::begin(StationConfig& config, ConfigStore& store,
     sendNoCache(server_); server_.send_P(200, "text/html; charset=utf-8", kOtaPage);
   });
   server_.on("/api/ota/cancel", HTTP_POST, [this]() {
-    if (requireAuthentication() && verifyCsrf())
-      sendJsonResult(otaService.cancel(), "Update cancellation saved; a reboot already initiated cannot be cancelled");
+    if (!requireAuthentication() || !verifyCsrf()) return;
+    const bool cancelled = otaService.cancel();
+    sendJsonResult(cancelled, cancelled
+                       ? "Update cancellation saved; a reboot already initiated cannot be cancelled"
+                       : "No pending update could be cancelled");
   });
   server_.on("/api/ota/upload", HTTP_POST, [this]() {
-    if (!otaUploadAuthorized_) return;
-    sendJsonResult(otaUploadOk_, otaUploadOk_ ? "Update queued for the next node contact" : otaUploadError_);
+    const bool seen = otaUploadSeen_;
+    const bool authorized = otaUploadAuthorized_;
+    bool ok = otaUploadOk_;
+    const bool ended = otaUploadEnded_;
+    String error = otaUploadError_;
+    otaUploadSeen_ = false;
     otaUploadAuthorized_ = false;
+    otaUploadOk_ = false;
+    otaUploadEnded_ = false;
+    otaUploadError_ = "";
+    if (!seen) {
+      if (!requireAuthentication() || !verifyCsrf()) return;
+      sendJsonResult(false, "No firmware file received");
+      return;
+    }
+    if (!authorized) return;
+    if (ok && ended) {
+      ok = otaService.finishUpload(error);
+    } else if (ok) {
+      otaService.abortUpload();
+      ok = false;
+      error = "Upload incomplete";
+    }
+    sendJsonResult(ok, ok ? "Update queued for the next node contact" : error);
   }, [this]() {
+#ifdef ESP_PLATFORM
+    (void)esp_task_wdt_reset();
+#endif
     HTTPUpload& upload = server_.upload();
     if (upload.status == UPLOAD_FILE_START) {
+      if (otaUploadSeen_) {
+        if (otaUploadAuthorized_ && otaUploadOk_) otaService.abortUpload();
+        otaUploadOk_ = false;
+        otaUploadEnded_ = false;
+        otaUploadError_ = "Only one firmware file may be uploaded at a time";
+        return;
+      }
+      otaUploadSeen_ = true;
+      otaUploadEnded_ = false;
       otaUploadAuthorized_ = requireAuthentication() && verifyCsrf();
       otaUploadOk_ = false; otaUploadError_ = "Upload failed";
       if (!otaUploadAuthorized_) return;
@@ -300,9 +455,12 @@ bool WebPortal::begin(StationConfig& config, ConfigStore& store,
         otaService.abortUpload();
       }
     } else if (upload.status == UPLOAD_FILE_END && otaUploadAuthorized_ && otaUploadOk_) {
-      otaUploadOk_ = otaService.finishUpload(otaUploadError_);
-    } else if (upload.status == UPLOAD_FILE_ABORTED && otaUploadAuthorized_) {
-      otaService.abortUpload(); otaUploadOk_ = false;
+      otaUploadEnded_ = true;
+    } else if (upload.status == UPLOAD_FILE_ABORTED) {
+      if (otaUploadAuthorized_ && otaUploadOk_) otaService.abortUpload();
+      otaUploadOk_ = false;
+      otaUploadEnded_ = false;
+      otaUploadError_ = "Upload aborted";
     }
   });
   server_.on("/api/history", HTTP_GET, [this]() {
@@ -431,7 +589,47 @@ bool WebPortal::authenticationEnabled() const {
   return config_ != nullptr && config_->adminPassword[0] != '\0';
 }
 
-String WebPortal::currentSessionToken() const {
+int WebPortal::findActiveSessionIndex(bool pruneExpired) {
+  const uint64_t now = lil::timing::signedUsToMs(esp_timer_get_time());
+  if (pruneExpired) {
+    for (AuthSession& session : authSessions_) {
+      if (session.active && now - session.createdAtMs >= kSessionLifetimeMs) {
+        session = AuthSession{};
+      }
+    }
+  }
+  const String cookies = server_.header("Cookie");
+  const String prefix = String(kSessionCookieName) + '=';
+  int start = 0;
+  while (start < static_cast<int>(cookies.length())) {
+    int end = cookies.indexOf(';', start);
+    if (end < 0) {
+      end = cookies.length();
+    }
+    String cookie = cookies.substring(start, end);
+    cookie.trim();
+    if (cookie.startsWith(prefix)) {
+      const String token = cookie.substring(prefix.length());
+      if (token.length() == 32) {
+        for (size_t i = 0; i < 4; ++i) {
+          if (authSessions_[i].active &&
+              now - authSessions_[i].createdAtMs < kSessionLifetimeMs &&
+              constantTimeEquals(token.c_str(), authSessions_[i].token, 32)) {
+            return static_cast<int>(i);
+          }
+        }
+      }
+    }
+    start = end + 1;
+  }
+  return -1;
+}
+
+String WebPortal::currentSessionToken() {
+  const int activeIndex = findActiveSessionIndex(false);
+  if (activeIndex >= 0) {
+    return String(authSessions_[activeIndex].token);
+  }
   const String cookies = server_.header("Cookie");
   const String prefix = String(kSessionCookieName) + '=';
   int start = 0;
@@ -454,24 +652,7 @@ bool WebPortal::isAuthenticated() {
   if (!authenticationEnabled()) {
     return true;
   }
-  const String token = currentSessionToken();
-  if (token.length() != 32) {
-    return false;
-  }
-  const uint64_t now = static_cast<uint64_t>(esp_timer_get_time()) / 1000ULL;
-  for (AuthSession& session : authSessions_) {
-    if (!session.active) {
-      continue;
-    }
-    if (now - session.createdAtMs >= kSessionLifetimeMs) {
-      session = AuthSession{};
-      continue;
-    }
-    if (constantTimeEquals(token.c_str(), session.token, 32)) {
-      return true;
-    }
-  }
-  return false;
+  return findActiveSessionIndex(true) >= 0;
 }
 
 bool WebPortal::requireAuthentication(bool redirectToLogin) {
@@ -514,7 +695,7 @@ void WebPortal::setAdminPassword(const String& password) {
 void WebPortal::refreshCsrfToken() { randomToken(csrfToken_); }
 
 const char* WebPortal::createAuthSession() {
-  const uint64_t now = static_cast<uint64_t>(esp_timer_get_time()) / 1000ULL;
+  const uint64_t now = lil::timing::signedUsToMs(esp_timer_get_time());
   size_t selected = 0;
   uint64_t oldestAge = 0;
   for (size_t i = 0; i < 4; ++i) {
@@ -546,26 +727,19 @@ void WebPortal::clearAuthSessions() {
 }
 
 void WebPortal::revokeCurrentSession() {
-  const String token = currentSessionToken();
-  if (token.length() != 32) {
-    return;
-  }
-  for (AuthSession& session : authSessions_) {
-    if (session.active &&
-        constantTimeEquals(token.c_str(), session.token, 32)) {
-      session = AuthSession{};
-      return;
-    }
+  const int index = findActiveSessionIndex(true);
+  if (index >= 0) {
+    authSessions_[index] = AuthSession{};
   }
 }
 
 bool WebPortal::loginBlocked(uint32_t& retryAfterSeconds) {
-  return loginThrottle_.blocked(static_cast<uint64_t>(esp_timer_get_time()) / 1000,
+  return loginThrottle_.blocked(lil::timing::signedUsToMs(esp_timer_get_time()),
                                 retryAfterSeconds);
 }
 
 bool WebPortal::recordFailedLogin(uint32_t& retryAfterSeconds) {
-  return loginThrottle_.recordFailure(static_cast<uint64_t>(esp_timer_get_time()) / 1000,
+  return loginThrottle_.recordFailure(lil::timing::signedUsToMs(esp_timer_get_time()),
                                       retryAfterSeconds);
 }
 
@@ -578,10 +752,33 @@ bool WebPortal::validRequestOrigin() const {
   if (origin.isEmpty()) {
     return true;
   }
-  const String host = server_.hostHeader();
-  return !host.isEmpty() &&
-         (origin.equalsIgnoreCase("http://" + host) ||
-          origin.equalsIgnoreCase("https://" + host));
+  String host = server_.hostHeader();
+  if (host.isEmpty()) {
+    return false;
+  }
+  auto normalizeDefaultPort = [](const String& value, const char* scheme,
+                                 const char* defaultPort) -> String {
+    if (value.startsWith(scheme)) {
+      const String suffix(defaultPort);
+      if (value.endsWith(suffix)) {
+        return value.substring(0, value.length() - suffix.length());
+      }
+    }
+    return value;
+  };
+  String originLower = origin;
+  originLower.toLowerCase();
+  String hostLower = host;
+  hostLower.toLowerCase();
+  const String normalizedOrigin =
+      originLower.startsWith("https://")
+          ? normalizeDefaultPort(originLower, "https://", ":443")
+          : normalizeDefaultPort(originLower, "http://", ":80");
+  String httpHost = "http://" + hostLower;
+  String httpsHost = "https://" + hostLower;
+  httpHost = normalizeDefaultPort(httpHost, "http://", ":80");
+  httpsHost = normalizeDefaultPort(httpsHost, "https://", ":443");
+  return normalizedOrigin == httpHost || normalizedOrigin == httpsHost;
 }
 
 void WebPortal::handleLogin() {
@@ -639,7 +836,18 @@ void WebPortal::handleLogin() {
   }
 
   clearLoginFailures();
+  bool anyActiveBefore = false;
+  const uint64_t now = lil::timing::signedUsToMs(esp_timer_get_time());
+  for (const AuthSession& session : authSessions_) {
+    if (session.active && now - session.createdAtMs < kSessionLifetimeMs) {
+      anyActiveBefore = true;
+      break;
+    }
+  }
   const char* sessionToken = createAuthSession();
+  if (!anyActiveBefore) {
+    refreshCsrfToken();
+  }
   server_.sendHeader(
       "Set-Cookie",
       String(kSessionCookieName) + '=' + sessionToken +
@@ -651,6 +859,17 @@ void WebPortal::handleLogin() {
 void WebPortal::handleLogout() {
   sendNoCache(server_);
   revokeCurrentSession();
+  bool anyActiveAfter = false;
+  const uint64_t now = lil::timing::signedUsToMs(esp_timer_get_time());
+  for (const AuthSession& session : authSessions_) {
+    if (session.active && now - session.createdAtMs < kSessionLifetimeMs) {
+      anyActiveAfter = true;
+      break;
+    }
+  }
+  if (!anyActiveAfter) {
+    refreshCsrfToken();
+  }
   server_.sendHeader(
       "Set-Cookie",
       String(kSessionCookieName) +
@@ -666,7 +885,8 @@ bool WebPortal::verifyCsrf() {
         "{\"success\":false,\"message\":\"Request origin is not allowed\"}");
     return false;
   }
-  if (server_.arg("csrf") == csrfToken_) {
+  const String token = server_.arg("csrf");
+  if (token.length() == 32 && constantTimeEquals(token.c_str(), csrfToken_, 32)) {
     return true;
   }
   sendNoCache(server_);
@@ -678,15 +898,30 @@ bool WebPortal::verifyCsrf() {
 void WebPortal::loop() {
   finishThingSpeakMutation();
   server_.handleClient();
+  if (otaUploadSeen_) {
+    if (otaUploadAuthorized_ && otaUploadOk_) otaService.abortUpload();
+    otaUploadSeen_ = false;
+    otaUploadAuthorized_ = false;
+    otaUploadOk_ = false;
+    otaUploadEnded_ = false;
+    otaUploadError_ = "";
+  }
   if (restartPending_ && restartDelay_.ready(millis())) {
+    if (gateway_ != nullptr) {
+      gateway_->pauseForReset();
+    }
+    if (registry_ != nullptr) {
+      registry_->flushAllHistory();
+    }
+    FilesystemGuard fsGuard;
     ESP.restart();
   }
 }
 
 void WebPortal::sendJsonStatus() {
-  JsonDocument document;
+  JsonDocument document(psramJsonAllocator());
   document["storageAvailable"] = store_->storageAvailable();
-  document["uptimeMs"] = static_cast<uint64_t>(esp_timer_get_time()) / 1000;
+  document["uptimeMs"] = lil::timing::signedUsToMs(esp_timer_get_time());
   document["freeHeap"] = ESP.getFreeHeap();
   JsonObject memory = document["memory"].to<JsonObject>();
   constexpr uint32_t internalCaps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
@@ -717,38 +952,52 @@ void WebPortal::sendJsonStatus() {
   JsonObject cloud = document["cloud"].to<JsonObject>();
   cloud["lastHttpStatus"] = thingSpeak_->lastHttpStatus();
   cloud["lastEntryId"] = thingSpeak_->lastEntryId();
+  cloud["lastUploadFailed"] = thingSpeak_->lastUploadFailed();
   cloud["successfulUploads"] = thingSpeak_->successfulUploads();
   cloud["failedUploads"] = thingSpeak_->failedUploads();
-  cloud["lastAttemptAgeMs"] =
-      thingSpeak_->lastAttemptMs() == 0
-          ? 0
-          : millis() - thingSpeak_->lastAttemptMs();
-  cloud["lastSuccessAgeMs"] =
-      thingSpeak_->lastSuccessMs() == 0
-          ? 0
-          : millis() - thingSpeak_->lastSuccessMs();
+  cloud["lastAttemptAgeMs"] = thingSpeak_->lastAttemptAgeMs();
+  cloud["lastSuccessAgeMs"] = thingSpeak_->lastSuccessAgeMs();
   cloud["droppedJobs"] = thingSpeak_->droppedJobs();
 
-  // WebServer handlers are serialized; keep the enlarged snapshots off the task stack.
-  static SensorView sensorViews[kMaxSensors];
-  const size_t count = registry_->views(sensorViews, kMaxSensors);
-  const uint64_t snapshotMs = static_cast<uint64_t>(esp_timer_get_time()) / 1000;
+  // WebServer handlers are serialized; allocate the view snapshot buffer lazily
+  // in PSRAM (with internal-RAM fallback) to keep 7.8 KiB out of internal DRAM.
+  if (sensorViews_ == nullptr) {
+    void* raw = heap_caps_malloc(kMaxSensors * sizeof(SensorView),
+                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!raw) {
+      raw = heap_caps_malloc(kMaxSensors * sizeof(SensorView), MALLOC_CAP_8BIT);
+    }
+    if (!raw) {
+      sendNoCache(server_);
+      server_.send(503, "application/json",
+                   "{\"success\":false,\"message\":\"Status buffer unavailable\"}");
+      return;
+    }
+    sensorViews_ = new (raw) SensorView[kMaxSensors]();
+  }
+  const size_t count = registry_->views(sensorViews_, kMaxSensors);
+  const uint64_t snapshotMs = lil::timing::signedUsToMs(esp_timer_get_time());
   auto* history = registry_->normalHistory();
   size_t provisionedCount = 0;
   size_t pendingCount = 0;
   size_t uploadEnabledCount = 0;
   JsonArray sensors = document["sensors"].to<JsonArray>();
   for (size_t i = 0; i < count; ++i) {
-    const SensorView& view = sensorViews[i];
+    const SensorView& view = sensorViews_[i];
     const bool batteryProtection =
         (view.runtime.telemetry.flags & lil::protocol::kBatteryProtectionActive) != 0;
-    const bool recordingActive = view.runtime.hasRecordingStatus &&
-        view.runtime.recording.state == lil::recording::State::Recording;
+    const bool recordingActive = (view.runtime.hasRecordingStatus &&
+        view.runtime.recording.state == lil::recording::State::Recording) ||
+        (view.runtime.hasTelemetry &&
+         lil::protocol::isLiveSensor(view.runtime.telemetry.sensorType) &&
+         (view.runtime.telemetry.operatingMode == lil::protocol::SensorOperatingMode::kContinuousMotion ||
+          view.runtime.telemetry.operatingMode == lil::protocol::SensorOperatingMode::kContinuousPrecision));
     const bool periodicPrecision =
         (view.runtime.telemetry.sensorType == lil::protocol::EnvironmentalSensorType::kLsm6dsox ||
          view.runtime.telemetry.sensorType == lil::protocol::EnvironmentalSensorType::kTmp117) &&
         !recordingActive;
-    const uint64_t ageMs = view.runtime.hasTelemetry
+    const uint64_t ageMs = (view.runtime.hasTelemetry &&
+                            snapshotMs >= view.runtime.lastSeenMonotonicMs)
                                ? snapshotMs - view.runtime.lastSeenMonotonicMs
                                : 0;
     const uint32_t onlineLimitMs =
@@ -762,7 +1011,9 @@ void WebPortal::sendJsonStatus() {
     if(history){
       const auto info=history->info(view.config.mac);
       historyRevision = info.revision;
-      item["normalHistory"] = !recordingActive && view.runtime.telemetry.sensorType != lil::protocol::EnvironmentalSensorType::kMax30102;
+      item["normalHistory"] = !recordingActive &&
+          view.config.environmentalSensorType != lil::protocol::EnvironmentalSensorType::kMax30102 &&
+          view.runtime.telemetry.sensorType != lil::protocol::EnvironmentalSensorType::kMax30102;
       JsonObject retention=item["history"].to<JsonObject>();
       retention["points"]=info.points;retention["durablePoints"]=info.durablePoints;
       retention["pendingPoints"]=info.pendingPoints;retention["capacityPoints"]=info.capacityPoints;
@@ -801,9 +1052,16 @@ void WebPortal::sendJsonStatus() {
     item["sensorTxPowerDbm"] =
         static_cast<float>(view.runtime.sensorTxPowerQuarterDbm) / 4.0F;
     const auto& timing = view.runtime.telemetry.live;
-    item["timingKnown"] = (timing.flags & lil::protocol::kLiveTimingKnown) != 0;
-    item["acquisitionAgeMs"] = timing.acquisitionAgeMs == UINT16_MAX ? -1 : int64_t(timing.acquisitionAgeMs) + ageMs;
-    item["estimateAgeMs"] = timing.estimateAgeMs == UINT16_MAX ? -1 : int64_t(timing.estimateAgeMs) + ageMs;
+    item["timingKnown"] = view.runtime.hasTelemetry &&
+                          (timing.flags & lil::protocol::kLiveTimingKnown) != 0;
+    item["acquisitionAgeMs"] =
+        (!view.runtime.hasTelemetry || timing.acquisitionAgeMs == UINT16_MAX)
+            ? -1
+            : int64_t(timing.acquisitionAgeMs) + int64_t(ageMs);
+    item["estimateAgeMs"] =
+        (!view.runtime.hasTelemetry || timing.estimateAgeMs == UINT16_MAX)
+            ? -1
+            : int64_t(timing.estimateAgeMs) + int64_t(ageMs);
     // Materialize packed wire fields before ArduinoJson binds its argument.
     item["measurementWindowMs"] = uint16_t(timing.windowMs);
     item["warmupMs"] = uint16_t(timing.warmupMs);
@@ -860,6 +1118,37 @@ void WebPortal::sendJsonStatus() {
         view.config.bme680QuickStartComplete;
     item["gasResistanceOhms"] =
         float(view.runtime.telemetry.gasResistanceOhms);
+    if (view.runtime.telemetry.capabilities & lil::protocol::kSpectral) {
+      JsonArray sp = item["spectral"].to<JsonArray>();
+      for (size_t ch = 0; ch < 10; ++ch) {
+        sp.add(uint16_t(view.runtime.telemetry.extended.spectral.channels[ch]));
+      }
+      item["spectralGain"] = uint8_t(view.runtime.telemetry.extended.spectral.gainCode);
+      item["spectralIntMs"] = uint16_t(view.runtime.telemetry.extended.spectral.integrationMs);
+      item["spectralStatus"] = uint8_t(view.runtime.telemetry.extended.spectral.status);
+    }
+    if (view.runtime.telemetry.capabilities & lil::protocol::kDistance) {
+      item["distanceMm"] = uint16_t(view.runtime.telemetry.extended.distance.distanceMm);
+      item["signalRateKcps"] = uint16_t(view.runtime.telemetry.extended.distance.signalRateKcps);
+      item["ambientRateKcps"] = uint16_t(view.runtime.telemetry.extended.distance.ambientRateKcps);
+      item["rangeStatus"] = uint8_t(view.runtime.telemetry.extended.distance.rangeStatus);
+      item["distanceMode"] = uint8_t(view.runtime.telemetry.extended.distance.mode);
+    } else if (view.runtime.telemetry.sensorType ==
+               lil::protocol::EnvironmentalSensorType::kVl53l1x) {
+      item["rangeStatus"] = uint8_t(view.runtime.telemetry.extended.distance.rangeStatus);
+    }
+    if (view.runtime.telemetry.capabilities & lil::protocol::kAirQualityGas) {
+      item["eco2"] = uint16_t(view.runtime.telemetry.extended.airQuality.eco2Ppm);
+      item["tvoc"] = uint16_t(view.runtime.telemetry.extended.airQuality.tvocPpb);
+      item["ccsRawCurrent"] = uint8_t(view.runtime.telemetry.extended.airQuality.rawCurrentUa);
+      item["ccsRawAdc"] = uint16_t(view.runtime.telemetry.extended.airQuality.rawAdc);
+      item["ccsStatus"] = uint8_t(view.runtime.telemetry.extended.airQuality.status);
+      item["ccsError"] = uint8_t(view.runtime.telemetry.extended.airQuality.errorId);
+    } else if (view.runtime.telemetry.sensorType ==
+               lil::protocol::EnvironmentalSensorType::kCcs811) {
+      item["ccsStatus"] = uint8_t(view.runtime.telemetry.extended.airQuality.status);
+      item["ccsError"] = uint8_t(view.runtime.telemetry.extended.airQuality.errorId);
+    }
     item["capabilities"] = uint16_t(view.runtime.telemetry.capabilities);
     item["telemetryFlags"] = uint16_t(view.runtime.telemetry.flags);
     item["batteryMv"] = uint16_t(view.runtime.telemetry.batteryMillivolts);
@@ -883,10 +1172,14 @@ void WebPortal::sendJsonStatus() {
   cloud["pendingSensors"] = pendingCount;
   cloud["uploadEnabledSensors"] = uploadEnabledCount;
 
-  String output;
-  serializeJson(document, output);
+  if (document.overflowed()) {
+    sendNoCache(server_);
+    server_.send(503, "application/json",
+                 "{\"success\":false,\"message\":\"Status memory temporarily unavailable\"}");
+    return;
+  }
   sendNoCache(server_);
-  server_.send(200, "application/json", output);
+  sendStreamedJsonDocument(server_, document);
 }
 
 
@@ -903,10 +1196,12 @@ void WebPortal::sendRecordings() {
   if (!SensorRegistry::parseMac(server_.arg("mac"), mac) || !registry_->findConfig(mac, config)) {
     sendJsonResult(false, "Sensor not found"); return;
   }
-  JsonDocument doc; doc["freeBytes"] = recordingArchive.freeBytes();
+  JsonDocument doc(psramJsonAllocator()); doc["freeBytes"] = recordingArchive.freeBytes();
   auto sessions = doc["sessions"].to<JsonArray>();
   for (const auto& info : recordingArchive.list(mac)) recordingInfoJson(sessions.add<JsonObject>(), info);
-  String json; serializeJson(doc, json); sendNoCache(server_); server_.send(200, "application/json", json);
+  if (doc.overflowed()) { sendJsonResult(false, "Recording list memory unavailable"); return; }
+  sendNoCache(server_);
+  sendStreamedJsonDocument(server_, doc);
 }
 void WebPortal::sendRecording() {
   uint8_t mac[6]{}; SensorConfig config{};
@@ -940,23 +1235,85 @@ void WebPortal::sendRecording() {
   if (info.readError) { heap_caps_free(records); sendJsonResult(false, "Stored recording could not be read. Retry before exporting."); return; }
   JsonDocument metadata; recordingInfoJson(metadata.to<JsonObject>(), info);
   metadata["nextOffset"] = offset;
-  String opening; serializeJson(metadata, opening); opening.remove(opening.length()-1);
-  sendNoCache(server_); server_.setContentLength(CONTENT_LENGTH_UNKNOWN); server_.send(200, "application/json", "");
-  // Batch points to avoid a TCP/chunked-response write for every JSON field group.
-  String chunk = opening + ",\"points\":[";
-  chunk.reserve(6144);
+  if (metadata.overflowed()) { heap_caps_free(records); sendJsonResult(false, "Recording metadata unavailable"); return; }
+  String opening; serializeJson(metadata, opening);
+  if (opening.length() <= 1) { heap_caps_free(records); sendJsonResult(false, "Recording metadata unavailable"); return; }
+  opening.remove(opening.length()-1);
+  opening += ",\"points\":[";
+  size_t chunkCap = 16384;
+  size_t chunkFlush = 11680;  // 8 * 1460-byte TCP MSS.
+  char* cb = static_cast<char*>(
+      heap_caps_malloc(chunkCap, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!cb) {
+    chunkCap = 4096;
+    chunkFlush = 2920;
+    cb = static_cast<char*>(
+        heap_caps_malloc(chunkCap, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+  }
+  if (!cb) {
+    heap_caps_free(records);
+    sendJsonResult(false, "Recording response buffer unavailable");
+    return;
+  }
+  sendNoCache(server_); server_.client().setNoDelay(true); server_.setContentLength(CONTENT_LENGTH_UNKNOWN); server_.send(200, "application/json", "");
+  server_.sendContent(opening);
+  size_t clen = 0;
+  cb[0] = '\0';
   for (size_t i = 0; i < count; ++i) {
-    JsonDocument point; recordingPointJson(point, records[i]);
-    if ((i && !chunk.concat(',')) || !appendJson(point, chunk)) {
+    const size_t savedLen = clen;
+    bool appended = (!i || appendRawChar(cb, chunkCap, clen, ',')) &&
+                    appendRecordingPointJson(cb, chunkCap, clen, records[i]);
+    if (!appended && savedLen > 0) {
+#ifdef ESP_PLATFORM
+      (void)esp_task_wdt_reset();
+#endif
+      if (!server_.client().connected()) {
+        heap_caps_free(cb);
+        heap_caps_free(records);
+        server_.setContentLength(CONTENT_LENGTH_NOT_SET);
+        return;
+      }
+      server_.sendContent(cb, savedLen);
+      clen = 0;
+      cb[0] = '\0';
+      appended = (!i || appendRawChar(cb, chunkCap, clen, ',')) &&
+                 appendRecordingPointJson(cb, chunkCap, clen, records[i]);
+    }
+    if (!appended) {
+      heap_caps_free(cb);
       heap_caps_free(records);
       server_.client().stop();
+      server_.setContentLength(CONTENT_LENGTH_NOT_SET);
       return;
     }
-    if (chunk.length() >= 4096) { server_.sendContent(chunk); chunk = ""; }
+    if (clen >= chunkFlush) {
+#ifdef ESP_PLATFORM
+      (void)esp_task_wdt_reset();
+#endif
+      if (!server_.client().connected()) {
+        heap_caps_free(cb);
+        heap_caps_free(records);
+        server_.setContentLength(CONTENT_LENGTH_NOT_SET);
+        return;
+      }
+      server_.sendContent(cb, clen);
+      clen = 0;
+      cb[0] = '\0';
+    }
   }
   heap_caps_free(records);
-  if (!chunk.concat("]}")) { server_.client().stop(); return; }
-  server_.sendContent(chunk); server_.sendContent("");
+  if (!appendLit(cb, chunkCap, clen, "]}")) {
+    heap_caps_free(cb);
+    server_.client().stop();
+    server_.setContentLength(CONTENT_LENGTH_NOT_SET);
+    return;
+  }
+  if (server_.client().connected()) {
+    server_.sendContent(cb, clen);
+    server_.sendContent("");
+  }
+  heap_caps_free(cb);
+  server_.setContentLength(CONTENT_LENGTH_NOT_SET);
 }
 void WebPortal::deleteRecording() {
   uint8_t mac[6]{}; SensorView view{};
@@ -967,7 +1324,8 @@ void WebPortal::deleteRecording() {
   // A partial session still being replayed cannot be removed underneath ACKs.
   if (view.runtime.hasRecordingStatus && view.runtime.recording.session == session &&
       view.runtime.recording.pending) { sendJsonResult(false, "Wait for synchronization or start a replacement recording on the sensor"); return; }
-  sendJsonResult(recordingArchive.remove(mac, session), "Recording deleted");
+  const bool removed = recordingArchive.remove(mac, session);
+  sendJsonResult(removed, removed ? "Recording deleted" : "Recording could not be deleted");
 }
 
 void WebPortal::setMotionReference() {
@@ -996,13 +1354,24 @@ void WebPortal::sendJsonHistory() {
   }
 
   SensorView liveView{};
-  if(registry_->normalHistory() && server_.arg("source")!="live" &&
-      config.environmentalSensorType!=lil::protocol::EnvironmentalSensorType::kMax30102){
-    sendPagedHistory(mac);return;
+  const bool hasLiveView = registry_->findView(mac, liveView);
+  const bool isMax30102 =
+      config.environmentalSensorType == lil::protocol::EnvironmentalSensorType::kMax30102 ||
+      (hasLiveView &&
+       liveView.runtime.telemetry.sensorType == lil::protocol::EnvironmentalSensorType::kMax30102);
+  if (registry_->normalHistory() && server_.arg("source") != "live" && !isMax30102) {
+    sendPagedHistory(mac); return;
   }
-  if (registry_->findView(mac, liveView) && lil::protocol::isLiveSensor(liveView.runtime.telemetry.sensorType) &&
-      !(liveView.runtime.telemetry.flags & lil::protocol::kBatteryProtectionActive)) {
-    const size_t liveCapacity = 60000 / lil::protocol::liveHistoryIntervalMs(liveView.runtime.telemetry.sensorType) + 1;
+  if (server_.arg("source") == "live" || isMax30102 ||
+      (hasLiveView && lil::protocol::isLiveSensor(liveView.runtime.telemetry.sensorType) &&
+       !(liveView.runtime.telemetry.flags & lil::protocol::kBatteryProtectionActive))) {
+    const auto liveType =
+        (hasLiveView && lil::protocol::isLiveSensor(liveView.runtime.telemetry.sensorType))
+            ? liveView.runtime.telemetry.sensorType
+            : (lil::protocol::isLiveSensor(config.environmentalSensorType)
+                   ? config.environmentalSensorType
+                   : lil::protocol::EnvironmentalSensorType::kMax30102);
+    const size_t liveCapacity = 60000 / lil::protocol::liveHistoryIntervalMs(liveType) + 1;
     auto* samples = static_cast<LiveSample*>(heap_caps_malloc(liveCapacity * sizeof(LiveSample), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (!samples && heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) > liveCapacity * sizeof(LiveSample) + 96U * 1024U)
       samples = static_cast<LiveSample*>(heap_caps_malloc(liveCapacity * sizeof(LiveSample), MALLOC_CAP_8BIT));
@@ -1010,66 +1379,202 @@ void WebPortal::sendJsonHistory() {
     const uint32_t* cursor = server_.hasArg("afterMs") ? &afterMs : nullptr;
     const size_t count = registry_->liveHistory(mac, samples, liveCapacity, cursor);
     const uint32_t now = millis();
-    sendNoCache(server_); server_.setContentLength(CONTENT_LENGTH_UNKNOWN);
+    if (server_.arg("format") == "bin-v1") {
+      BinaryLiveHeader hdr{
+          0x31424357UL, 1U, static_cast<uint16_t>(sizeof(BinaryLiveRecord)),
+          static_cast<uint32_t>(count),
+          static_cast<uint32_t>(lil::protocol::liveReportIntervalMs(liveType))};
+      sendNoCache(server_);
+      server_.client().setNoDelay(true);
+      server_.setContentLength(sizeof(hdr) + count * sizeof(BinaryLiveRecord));
+      server_.send(200, "application/octet-stream", "");
+      auto client = server_.client();
+      auto writeAll = [&](const uint8_t* ptr, size_t len) -> bool {
+        size_t sent = 0;
+        while (sent < len && client.connected()) {
+          const size_t n = client.write(ptr + sent, len - sent);
+          if (n == 0) {
+            client.stop();
+            return false;
+          }
+          sent += n;
+        }
+        return sent == len;
+      };
+      if (client.connected() &&
+          writeAll(reinterpret_cast<const uint8_t*>(&hdr), sizeof(hdr))) {
+        constexpr size_t kBatch = 42;  // 42 * 68 = 2856 B (~2 * 1460-byte TCP MSS).
+        std::unique_ptr<BinaryLiveRecord[]> batch(new (std::nothrow) BinaryLiveRecord[kBatch]);
+        if (batch) {
+          for (size_t offset = 0; offset < count && client.connected(); offset += kBatch) {
+#ifdef ESP_PLATFORM
+            (void)esp_task_wdt_reset();
+#endif
+            const size_t n = min(kBatch, count - offset);
+            for (size_t i = 0; i < n; ++i) {
+              packBinaryLiveRecord(batch[i], samples[offset + i].telemetry,
+                                   samples[offset + i].receivedMs, now);
+            }
+            if (!writeAll(reinterpret_cast<const uint8_t*>(batch.get()),
+                          n * sizeof(BinaryLiveRecord))) {
+              break;
+            }
+          }
+        } else {
+          for (size_t i = 0; i < count && client.connected(); ++i) {
+#ifdef ESP_PLATFORM
+            (void)esp_task_wdt_reset();
+#endif
+            BinaryLiveRecord single{};
+            packBinaryLiveRecord(single, samples[i].telemetry, samples[i].receivedMs, now);
+            if (!writeAll(reinterpret_cast<const uint8_t*>(&single), sizeof(single))) {
+              break;
+            }
+          }
+        }
+      }
+      heap_caps_free(samples);
+      server_.setContentLength(CONTENT_LENGTH_NOT_SET);
+      return;
+    }
+    sendNoCache(server_); server_.client().setNoDelay(true); server_.setContentLength(CONTENT_LENGTH_UNKNOWN);
     server_.send(200, "application/json", "");
     server_.sendContent(String("{\"live\":true,\"bucketSeconds\":") +
-        String(lil::protocol::liveReportIntervalMs(liveView.runtime.telemetry.sensorType) / 1000.0F, 1) + ",\"points\":[");
-    String chunk;
-    chunk.reserve(4096);
+        String(lil::protocol::liveReportIntervalMs(liveType) * 0.001F, 1) + ",\"points\":[");
+    constexpr size_t kChunkCap = 4096;
+    constexpr size_t kChunkFlush = 2920;  // 2 * 1460-byte TCP MSS.
+    std::unique_ptr<char[]> chunkBuf(new (std::nothrow) char[kChunkCap]);
+    if (!chunkBuf) {
+      heap_caps_free(samples);
+      server_.client().stop();
+      server_.setContentLength(CONTENT_LENGTH_NOT_SET);
+      return;
+    }
+    char* cb = chunkBuf.get();
+    size_t clen = 0;
+    cb[0] = '\0';
     for (size_t i = 0; i < count; ++i) {
-      const auto& sample = samples[i]; const auto& t = sample.telemetry;
-      JsonDocument doc;
-      doc["id"] = sample.receivedMs;
-      doc["sensorType"] = static_cast<uint8_t>(t.sensorType);
-      doc["ageMs"] = uint32_t(now - sample.receivedMs);
-      const bool timed = t.live.flags & lil::protocol::kLiveTimingKnown;
-      doc["measurementAgeMs"] = uint32_t(now - sample.receivedMs) + (timed && t.live.acquisitionAgeMs != UINT16_MAX ? t.live.acquisitionAgeMs : 0);
-      doc["windowMs"] = uint16_t(t.live.windowMs);
-      doc["estimateAgeMs"] = uint32_t(now - sample.receivedMs) + (timed && t.live.estimateAgeMs != UINT16_MAX ? t.live.estimateAgeMs : 0);
-      doc["gap"] = t.motion.fifoOverrun || (t.live.flags & lil::protocol::kLiveGap);
-      if (timed && t.live.count <= lil::protocol::kOpticalBatchSize) {
-        JsonArray wave = doc["wave"].to<JsonArray>();
-        for (uint8_t j = 0; j < t.live.count; ++j) {
-          JsonObject frame = wave.add<JsonObject>();
-          frame["ageMs"] = uint32_t(now - sample.receivedMs) + t.live.optical[j].ageMs;
-          frame["red"] = uint32_t(t.live.optical[j].red); frame["infrared"] = uint32_t(t.live.optical[j].infrared);
+      const auto& sample = samples[i];
+      const auto& t = sample.telemetry;
+      const uint32_t ageMs = static_cast<uint32_t>(now - sample.receivedMs);
+      const bool timed = (t.live.flags & lil::protocol::kLiveTimingKnown) != 0;
+      const uint32_t measAge = ageMs + (timed && t.live.acquisitionAgeMs != UINT16_MAX ? t.live.acquisitionAgeMs : 0U);
+      const uint32_t estAge = ageMs + (timed && t.live.estimateAgeMs != UINT16_MAX ? t.live.estimateAgeMs : 0U);
+      const bool gap = t.motion.fifoOverrun || (t.live.flags & lil::protocol::kLiveGap);
+      bool ok = (!i || appendRawChar(cb, kChunkCap, clen, ',')) &&
+                appendRawStr(cb, kChunkCap, clen, "{\"id\":") &&
+                appendUnsigned(cb, kChunkCap, clen, sample.receivedMs) &&
+                appendRawStr(cb, kChunkCap, clen, ",\"sensorType\":") &&
+                appendUnsigned(cb, kChunkCap, clen, static_cast<uint8_t>(t.sensorType)) &&
+                appendRawStr(cb, kChunkCap, clen, ",\"ageMs\":") &&
+                appendUnsigned(cb, kChunkCap, clen, ageMs) &&
+                appendRawStr(cb, kChunkCap, clen, ",\"measurementAgeMs\":") &&
+                appendUnsigned(cb, kChunkCap, clen, measAge) &&
+                appendRawStr(cb, kChunkCap, clen, ",\"windowMs\":") &&
+                appendUnsigned(cb, kChunkCap, clen, uint16_t(t.live.windowMs)) &&
+                appendRawStr(cb, kChunkCap, clen, ",\"estimateAgeMs\":") &&
+                appendUnsigned(cb, kChunkCap, clen, estAge) &&
+                appendRawStr(cb, kChunkCap, clen, gap ? ",\"gap\":true" : ",\"gap\":false");
+      if (ok && timed && t.live.count <= lil::protocol::kOpticalBatchSize) {
+        ok = appendRawStr(cb, kChunkCap, clen, ",\"wave\":[");
+        for (uint8_t j = 0; ok && j < t.live.count; ++j) {
+          ok = (!j || appendRawChar(cb, kChunkCap, clen, ',')) &&
+               appendRawStr(cb, kChunkCap, clen, "{\"ageMs\":") &&
+               appendUnsigned(cb, kChunkCap, clen, ageMs + t.live.optical[j].ageMs) &&
+               appendRawStr(cb, kChunkCap, clen, ",\"red\":") &&
+               appendUnsigned(cb, kChunkCap, clen, uint32_t(t.live.optical[j].red)) &&
+               appendRawStr(cb, kChunkCap, clen, ",\"infrared\":") &&
+               appendUnsigned(cb, kChunkCap, clen, uint32_t(t.live.optical[j].infrared)) &&
+               appendRawChar(cb, kChunkCap, clen, '}');
+        }
+        ok = ok && appendRawChar(cb, kChunkCap, clen, ']');
+      }
+      if (ok && !(t.flags & lil::protocol::kSensorReadFailed)) {
+        if ((t.capabilities & lil::protocol::kTemperature) && (!timed || (t.live.flags & lil::protocol::kLiveSampleFresh))) {
+          ok = appendRawStr(cb, kChunkCap, clen, ",\"temperature\":") &&
+               appendScaledFloat(cb, kChunkCap, clen, float(t.temperatureC), 4);
+        }
+        if (ok && (t.capabilities & lil::protocol::kMotion) && !t.motion.fifoOverrun) {
+          static constexpr const char* kAxisKeys[] = {
+              ",\"ax\":", ",\"ay\":", ",\"az\":", ",\"gx\":", ",\"gy\":", ",\"gz\":"};
+          for (int axis = 0; ok && axis < 6; ++axis) {
+            ok = appendRawStr(cb, kChunkCap, clen, kAxisKeys[axis]) &&
+                 appendScaledFloat(cb, kChunkCap, clen,
+                                   float(axis < 3 ? t.motion.accelerationG[axis] : t.motion.angularRateDps[axis - 3]),
+                                   axis < 3 ? 4 : 3);
+          }
+          ok = ok && appendRawStr(cb, kChunkCap, clen, ",\"peakAcceleration\":") &&
+               appendScaledFloat(cb, kChunkCap, clen, float(t.motion.peakAccelerationG), 4) &&
+               appendRawStr(cb, kChunkCap, clen, ",\"peakAngularRate\":") &&
+               appendScaledFloat(cb, kChunkCap, clen, float(t.motion.peakAngularRateDps), 3);
+        }
+        if (ok && (t.capabilities & lil::protocol::kOptical)) {
+          ok = appendRawStr(cb, kChunkCap, clen, ",\"red\":") &&
+               appendUnsigned(cb, kChunkCap, clen, uint32_t(t.pulse.red)) &&
+               appendRawStr(cb, kChunkCap, clen, ",\"infrared\":") &&
+               appendUnsigned(cb, kChunkCap, clen, uint32_t(t.pulse.infrared));
+        }
+        if (ok && (t.capabilities & lil::protocol::kHeartRate) && (!timed || (t.live.flags & lil::protocol::kLiveEstimateFresh))) {
+          ok = appendRawStr(cb, kChunkCap, clen, ",\"heartRate\":") &&
+               appendScaledFloat(cb, kChunkCap, clen, float(t.pulse.beatsPerMinute), 2);
         }
       }
-      if (!(t.flags & lil::protocol::kSensorReadFailed)) {
-        if ((t.capabilities & lil::protocol::kTemperature) && (!timed || (t.live.flags & lil::protocol::kLiveSampleFresh))) doc["temperature"] = float(t.temperatureC);
-        if ((t.capabilities & lil::protocol::kMotion) && !t.motion.fifoOverrun) {
-          const char* keys[] = {"ax", "ay", "az", "gx", "gy", "gz"};
-          for (int axis = 0; axis < 6; ++axis) doc[keys[axis]] = float(axis < 3 ? t.motion.accelerationG[axis] : t.motion.angularRateDps[axis-3]);
-          doc["peakAcceleration"] = float(t.motion.peakAccelerationG);
-          doc["peakAngularRate"] = float(t.motion.peakAngularRateDps);
-        }
-        if (t.capabilities & lil::protocol::kOptical) { doc["red"] = uint32_t(t.pulse.red); doc["infrared"] = uint32_t(t.pulse.infrared); }
-        if ((t.capabilities & lil::protocol::kHeartRate) && (!timed || (t.live.flags & lil::protocol::kLiveEstimateFresh))) doc["heartRate"] = float(t.pulse.beatsPerMinute);
+      ok = ok && appendRawStr(cb, kChunkCap, clen, t.motion.fifoOverrun ? ",\"motionOverrun\":true" : ",\"motionOverrun\":false") &&
+           appendRawStr(cb, kChunkCap, clen, ",\"pulseStatus\":") &&
+           appendUnsigned(cb, kChunkCap, clen, t.pulse.status) &&
+           appendRawStr(cb, kChunkCap, clen, ",\"quality\":") &&
+           appendUnsigned(cb, kChunkCap, clen, t.pulse.quality);
+      if (ok && (t.live.flags & lil::protocol::kMotionFeedbackPresent)) {
+        ok = appendRawStr(cb, kChunkCap, clen, ",\"steps\":") &&
+             appendUnsigned(cb, kChunkCap, clen, uint16_t(t.motionFeedback.steps)) &&
+             appendRawStr(cb, kChunkCap, clen, ",\"activeSeconds\":") &&
+             appendUnsigned(cb, kChunkCap, clen, uint16_t(t.motionFeedback.activeSeconds));
       }
-      doc["motionOverrun"] = t.motion.fifoOverrun;
-      doc["pulseStatus"] = t.pulse.status;
-      doc["quality"] = t.pulse.quality;
-      if (t.live.flags & lil::protocol::kMotionFeedbackPresent) {
-        doc["steps"] = uint16_t(t.motionFeedback.steps);
-        doc["activeSeconds"] = uint16_t(t.motionFeedback.activeSeconds);
+      if (ok && (t.capabilities & lil::protocol::kBattery)) {
+        ok = appendRawStr(cb, kChunkCap, clen, ",\"battery\":") &&
+             appendScaledFloat(cb, kChunkCap, clen, t.batteryMillivolts * 0.001F, 3);
       }
-      if (t.capabilities & lil::protocol::kBattery) doc["battery"] = t.batteryMillivolts / 1000.0F;
-      if ((i && !chunk.concat(',')) || !appendJson(doc, chunk)) {
+      ok = ok && appendRawChar(cb, kChunkCap, clen, '}');
+      if (!ok) {
         heap_caps_free(samples);
         server_.client().stop();
+        server_.setContentLength(CONTENT_LENGTH_NOT_SET);
         return;
       }
-      if (chunk.length() >= 3072) {
-        server_.sendContent(chunk);
-        chunk = "";
+      if (clen >= kChunkFlush) {
+#ifdef ESP_PLATFORM
+        (void)esp_task_wdt_reset();
+#endif
+        if (!server_.client().connected()) {
+          heap_caps_free(samples);
+          server_.setContentLength(CONTENT_LENGTH_NOT_SET);
+          return;
+        }
+        server_.sendContent(cb, clen);
+        clen = 0;
+        cb[0] = '\0';
       }
     }
     heap_caps_free(samples);
-    if (!chunk.concat("]}")) { server_.client().stop(); return; }
-    server_.sendContent(chunk);
-    server_.sendContent("");
+    if (!appendRawStr(cb, kChunkCap, clen, "]}")) {
+      server_.client().stop();
+      server_.setContentLength(CONTENT_LENGTH_NOT_SET);
+      return;
+    }
+    if (server_.client().connected()) {
+      server_.sendContent(cb, clen);
+      server_.sendContent("");
+    }
+    server_.setContentLength(CONTENT_LENGTH_NOT_SET);
     return;
   }
+  sendLegacyJsonHistory(mac, since);
+}
+
+#if defined(__GNUC__) && !defined(__clang__)
+[[gnu::noinline]]
+#endif
+void WebPortal::sendLegacyJsonHistory(const uint8_t mac[6], uint32_t since) {
   const size_t capacity = registry_->historyCapacity(mac);
   HistorySample* samples = nullptr;
   if (capacity > 0) {
@@ -1090,79 +1595,96 @@ void WebPortal::sendJsonHistory() {
   const size_t count = registry_->history(mac, samples, capacity);
   const uint32_t bucketSeconds = registry_->historyBucketSeconds(mac);
   sendNoCache(server_);
+  server_.client().setNoDelay(true);
   server_.setContentLength(CONTENT_LENGTH_UNKNOWN);
   server_.send(200, "application/json", "");
-  String opening = "{\"mac\":\"" + SensorRegistry::formatMac(mac) +
-                   "\",\"bucketSeconds\":" + String(bucketSeconds) +
-                   ",\"bucketMinutes\":" +
-                   String(bucketSeconds / 60.0F, 2) + ",\"points\":[";
-  server_.sendContent(opening);
+  char openingBuf[128];
+  snprintf(openingBuf, sizeof(openingBuf),
+           "{\"mac\":\"%s\",\"bucketSeconds\":%lu,\"bucketMinutes\":%.2f,\"points\":[",
+           SensorRegistry::formatMac(mac).c_str(),
+           static_cast<unsigned long>(bucketSeconds),
+           static_cast<double>(bucketSeconds * (1.0F / 60.0F)));
+  server_.sendContent(openingBuf);
   String chunk;
   chunk.reserve(2048);
   size_t emitted = 0;
+  char point[384];
   for (size_t i = 0; i < count; ++i) {
     const HistorySample& sample = samples[i];
     if (sample.timestamp < since) continue;
-    String point = emitted++ == 0 ? "{" : ",{";
-    point.reserve(256);
-    point += "\"t\":";
-    point += String(static_cast<unsigned long long>(sample.timestamp) *
-                    1000ULL);
-    point += ",\"sensorType\":";
-    point += String(sample.sensorType);
-    point += ",\"pcbVersion\":";
-    point += String(sample.pcbVersion);
-    point += ",\"iaqAccuracy\":";
-    point += String(sample.iaqAccuracy);
+    size_t pos = 0;
+    const auto appendFmt = [&](const char* fmt, auto... args) {
+      if (pos >= sizeof(point)) return;
+      const int n = snprintf(point + pos, sizeof(point) - pos, fmt, args...);
+      if (n > 0) pos += min<size_t>(static_cast<size_t>(n), sizeof(point) - pos);
+    };
+    appendFmt("%s\"t\":%llu,\"sensorType\":%u,\"pcbVersion\":%u,\"iaqAccuracy\":%u",
+              emitted++ == 0 ? "{" : ",{",
+              static_cast<unsigned long long>(sample.timestamp) * 1000ULL,
+              unsigned(sample.sensorType), unsigned(sample.pcbVersion),
+              unsigned(sample.iaqAccuracy));
     if ((sample.capabilities & lil::protocol::kMotion) != 0) {
-      const char* keys[] = {"ax", "ay", "az", "gx", "gy", "gz"};
-      for (size_t axis = 0; axis < 6; ++axis) {
-        point += ",\""; point += keys[axis]; point += "\":";
-        point += String(axis < 3 ? sample.accelerationMilliG[axis] / 1000.0F :
-                        sample.angularRateDeciDps[axis - 3] / 10.0F, 3);
-      }
-      point += ",\"peakAcceleration\":"; point += String(sample.peakAccelerationMilliG / 1000.0F, 3);
-      point += ",\"peakAngularRate\":"; point += String(sample.peakAngularRateDeciDps / 10.0F, 1);
-      point += ",\"motionOverrun\":"; point += sample.motionOverrun ? "true" : "false";
+      appendFmt(",\"ax\":%.3f,\"ay\":%.3f,\"az\":%.3f,\"gx\":%.3f,\"gy\":%.3f,\"gz\":%.3f"
+                ",\"peakAcceleration\":%.3f,\"peakAngularRate\":%.1f,\"motionOverrun\":%s",
+                static_cast<double>(sample.accelerationMilliG[0] * 0.001F),
+                static_cast<double>(sample.accelerationMilliG[1] * 0.001F),
+                static_cast<double>(sample.accelerationMilliG[2] * 0.001F),
+                static_cast<double>(sample.angularRateDeciDps[0] * 0.1F),
+                static_cast<double>(sample.angularRateDeciDps[1] * 0.1F),
+                static_cast<double>(sample.angularRateDeciDps[2] * 0.1F),
+                static_cast<double>(sample.peakAccelerationMilliG * 0.001F),
+                static_cast<double>(sample.peakAngularRateDeciDps * 0.1F),
+                sample.motionOverrun ? "true" : "false");
     }
     if ((sample.capabilities & lil::protocol::kTemperature) != 0) {
-      point += ",\"temperature\":";
-      point += String(sample.temperatureCentiC / 100.0F, 2);
+      appendFmt(",\"temperature\":%.2f",
+                static_cast<double>(sample.temperatureCentiC * 0.01F));
     }
     if ((sample.capabilities & lil::protocol::kHumidity) != 0) {
-      point += ",\"humidity\":";
-      point += String(sample.humidityCentiPercent / 100.0F, 2);
+      appendFmt(",\"humidity\":%.2f",
+                static_cast<double>(sample.humidityCentiPercent * 0.01F));
     }
     if ((sample.capabilities & lil::protocol::kPressure) != 0) {
-      point += ",\"pressure\":";
-      point += String(sample.pressureDeciHpa / 10.0F, 1);
+      appendFmt(",\"pressure\":%.1f",
+                static_cast<double>(sample.pressureDeciHpa * 0.1F));
     }
     if ((sample.capabilities & lil::protocol::kIaq) != 0 &&
         sample.iaqAccuracy > 0) {
-      point += ",\"iaq\":";
-      point += String(sample.iaqDeci / 10.0F, 1);
+      appendFmt(",\"iaq\":%.1f", static_cast<double>(sample.iaqDeci * 0.1F));
     }
     if ((sample.capabilities & lil::protocol::kGasResistance) != 0) {
-      point += ",\"gas\":";
-      point += String(sample.gasResistanceOhms / 1000.0F, 3);
+      appendFmt(",\"gas\":%.3f",
+                static_cast<double>(sample.gasResistanceOhms * 0.001F));
     }
     if ((sample.capabilities & lil::protocol::kBattery) != 0) {
-      point += ",\"battery\":";
-      point += String(sample.batteryMillivolts / 1000.0F, 3);
+      appendFmt(",\"battery\":%.3f",
+                static_cast<double>(sample.batteryMillivolts * 0.001F));
     }
-    point += '}';
-    if (chunk.length() + point.length() > 2048) {
+    if (pos + 1 < sizeof(point)) {
+      point[pos++] = '}';
+      point[pos] = '\0';
+    }
+    if (chunk.length() + pos > 2048) {
+#ifdef ESP_PLATFORM
+      (void)esp_task_wdt_reset();
+#endif
+      if (!server_.client().connected()) {
+        if (samples != nullptr) heap_caps_free(samples);
+        server_.setContentLength(CONTENT_LENGTH_NOT_SET);
+        return;
+      }
       server_.sendContent(chunk);
-      chunk = String();
-      chunk.reserve(2048);
+      chunk = "";
     }
-    chunk += point;
+    chunk.concat(point, pos);
   }
-  if (!chunk.isEmpty()) {
-    server_.sendContent(chunk);
+  if (server_.client().connected()) {
+    if (!chunk.isEmpty()) {
+      server_.sendContent(chunk);
+    }
+    server_.sendContent("]}");
+    server_.sendContent("");
   }
-  server_.sendContent("]}");
-  server_.sendContent("");
   server_.setContentLength(CONTENT_LENGTH_NOT_SET);
   if (samples != nullptr) {
     heap_caps_free(samples);
@@ -1189,7 +1711,7 @@ void WebPortal::sendPagedHistory(const uint8_t mac[6]) {
   if(!points){sendJsonResult(false,"History memory is temporarily unavailable");return;}
   bool stale=false,error=false;const size_t count=history->read(mac,after,until,oldest,points,capacity,stale,error);
   if(stale||error){heap_caps_free(points);sendJsonResult(false,stale?"History changed while loading. Retry the selected window.":"History page failed CRC validation.");return;}
-  sendNoCache(server_);server_.setContentLength(CONTENT_LENGTH_UNKNOWN);server_.send(200,"application/json","");
+  sendNoCache(server_);server_.client().setNoDelay(true);server_.setContentLength(CONTENT_LENGTH_UNKNOWN);server_.send(200,"application/json","");
   JsonDocument header;header["mac"]=SensorRegistry::formatMac(mac);header["paged"]=true;
   header["bucketSeconds"]=info.intervalSeconds;header["capacityPoints"]=info.capacityPoints;
   header["pointsTotal"]=info.points;header["durablePoints"]=info.durablePoints;header["pendingPoints"]=info.pendingPoints;
@@ -1198,23 +1720,111 @@ void WebPortal::sendPagedHistory(const uint8_t mac[6]) {
   const uint32_t columns=compact?historyColumnMask(points,count):0;
   if(compact){header["format"]="array-v1";JsonArray fields=header["fields"].to<JsonArray>();
     for(size_t i=0;i<kHistoryColumnCount;++i)if(columns&(1UL<<i))fields.add(kHistoryColumns[i]);}
-  if(header.overflowed()){heap_caps_free(points);server_.client().stop();return;}
-  String opening;serializeJson(header,opening);opening.remove(opening.length()-1);opening+=",\"points\":[";server_.sendContent(opening);
-  String chunk;chunk.reserve(4096);
-  for(size_t i=0;i<count;++i){
-    JsonDocument row;historyPointJson(row,points[i]);JsonDocument array;
-    if(compact)compactHistoryPointJson(array,row,columns);
-    if (row.overflowed() || array.overflowed() || (i && !chunk.concat(',')) ||
-        !(compact?appendJson(array,chunk):appendJson(row,chunk))) {
+  if(header.overflowed()){heap_caps_free(points);server_.client().stop();server_.setContentLength(CONTENT_LENGTH_NOT_SET);return;}
+  String opening;serializeJson(header,opening);
+  if(opening.length()<=1){heap_caps_free(points);server_.client().stop();server_.setContentLength(CONTENT_LENGTH_NOT_SET);return;}
+  opening.remove(opening.length()-1);opening+=",\"points\":[";server_.sendContent(opening);
+  if (compact) {
+    size_t chunkCap = 16384;
+    size_t chunkFlush = 11680;  // 8 * 1460-byte TCP MSS.
+    char* cb = static_cast<char*>(
+        heap_caps_malloc(chunkCap, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!cb) {
+      chunkCap = 4096;
+      chunkFlush = 2920;
+      cb = static_cast<char*>(
+          heap_caps_malloc(chunkCap, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    }
+    if (!cb) {
       heap_caps_free(points);
       server_.client().stop();
+      server_.setContentLength(CONTENT_LENGTH_NOT_SET);
       return;
     }
-    if(chunk.length()>=3072){server_.sendContent(chunk);chunk="";}
+    size_t clen = 0;
+    cb[0] = '\0';
+    for (size_t i = 0; i < count; ++i) {
+      size_t savedLen = clen;
+      bool appended = (!i || appendRawChar(cb, chunkCap, clen, ',')) &&
+                      appendCompactHistoryPoint(cb, chunkCap, clen, points[i], columns);
+      if (!appended && savedLen > 0) {
+#ifdef ESP_PLATFORM
+        (void)esp_task_wdt_reset();
+#endif
+        if (!server_.client().connected()) {
+          heap_caps_free(cb);
+          heap_caps_free(points);
+          server_.setContentLength(CONTENT_LENGTH_NOT_SET);
+          return;
+        }
+        server_.sendContent(cb, savedLen);
+        clen = 0;
+        cb[0] = '\0';
+        appended = (!i || appendRawChar(cb, chunkCap, clen, ',')) &&
+                   appendCompactHistoryPoint(cb, chunkCap, clen, points[i], columns);
+      }
+      if (!appended) {
+        heap_caps_free(cb);
+        heap_caps_free(points);
+        server_.client().stop();
+        server_.setContentLength(CONTENT_LENGTH_NOT_SET);
+        return;
+      }
+      if (clen >= chunkFlush) {
+#ifdef ESP_PLATFORM
+        (void)esp_task_wdt_reset();
+#endif
+        if (!server_.client().connected()) {
+          heap_caps_free(cb);
+          heap_caps_free(points);
+          server_.setContentLength(CONTENT_LENGTH_NOT_SET);
+          return;
+        }
+        server_.sendContent(cb, clen);
+        clen = 0;
+        cb[0] = '\0';
+      }
+    }
+    heap_caps_free(points);
+    if (!appendRawStr(cb, chunkCap, clen, "]}")) {
+      heap_caps_free(cb);
+      server_.client().stop();
+      server_.setContentLength(CONTENT_LENGTH_NOT_SET);
+      return;
+    }
+    if (server_.client().connected()) {
+      server_.sendContent(cb, clen);
+      server_.sendContent("");
+    }
+    heap_caps_free(cb);
+    server_.setContentLength(CONTENT_LENGTH_NOT_SET);
+    return;
+  }
+  String chunk;chunk.reserve(4096);
+  JsonDocument row;
+  for(size_t i=0;i<count;++i){
+    row.clear();
+    historyPointJson(row,points[i]);
+    if (row.overflowed() || (i && !chunk.concat(',')) || !appendJson(row,chunk)) {
+      heap_caps_free(points);
+      server_.client().stop();
+      server_.setContentLength(CONTENT_LENGTH_NOT_SET);
+      return;
+    }
+    if(chunk.length()>=2920){
+#ifdef ESP_PLATFORM
+      (void)esp_task_wdt_reset();
+#endif
+      if(!server_.client().connected()){heap_caps_free(points);server_.setContentLength(CONTENT_LENGTH_NOT_SET);return;}
+      server_.sendContent(chunk);chunk="";
+    }
   }
   heap_caps_free(points);
-  if (!chunk.concat("]}")) { server_.client().stop(); return; }
-  server_.sendContent(chunk);server_.sendContent("");server_.setContentLength(CONTENT_LENGTH_NOT_SET);
+  if (!chunk.concat("]}")) { server_.client().stop(); server_.setContentLength(CONTENT_LENGTH_NOT_SET); return; }
+  if (server_.client().connected()) {
+    server_.sendContent(chunk);server_.sendContent("");
+  }
+  server_.setContentLength(CONTENT_LENGTH_NOT_SET);
 }
 
 void WebPortal::saveDashboardLayout() {
@@ -1237,11 +1847,12 @@ void WebPortal::saveDashboardLayout() {
   };
   if(!parse(order,false)||!parse(hidden,true)){sendJsonResult(false,"Dashboard sensor list is invalid or changed. Reload and try again.");return;}
   const bool saved=store_->saveDashboardLayout(layout);
+  if(saved){dashboardLayout_=layout;dashboardLayoutLoaded_=true;}
   sendJsonResult(saved,saved?"Dashboard layout saved.":"Could not save dashboard layout.");
 }
 
 void WebPortal::sendJsonConfig() {
-  JsonDocument document;
+  JsonDocument document(psramJsonAllocator());
   document["storageAvailable"] = store_->storageAvailable();
   document["hostname"] = "w-charger";
   document["wifiSsid"] = config_->wifiSsid;
@@ -1255,7 +1866,11 @@ void WebPortal::sendJsonConfig() {
   document["apIp"] = wifi_->accessPointIp();
   document["accessPointPassword"] = config_->accessPointPassword;
   document["csrfToken"] = csrfToken_;
-  const auto layout=store_->loadDashboardLayout();
+  if (!dashboardLayoutLoaded_) {
+    dashboardLayout_ = store_->loadDashboardLayout();
+    dashboardLayoutLoaded_ = true;
+  }
+  const auto& layout = dashboardLayout_;
   JsonObject dashboard=document["dashboard"].to<JsonObject>();
   dashboard["columns"]=layout.columns;dashboard["comfortable"]=bool(layout.comfortable);
   JsonArray order=dashboard["order"].to<JsonArray>();JsonArray hidden=dashboard["hidden"].to<JsonArray>();
@@ -1273,10 +1888,14 @@ void WebPortal::sendJsonConfig() {
     item["readApiKey"] = profile.readApiKey;
     item["writeApiKey"] = profile.writeApiKey;
   }
-  String output;
-  serializeJson(document, output);
+  if (document.overflowed()) {
+    sendNoCache(server_);
+    server_.send(503, "application/json",
+                 "{\"success\":false,\"message\":\"Configuration memory temporarily unavailable\"}");
+    return;
+  }
   sendNoCache(server_);
-  server_.send(200, "application/json", output);
+  sendStreamedJsonDocument(server_, document);
 }
 
 void WebPortal::sendWifiScan() {
@@ -1296,10 +1915,14 @@ void WebPortal::sendWifiScan() {
     item["channel"] = networks[i].channel;
     item["secure"] = networks[i].secure;
   }
-  String output;
-  serializeJson(document, output);
+  if (document.overflowed()) {
+    sendNoCache(server_);
+    server_.send(503, "application/json",
+                 "{\"success\":false,\"message\":\"Configuration memory temporarily unavailable\"}");
+    return;
+  }
   sendNoCache(server_);
-  server_.send(200, "application/json", output);
+  sendStreamedJsonDocument(server_, document);
 }
 
 void WebPortal::saveSetup() {
@@ -1308,7 +1931,11 @@ void WebPortal::saveSetup() {
                    "The station is already configured. Use Settings.");
     return;
   }
-  const StationConfig previousConfig = *config_;
+  auto previousConfig = cloneStationConfig(*config_);
+  if (!previousConfig) {
+    sendJsonResult(false, "Configuration memory temporarily unavailable.");
+    return;
+  }
   const String oldSsid = config_->wifiSsid;
   const String ssid = server_.arg("ssid");
   const String password = server_.arg("wifiPassword");
@@ -1347,7 +1974,7 @@ void WebPortal::saveSetup() {
   config_->setupPortalRequired = true;
   const bool saved = store_->saveStationConfig(*config_);
   if (!saved) {
-    *config_ = previousConfig;
+    *config_ = *previousConfig;
   }
   sendJsonResult(saved,
                  saved ? "Setup saved. W-Charger is restarting."
@@ -1367,14 +1994,7 @@ void WebPortal::saveSetupSensor() {
   }
   const auto sensorType =
       static_cast<lil::protocol::EnvironmentalSensorType>(sensorTypeValue);
-  const bool validSensorType =
-      sensorType == lil::protocol::EnvironmentalSensorType::kAutoDetect ||
-      sensorType == lil::protocol::EnvironmentalSensorType::kBme280 ||
-      sensorType == lil::protocol::EnvironmentalSensorType::kLsm6dsox ||
-      sensorType == lil::protocol::EnvironmentalSensorType::kTmp117 ||
-      sensorType == lil::protocol::EnvironmentalSensorType::kMax30102 ||
-      sensorType == lil::protocol::EnvironmentalSensorType::kBme680 ||
-      sensorType == lil::protocol::EnvironmentalSensorType::kDisabled;
+  const bool validSensorType = lil::protocol::isValidSensorType(sensorType);
   if (!wifi_->setupPortalActive() ||
       !SensorRegistry::parseMac(server_.arg("mac"), mac) ||
       !registry_->findView(mac, view) || view.config.provisioned) {
@@ -1383,10 +2003,9 @@ void WebPortal::saveSetupSensor() {
     return;
   }
   const bool bme680 =
-      sensorType == lil::protocol::EnvironmentalSensorType::kBme680 ||
+      lil::protocol::isBoschGasSensor(sensorType) ||
       (sensorType == lil::protocol::EnvironmentalSensorType::kAutoDetect &&
-       view.runtime.telemetry.sensorType ==
-           lil::protocol::EnvironmentalSensorType::kBme680);
+       lil::protocol::isBoschGasSensor(view.runtime.telemetry.sensorType));
   if (name.isEmpty() || name.length() > 24 || !validSensorType ||
       sleepSeconds < kMinSleepSeconds || sleepSeconds > kMaxSleepSeconds ||
       (bme680 && (sleepSeconds < 300 || sleepSeconds % 300 != 0))) {
@@ -1396,11 +2015,18 @@ void WebPortal::saveSetupSensor() {
   }
 
   ThingSpeakFieldMapping fields{};
+  const auto effectiveType =
+      sensorType == lil::protocol::EnvironmentalSensorType::kAutoDetect
+          ? view.runtime.telemetry.sensorType
+          : sensorType;
   if (bme680) {
     fields.iaq = 4;
     fields.gasResistance = 5;
     fields.battery = 6;
-  } else if (sensorType == lil::protocol::EnvironmentalSensorType::kBme280) {
+  } else if (effectiveType == lil::protocol::EnvironmentalSensorType::kBme280) {
+    fields.battery = 4;
+  } else if (effectiveType == lil::protocol::EnvironmentalSensorType::kBmp280) {
+    fields.humidity = 0;
     fields.battery = 4;
   }
   const bool saved = registry_->updateConfig(
@@ -1412,7 +2038,11 @@ void WebPortal::saveSetupSensor() {
 }
 
 void WebPortal::saveStation() {
-  const StationConfig previousConfig = *config_;
+  auto previousConfig = cloneStationConfig(*config_);
+  if (!previousConfig) {
+    sendJsonResult(false, "Configuration memory temporarily unavailable.");
+    return;
+  }
   const String oldSsid = config_->wifiSsid;
   const String oldApPassword = config_->accessPointPassword;
   const String oldAdminPasswordHash = config_->adminPassword;
@@ -1467,7 +2097,7 @@ void WebPortal::saveStation() {
   const bool authenticationChanged =
       saved && oldAdminPasswordHash != config_->adminPassword;
   if (!saved) {
-    *config_ = previousConfig;
+    *config_ = *previousConfig;
   }
   const bool restartRequested = server_.arg("restartNow") == "1";
   const bool restartRequired =
@@ -1532,43 +2162,33 @@ void WebPortal::saveSensor() {
   }
   const auto sensorType =
       static_cast<lil::protocol::EnvironmentalSensorType>(sensorTypeValue);
-  float temperatureOffsetC = 0;
-  if (server_.hasArg("temperatureOffsetC") &&
-      !webinput::finiteDecimal(server_.arg("temperatureOffsetC").c_str(),
-                               temperatureOffsetC, -10.0F, 10.0F)) {
-    sendJsonResult(false, "Invalid temperature offset"); return;
-  }
-  const bool validSensorType =
-      sensorType == lil::protocol::EnvironmentalSensorType::kAutoDetect ||
-      sensorType == lil::protocol::EnvironmentalSensorType::kBme280 ||
-      sensorType == lil::protocol::EnvironmentalSensorType::kLsm6dsox ||
-      sensorType == lil::protocol::EnvironmentalSensorType::kTmp117 ||
-      sensorType == lil::protocol::EnvironmentalSensorType::kMax30102 ||
-      sensorType == lil::protocol::EnvironmentalSensorType::kBme680 ||
-      sensorType == lil::protocol::EnvironmentalSensorType::kDisabled;
+  const bool validSensorType = lil::protocol::isValidSensorType(sensorType);
   SensorView existingView{};
   if (!SensorRegistry::parseMac(server_.arg("mac"), mac) ||
       !registry_->findView(mac, existingView) ||
       server_.arg("name").isEmpty() || server_.arg("name").length() > 24 ||
       sleepSeconds < kMinSleepSeconds || sleepSeconds > kMaxSleepSeconds ||
       writeKey.length() > 32 || !validSensorType ||
-      !isfinite(temperatureOffsetC) || temperatureOffsetC < -10.0F ||
-      temperatureOffsetC > 10.0F ||
-      (sensorType == lil::protocol::EnvironmentalSensorType::kBme680 &&
+      (lil::protocol::isBoschGasSensor(sensorType) &&
        (sleepSeconds < 300 || sleepSeconds % 300 != 0))) {
     sendJsonResult(false, "Invalid sensor configuration");
     return;
   }
   const SensorConfig& existing = existingView.config;
+  float temperatureOffsetC = existing.temperatureOffsetC;
+  if (server_.hasArg("temperatureOffsetC") &&
+      !webinput::finiteDecimal(server_.arg("temperatureOffsetC").c_str(),
+                               temperatureOffsetC, -10.0F, 10.0F)) {
+    sendJsonResult(false, "Invalid temperature offset"); return;
+  }
   const bool bme680Effective =
-      sensorType == lil::protocol::EnvironmentalSensorType::kBme680 ||
+      lil::protocol::isBoschGasSensor(sensorType) ||
       (sensorType == lil::protocol::EnvironmentalSensorType::kAutoDetect &&
-       existingView.runtime.telemetry.sensorType ==
-           lil::protocol::EnvironmentalSensorType::kBme680);
+       lil::protocol::isBoschGasSensor(existingView.runtime.telemetry.sensorType));
   if (bme680Effective && (sleepSeconds < 300 || sleepSeconds % 300 != 0)) {
     sendJsonResult(
         false,
-        "A detected BME680 requires a five-minute interval or a multiple of five minutes.");
+        "A detected BME680/BME688 requires a five-minute interval or a multiple of five minutes.");
     return;
   }
   float batteryCalibrationFactor = existing.batteryCalibrationFactor;
@@ -1577,19 +2197,24 @@ void WebPortal::saveSensor() {
   } else {
     const String batteryReference = server_.arg("batteryReferenceVoltage");
     if (!batteryReference.isEmpty()) {
-      char* end = nullptr;
-      const float referenceVoltage = strtof(batteryReference.c_str(), &end);
+      float referenceVoltage = 0.0F;
       const uint16_t measuredMillivolts =
           existingView.runtime.telemetry.batteryMillivolts;
-      if (end == batteryReference.c_str() ||
-          *end != '\0' || !isfinite(referenceVoltage) ||
-          referenceVoltage < 2.0F || referenceVoltage > 5.0F ||
+      if (!webinput::finiteDecimal(batteryReference.c_str(), referenceVoltage,
+                                   2.0F, 5.0F) ||
           !existingView.runtime.hasTelemetry || measuredMillivolts < 2000 ||
           (existingView.runtime.telemetry.flags &
            lil::protocol::kBatteryReadFailed) != 0) {
         sendJsonResult(
             false,
             "Battery calibration failed. Check the reference voltage and latest measurement.");
+        return;
+      }
+      if (existingView.runtime.telemetry.appliedConfigRevision !=
+          existing.revision) {
+        sendJsonResult(
+            false,
+            "Wait for the sensor to apply its previous settings before calibrating the battery.");
         return;
       }
       batteryCalibrationFactor *=
@@ -1633,7 +2258,11 @@ void WebPortal::saveSensor() {
 }
 
 void WebPortal::saveChannelProfile() {
-  const StationConfig previousConfig = *config_;
+  auto previousConfig = cloneStationConfig(*config_);
+  if (!previousConfig) {
+    sendJsonResult(false, "Configuration memory temporarily unavailable.");
+    return;
+  }
   uint32_t requestedSlot = 0;
   if (server_.hasArg("slot") &&
       !readUnsignedArgument(server_, "slot", requestedSlot, 0, kMaxThingSpeakChannels - 1)) {
@@ -1663,6 +2292,13 @@ void WebPortal::saveChannelProfile() {
                             : "Check the Channel ID and API keys.");
     return;
   }
+  for (size_t i = 0; i < kMaxThingSpeakChannels; ++i) {
+    if (static_cast<int>(i) != slot && config_->thingSpeakChannels[i].occupied &&
+        config_->thingSpeakChannels[i].channelId == channelId) {
+      sendJsonResult(false, "This Channel ID is already saved in another local profile.");
+      return;
+    }
+  }
   auto& profile = config_->thingSpeakChannels[slot];
   profile = ThingSpeakChannelProfile{};
   profile.occupied = true;
@@ -1679,15 +2315,19 @@ void WebPortal::saveChannelProfile() {
   const bool stationSaved = store_->saveStationConfig(*config_);
   const bool saved = stationSaved && registry_->syncThingSpeakProfile(slot, profile);
   if (!saved) {
-    *config_ = previousConfig;
-    if (stationSaved) store_->saveStationConfig(previousConfig);
+    *config_ = *previousConfig;
+    if (stationSaved) store_->saveStationConfig(*previousConfig);
   }
   sendJsonResult(saved, saved ? "ThingSpeak channel saved."
                                : "Channel could not be saved.");
 }
 
 void WebPortal::deleteChannelProfile() {
-  const StationConfig previousConfig = *config_;
+  auto previousConfig = cloneStationConfig(*config_);
+  if (!previousConfig) {
+    sendJsonResult(false, "Configuration memory temporarily unavailable.");
+    return;
+  }
   uint32_t slot = 0;
   if (!readUnsignedArgument(server_, "slot", slot, 0, kMaxThingSpeakChannels - 1) ||
       !config_->thingSpeakChannels[slot].occupied) {
@@ -1703,8 +2343,8 @@ void WebPortal::deleteChannelProfile() {
   const bool stationSaved = store_->saveStationConfig(*config_);
   const bool saved = stationSaved && registry_->removeThingSpeakProfile(slot);
   if (!saved) {
-    *config_ = previousConfig;
-    if (stationSaved) store_->saveStationConfig(previousConfig);
+    *config_ = *previousConfig;
+    if (stationSaved) store_->saveStationConfig(*previousConfig);
   }
   sendJsonResult(saved, saved ? "ThingSpeak channel removed."
                                : "Channel could not be removed.");
@@ -1745,10 +2385,39 @@ void WebPortal::createThingSpeakChannel() {
 
 void WebPortal::listThingSpeakChannels() {
   if (!server_.hasArg("ticket")) {
+    // Route legacy synchronous calls through the 10 KiB ThingSpeak worker task
+    // so TLS handshakes never run on loopTask's 8 KiB stack.
     ThingSpeakAccountJob::Request request;
     memcpy(request.account, config_->thingSpeakUserApiKey, sizeof(request.account));
-    sendThingSpeakChannels(thingSpeak_->executeAccount(request));
-    return;
+    String owner;
+    if (!thingSpeakJobOwner(owner)) return;
+    const char* ownerPtr = owner.length() ? owner.c_str() : "";
+    const uint32_t ticket = thingSpeak_->startAccountJob(std::move(request), ownerPtr);
+    if (!ticket) {
+      sendJsonResult(false, config_->thingSpeakUserApiKey[0] == '\0'
+                         ? "Save the ThingSpeak User API Key first."
+                         : "ThingSpeak account worker is busy or unavailable. Try again shortly.");
+      return;
+    }
+    const uint32_t startedMs = millis();
+    ThingSpeakApiResult result;
+    for (;;) {
+      const auto poll = thingSpeak_->collectAccountJob(
+          ticket, config_->thingSpeakUserApiKey, ownerPtr, result);
+      if (poll == ThingSpeakAccountJob::Poll::Ready) {
+        sendThingSpeakChannels(result);
+        return;
+      }
+      if (poll == ThingSpeakAccountJob::Poll::Missing ||
+          uint32_t(millis() - startedMs) >= 16000UL) {
+        sendJsonResult(false, "ThingSpeak channel list timed out. Try again shortly.");
+        return;
+      }
+#ifdef ESP_PLATFORM
+      (void)esp_task_wdt_reset();
+#endif
+      delay(20);
+    }
   }
   uint32_t ticket = 0;
   if (!readUnsignedArgument(server_, "ticket", ticket, 1)) {
@@ -1820,7 +2489,39 @@ void WebPortal::runThingSpeakMutation(ThingSpeakAccountJob::Request request) {
     sendJsonResult(false, "Another ThingSpeak change is in progress. Try again shortly.");
     return;
   }
-  sendThingSpeakMutation(applyThingSpeakMutation(request, thingSpeak_->executeAccount(request)));
+  // Route legacy synchronous mutations through the 10 KiB ThingSpeak worker
+  // so TLS handshakes never overflow loopTask's 8 KiB stack.
+  String owner;
+  if (!thingSpeakJobOwner(owner)) return;
+  const char* ownerPtr = owner.length() ? owner.c_str() : "";
+  request.nonce = millis() ? millis() : 1U;
+  const uint32_t ticket = thingSpeak_->startAccountJob(std::move(request), ownerPtr);
+  if (!ticket) {
+    sendJsonResult(false, config_->thingSpeakUserApiKey[0] == '\0'
+                       ? "Save the ThingSpeak User API Key first."
+                       : "ThingSpeak account worker is busy or unavailable. Try again shortly.");
+    return;
+  }
+  const uint32_t startedMs = millis();
+  ThingSpeakMutationResult result;
+  for (;;) {
+    finishThingSpeakMutation();
+    const auto poll = thingSpeak_->collectAccountJob(
+        ticket, config_->thingSpeakUserApiKey, ownerPtr, result);
+    if (poll == ThingSpeakAccountJob::Poll::Ready) {
+      sendThingSpeakMutation(result);
+      return;
+    }
+    if (poll == ThingSpeakAccountJob::Poll::Missing ||
+        uint32_t(millis() - startedMs) >= 16000UL) {
+      sendThingSpeakMutation({false, "ThingSpeak operation timed out. Reload account channels before retrying."});
+      return;
+    }
+#ifdef ESP_PLATFORM
+    (void)esp_task_wdt_reset();
+#endif
+    delay(20);
+  }
 }
 
 void WebPortal::finishThingSpeakMutation() {
@@ -1865,7 +2566,14 @@ void WebPortal::sendThingSpeakMutation(const ThingSpeakMutationResult& result, b
     document["channelId"] = result.channelId;
     document["slot"] = result.slot;
   }
+  if (document.overflowed()) {
+    sendNoCache(server_);
+    server_.send(503, "application/json",
+                 "{\"success\":false,\"message\":\"Configuration memory temporarily unavailable\"}");
+    return;
+  }
   String output;
+  output.reserve(1536);
   serializeJson(document, output);
   sendNoCache(server_);
   server_.send(result.success || polled ? 200 : 400, "application/json", output);
@@ -1901,14 +2609,14 @@ void WebPortal::sendThingSpeakChannels(const ThingSpeakApiResult& result) {
     return;
   }
 
-  JsonDocument remote;
+  JsonDocument remote(psramJsonAllocator());
   if (deserializeJson(remote, result.response) ||
       !remote.is<JsonArray>()) {
     sendJsonResult(false, "ThingSpeak returned an invalid channel list.");
     return;
   }
 
-  JsonDocument document;
+  JsonDocument document(psramJsonAllocator());
   document["success"] = true;
   document["message"] = "ThingSpeak channels loaded.";
   JsonArray channels = document["channels"].to<JsonArray>();
@@ -1962,10 +2670,14 @@ void WebPortal::sendThingSpeakChannels(const ThingSpeakApiResult& result) {
       fields.add(source["field" + String(field)] | "");
     }
   }
-  String output;
-  serializeJson(document, output);
+  // Free the parsed upstream response before serializing the station response.
+  remote.clear();
+  if (document.overflowed()) {
+    sendJsonResult(false, "Not enough memory to format ThingSpeak channels.");
+    return;
+  }
   sendNoCache(server_);
-  server_.send(200, "application/json", output);
+  sendStreamedJsonDocument(server_, document);
 }
 
 void WebPortal::createManagedThingSpeakChannel() {
@@ -1982,7 +2694,7 @@ void WebPortal::createManagedThingSpeakChannel() {
 
 ThingSpeakMutationResult WebPortal::importThingSpeakChannel(const ThingSpeakAccountJob::Request& request,
                                                              const ThingSpeakApiResult& result) {
-  JsonDocument remote;
+  JsonDocument remote(psramJsonAllocator());
   if (deserializeJson(remote, result.response)) {
     return {false, "Channel created, but the response was invalid. Reload account channels before retrying."};
   }
@@ -2002,7 +2714,10 @@ ThingSpeakMutationResult WebPortal::importThingSpeakChannel(const ThingSpeakAcco
     }
   }
   if (localSlot >= 0) {
-    const StationConfig previousConfig = *config_;
+    auto previousConfig = cloneStationConfig(*config_);
+    if (!previousConfig) {
+      return {false, "Configuration memory temporarily unavailable.", channelId};
+    }
     auto& profile = config_->thingSpeakChannels[localSlot];
     profile.occupied = true;
     memcpy(profile.name, request.name, sizeof(profile.name));
@@ -2015,14 +2730,14 @@ ThingSpeakMutationResult WebPortal::importThingSpeakChannel(const ThingSpeakAcco
       copyText(config_->thingSpeakWriteApiKey, writeKey);
     }
     if (!store_->saveStationConfig(*config_)) {
-      *config_ = previousConfig;
+      *config_ = *previousConfig;
       return {false, "ThingSpeak channel " + String(channelId) +
                      " was created, but its local profile could not be saved. Reload account channels before retrying.",
               channelId};
     }
   }
   if (localSlot < 0) return {!quick, "ThingSpeak channel created. The local profile list is full.", channelId};
-  if (quick) return {true, "ThingSpeak-Channel " + String(channelId) + " was created. Assign its fields next.", channelId, localSlot};
+  if (quick) return {true, "ThingSpeak channel " + String(channelId) + " was created. Assign its fields next.", channelId, localSlot};
   return {true, "ThingSpeak channel created and imported locally.", channelId, localSlot};
 }
 
@@ -2045,13 +2760,16 @@ void WebPortal::updateManagedThingSpeakChannel() {
 
 ThingSpeakMutationResult WebPortal::applyThingSpeakUpdate(const ThingSpeakAccountJob::Request& request,
                                                            const ThingSpeakApiResult& result) {
-  JsonDocument remote;
+  JsonDocument remote(psramJsonAllocator());
   String readKey;
   String writeKey;
   if (!deserializeJson(remote, result.response)) {
     extractApiKeys(remote.as<JsonObjectConst>(), readKey, writeKey);
   }
-  const StationConfig previousConfig = *config_;
+  auto previousConfig = cloneStationConfig(*config_);
+  if (!previousConfig) {
+    return {false, "Configuration memory temporarily unavailable."};
+  }
   bool changed[kMaxThingSpeakChannels]{};
   bool localChanged = false;
   for (size_t slot = 0; slot < kMaxThingSpeakChannels; ++slot) {
@@ -2079,13 +2797,13 @@ ThingSpeakMutationResult WebPortal::applyThingSpeakUpdate(const ThingSpeakAccoun
     }
   }
   if (!localSaved) {
-    *config_ = previousConfig;
+    *config_ = *previousConfig;
     if (stationSaved) {
       // Rollback is best effort when NVS remains unavailable. Registry helpers
       // also retain pending persistence so restored assignments can retry.
-      store_->saveStationConfig(previousConfig);
+      store_->saveStationConfig(*previousConfig);
       for (size_t slot = 0; slot < kMaxThingSpeakChannels; ++slot) if (changed[slot])
-        registry_->syncThingSpeakProfile(slot, previousConfig.thingSpeakChannels[slot]);
+        registry_->syncThingSpeakProfile(slot, previousConfig->thingSpeakChannels[slot]);
     }
   }
   return {localSaved, localSaved ? "ThingSpeak channel updated."
@@ -2123,7 +2841,11 @@ void WebPortal::deleteManagedThingSpeakChannel() {
 }
 
 ThingSpeakMutationResult WebPortal::applyThingSpeakDelete(uint32_t channelId) {
-  bool saved = true;
+  auto previousConfig = cloneStationConfig(*config_);
+  if (!previousConfig) {
+    return {false, "Configuration memory temporarily unavailable."};
+  }
+  bool removedSlot[kMaxThingSpeakChannels]{};
   bool changed = false;
   for (size_t slot = 0; slot < kMaxThingSpeakChannels; ++slot) {
     auto& profile = config_->thingSpeakChannels[slot];
@@ -2136,14 +2858,31 @@ ThingSpeakMutationResult WebPortal::applyThingSpeakDelete(uint32_t channelId) {
       config_->thingSpeakReadApiKey[0] = '\0';
       config_->thingSpeakWriteApiKey[0] = '\0';
     }
+    removedSlot[slot] = true;
     changed = true;
-    saved = registry_->removeThingSpeakProfile(slot) && saved;
   }
-  if (changed) {
-    saved = store_->saveStationConfig(*config_) && saved;
+  const bool stationSaved = !changed || store_->saveStationConfig(*config_);
+  bool localSaved = stationSaved;
+  if (stationSaved && changed) {
+    for (size_t slot = 0; slot < kMaxThingSpeakChannels; ++slot) {
+      if (removedSlot[slot]) {
+        localSaved = registry_->removeThingSpeakProfile(slot) && localSaved;
+      }
+    }
   }
-  return {saved, saved ? "ThingSpeak channel and local assignment deleted."
-                       : "Cloud channel deleted, but the local assignment could not be fully updated."};
+  if (!localSaved) {
+    *config_ = *previousConfig;
+    if (stationSaved) {
+      store_->saveStationConfig(*previousConfig);
+      for (size_t slot = 0; slot < kMaxThingSpeakChannels; ++slot) {
+        if (removedSlot[slot]) {
+          registry_->syncThingSpeakProfile(slot, previousConfig->thingSpeakChannels[slot]);
+        }
+      }
+    }
+  }
+  return {localSaved, localSaved ? "ThingSpeak channel and local assignment deleted."
+                                 : "Cloud channel deleted, but the local assignment could not be fully updated."};
 }
 
 void WebPortal::resetSensor() {
@@ -2183,13 +2922,17 @@ void WebPortal::factoryReset() {
   // Ignore local changes from earlier account jobs even if the reset only
   // partially succeeds, since clearing NVS can succeed before formatting.
   ++configResetGeneration_;
+  if (gateway_ != nullptr) gateway_->pauseForReset();
+  if (registry_ != nullptr) registry_->resetForFactory();
+  dashboardLayout_ = DashboardLayout{};
+  dashboardLayoutLoaded_ = false;
   const bool cleared = store_->factoryReset();
   if (cleared) otaService.forget();
   sendJsonResult(cleared,
                  cleared
                      ? "Factory settings cleared. W-Charger is restarting."
                      : "Factory settings could not be cleared.",
-                 cleared);
+                 true);
 }
 
 void WebPortal::sendJsonResult(bool success, const String& message,
@@ -2200,7 +2943,14 @@ void WebPortal::sendJsonResult(bool success, const String& message,
   document["message"] = message;
   document["restart"] = restartRequired;
   document["authenticationChanged"] = authenticationChanged;
+  if (document.overflowed()) {
+    sendNoCache(server_);
+    server_.send(503, "application/json",
+                 "{\"success\":false,\"message\":\"Configuration memory temporarily unavailable\"}");
+    return;
+  }
   String output;
+  output.reserve(1536);
   serializeJson(document, output);
   sendNoCache(server_);
   server_.send(success ? 200 : 400, "application/json", output);

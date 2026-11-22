@@ -43,12 +43,51 @@ int main() {
     std::string expected, actual, array;
     serializeJson(legacy, expected); serializeJson(decoded, actual); serializeJson(compact, array);
     assert(expected == actual);
+    char directBuf[256];
+    size_t directLen = 0;
+    assert(station::appendCompactHistoryPoint(directBuf, sizeof(directBuf), directLen, point, mask));
+    directBuf[directLen] = '\0';
+    JsonDocument directCompact, directDecoded;
+    assert(!deserializeJson(directCompact, directBuf, directLen));
+    const JsonArrayConst directValues = directCompact.as<JsonArrayConst>();
+    size_t directCol = 0;
+    for (size_t i = 0; i < station::kHistoryColumnCount; ++i) {
+      if (!(mask & (1UL << i))) continue;
+      const JsonVariantConst value = directValues[directCol++];
+      if (!value.isNull()) {
+        if (i >= 5) directDecoded[station::kHistoryColumns[i]] = value.as<float>();
+        else directDecoded[station::kHistoryColumns[i]] = value;
+      }
+    }
+    std::string directActual;
+    serializeJson(directDecoded, directActual);
+    assert(expected == directActual);
     assert(decoded["t"].as<uint64_t>() == uint64_t(point.timestamp) * 1000);
     legacyBytes += expected.size(); compactBytes += array.size();
   }
   JsonDocument zeroAccuracy; station::historyPointJson(zeroAccuracy, points[3]);
   assert(zeroAccuracy["iaq"].isNull());
   assert(!zeroAccuracy["battery"].isNull() && zeroAccuracy["battery"].as<float>() == 0);
+  // Exercise integer millivolt formatter, INT64_MIN signed formatter and buffer bounds.
+  {
+    char buf[32];
+    size_t len = 0;
+    assert(station::appendMilliU32(buf, sizeof(buf), len, 3805));
+    assert(std::string(buf, len) == "3.805");
+    len = 0;
+    assert(station::appendMilliU32(buf, sizeof(buf), len, 4000));
+    assert(std::string(buf, len) == "4");
+    len = 0;
+    assert(station::appendMilliU32(buf, sizeof(buf), len, 50));
+    assert(std::string(buf, len) == "0.05");
+    len = 0;
+    assert(station::appendSigned(buf, sizeof(buf), len, INT64_MIN));
+    assert(std::string(buf, len) == "-9223372036854775808");
+    len = 0;
+    assert(!station::appendRawBytes(buf, 4, len, "1234", 4));
+    len = 30;
+    assert(!station::appendRawBytes(buf, 32, len, "123", SIZE_MAX - 10));
+  }
   printf("History JSON: four mixed point types round-trip exactly; objects %zu bytes, arrays %zu bytes\n", legacyBytes, compactBytes);
 
   // Host-only serializer comparison with one homogeneous environmental page.

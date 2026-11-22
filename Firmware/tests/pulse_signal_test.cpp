@@ -77,8 +77,14 @@ void verify() {
       float expectedLags[52], actualLags[52];
       referenceCorrelation(expected, expectedLags);
       sensor::pulse::correlate(actual, actualLags);
+      int32_t acInt25[analyzed]{};
+      float intLags[52]{};
+      const uint64_t energyInt25 = sensor::pulse::detrendInt25(input, head, acInt25);
+      sensor::pulse::correlateInt25(acInt25, intLags);
+      assert((before == 0.0) == (energyInt25 == 0ULL));
       for (int lag = 6; lag <= 51; ++lag) {
         assert(fabs(actualLags[lag] - expectedLags[lag]) <= 0.00000012F);
+        assert(fabs(intLags[lag] - expectedLags[lag]) <= 0.00000012F);
         equalCorrelations += !memcmp(&actualLags[lag], &expectedLags[lag], sizeof(float));
         ++correlations;
       }

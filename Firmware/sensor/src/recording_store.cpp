@@ -24,12 +24,12 @@ bool RecordingStore::begin(lil::protocol::EnvironmentalSensorType type) {
   type_ = type;
   if (!flash_.begin() || !prefs_.begin("recording", false)) return false;
   session_ = prefs_.getULong64("session", 0); epochMs_ = prefs_.getULong64("epoch", 0);
-  if (!journal_.begin(flash_, session_)) return false;
+  if (!journal_.begin(flash_, session_, session_ == 0)) return false;
   available_ = true;
   total_ = prefs_.getUInt("total", 0); durationMs_ = prefs_.getUInt("duration", 0);
   state_ = static_cast<State>(prefs_.getUChar("state", static_cast<uint8_t>(State::Ready)));
   if (state_ == State::Preparing) {
-    state_ = State::Ready;
+    state_ = journal_.pending() ? State::Pending : State::Ready;
   } else if (state_ == State::Recording) {
     // A reset ends a session. Never invent elapsed time while power was absent.
     total_ = journal_.pending(); durationMs_ = journal_.lastSampleMs();
@@ -38,6 +38,15 @@ bool RecordingStore::begin(lil::protocol::EnvironmentalSensorType type) {
   else state_ = session_ ? State::Synced : State::Ready;
   if (journal_.fault()) state_ = State::Fault;
   return true;
+}
+void RecordingStore::clearForReset() {
+  if (!available_) return;
+  (void)journal_.clear();
+  (void)prefs_.clear();
+  session_ = epochMs_ = startedMs_ = 0;
+  total_ = durationMs_ = 0;
+  sameBoot_ = false;
+  state_ = State::Ready;
 }
 bool RecordingStore::start() {
   if (!available_) return false;
@@ -48,15 +57,15 @@ bool RecordingStore::start() {
   session_ = (uint64_t(esp_random()) << 32) | esp_random();
   if (!session_) session_ = 1;
   epochMs_ = total_ = durationMs_ = 0;
-  startedMs_ = esp_timer_get_time() / 1000; sameBoot_ = true;
-  if (prefs_.putULong64("session", session_) != 8 || !journal_.replaceSession(session_) || prefs_.putULong64("epoch", 0) != 8 ||
+  startedMs_ = lil::timing::signedUsToMs(esp_timer_get_time()); sameBoot_ = true;
+  if (prefs_.putULong64("session", session_) != 8 || !journal_.begin(flash_, session_, true) || prefs_.putULong64("epoch", 0) != 8 ||
       prefs_.putUChar("state", static_cast<uint8_t>(State::Recording)) != 1) { state_ = State::Fault; return false; }
   state_ = State::Recording; return true;
 }
 void RecordingStore::stop(bool full) {
   if (!available_ || !recording()) return;
   if (sameBoot_) {
-    const uint64_t now = static_cast<uint64_t>(esp_timer_get_time()) / 1000;
+    const uint64_t now = lil::timing::signedUsToMs(esp_timer_get_time());
     const uint64_t elapsed = now >= startedMs_ ? now - startedMs_ : 0;
     durationMs_ = static_cast<uint32_t>(min(uint64_t(UINT32_MAX), elapsed));
   }
@@ -87,6 +96,7 @@ bool RecordingStore::append(uint64_t capturedMs, const lil::protocol::TelemetryP
 bool RecordingStore::next(lil::recording::Upload& upload) {
   if (recording() || !available_ || state_ == State::Fault) return false;
   if (!journal_.peek(upload.record)) {
+    if (journal_.fault()) { state_ = State::Fault; return false; }
     // A deferred ACK readback can retire the last record during peek().
     if (!journal_.pending() && (state_ == State::Pending || state_ == State::Full)) markSynced();
     return false;
@@ -96,7 +106,10 @@ bool RecordingStore::next(lil::recording::Upload& upload) {
   return true;
 }
 bool RecordingStore::acknowledge(const lil::recording::Record& record) {
-  if (!journal_.acknowledge(record)) return false;
+  if (!journal_.acknowledge(record)) {
+    if (journal_.fault()) state_ = State::Fault;
+    return false;
+  }
   return journal_.pending() || markSynced();
 }
 bool RecordingStore::markSynced() {
@@ -110,7 +123,7 @@ void RecordingStore::anchor(uint64_t stationEpochMs, uint32_t elapsedAtRequestMs
   if (!recording()) {
     // The public duration freezes at stop. UTC anchoring still needs the time
     // since start when the request was sent, including a delayed station return.
-    const uint64_t now = esp_timer_get_time() / 1000;
+    const uint64_t now = lil::timing::signedUsToMs(esp_timer_get_time());
     if (now < startedMs_ + roundTripMs) return;
     elapsedAtRequest = now - startedMs_ - roundTripMs;
   }
@@ -123,7 +136,7 @@ lil::recording::Status RecordingStore::status(uint32_t dropped) const {
   lil::recording::Status status{};
   status.session = session_; status.state = state_; status.type = type_;
   status.pending = journal_.pending(); status.capacity = journal_.capacity(type_); status.dropped = dropped;
-  const uint64_t now = static_cast<uint64_t>(esp_timer_get_time()) / 1000;
+  const uint64_t now = lil::timing::signedUsToMs(esp_timer_get_time());
   const uint64_t elapsed = now >= startedMs_ ? now - startedMs_ : 0;
   status.elapsedMs = sameBoot_ && recording() ?
       static_cast<uint32_t>(min(uint64_t(UINT32_MAX), elapsed)) : durationMs_;

@@ -12,6 +12,7 @@ constexpr uint32_t kMagic = 0x4C494C32UL;  // "LIL2"
 constexpr uint8_t kVersion = 5;
 constexpr size_t kMacLength = 6;
 constexpr size_t kMaxPacketSize = 250;
+constexpr size_t kMaxLargePacketSize = 1470;
 
 enum class MessageType : uint8_t {
   kTelemetry = 1,
@@ -29,6 +30,9 @@ enum Capability : uint16_t {
   kMotion = 1U << 7,
   kOptical = 1U << 8,
   kHeartRate = 1U << 9,
+  kSpectral = 1U << 10,
+  kDistance = 1U << 11,
+  kAirQualityGas = 1U << 12,
 };
 
 enum class EnvironmentalSensorType : uint8_t {
@@ -38,8 +42,39 @@ enum class EnvironmentalSensorType : uint8_t {
   kLsm6dsox = 3,
   kTmp117 = 4,
   kMax30102 = 5,
+  kBmp280 = 6,
+  kBme688 = 7,
+  kCcs811 = 8,
+  kVl53l1x = 9,
+  kAs7341 = 10,
   kDisabled = 255,
 };
+
+constexpr bool isValidSensorType(EnvironmentalSensorType type) {
+  return type == EnvironmentalSensorType::kAutoDetect ||
+         type == EnvironmentalSensorType::kBme280 ||
+         type == EnvironmentalSensorType::kBme680 ||
+         type == EnvironmentalSensorType::kLsm6dsox ||
+         type == EnvironmentalSensorType::kTmp117 ||
+         type == EnvironmentalSensorType::kMax30102 ||
+         type == EnvironmentalSensorType::kBmp280 ||
+         type == EnvironmentalSensorType::kBme688 ||
+         type == EnvironmentalSensorType::kCcs811 ||
+         type == EnvironmentalSensorType::kVl53l1x ||
+         type == EnvironmentalSensorType::kAs7341 ||
+         type == EnvironmentalSensorType::kDisabled;
+}
+
+constexpr bool isBoschGasSensor(EnvironmentalSensorType type) {
+  return type == EnvironmentalSensorType::kBme680 ||
+         type == EnvironmentalSensorType::kBme688;
+}
+
+constexpr bool hasExtendedPayload(EnvironmentalSensorType type) {
+  return type == EnvironmentalSensorType::kCcs811 ||
+         type == EnvironmentalSensorType::kVl53l1x ||
+         type == EnvironmentalSensorType::kAs7341;
+}
 
 constexpr bool isLiveSensor(EnvironmentalSensorType type) {
   return type == EnvironmentalSensorType::kLsm6dsox || type == EnvironmentalSensorType::kTmp117 || type == EnvironmentalSensorType::kMax30102;
@@ -125,6 +160,42 @@ struct PulseReading {
 struct MotionFeedback { uint16_t steps = 0, activeSeconds = 0; };
 constexpr uint8_t kMotionFeedbackPresent = 16, kMotionStoredOverrun = 32;
 
+// Compact 24-byte mutually exclusive payload for AS7341, TOF400C-VL53L1X, and CCS811.
+struct SpectralReading {
+  uint16_t channels[10]{};  // F1(415nm)..F8(680nm), Clear, NIR
+  uint16_t integrationMs = 0;
+  uint8_t gainCode = 0;     // AS7341 AGAIN 0..10 (0.5x..512x)
+  uint8_t status = 0;       // bit0: saturated, bit1: auto-gain adjusted
+};
+struct DistanceReading {
+  uint16_t distanceMm = 0;
+  uint16_t signalRateKcps = 0;
+  uint16_t ambientRateKcps = 0;
+  uint8_t rangeStatus = 255;  // 0: valid, 1: sigma, 2: signal, 4: out-of-bounds, 7: wrap
+  uint8_t mode = 0;           // 1: short (1.3m), 2: long (4m)
+  uint8_t reserved[16]{};
+};
+struct GasAirQualityReading {
+  uint16_t eco2Ppm = 0;      // 400..8192 ppm
+  uint16_t tvocPpb = 0;      // 0..1187 ppb
+  uint16_t rawAdc = 0;       // 10-bit raw ADC
+  uint8_t rawCurrentUa = 0;  // 0..63 uA
+  uint8_t status = 0;        // CCS811 STATUS register
+  uint8_t errorId = 0;       // CCS811 ERROR_ID register
+  uint8_t reserved[15]{};
+};
+union ExtendedReading {
+  SpectralReading spectral;
+  DistanceReading distance;
+  GasAirQualityReading airQuality;
+  uint8_t raw[24];
+  ExtendedReading() : raw{} {}
+};
+static_assert(sizeof(SpectralReading) == 24);
+static_assert(sizeof(DistanceReading) == 24);
+static_assert(sizeof(GasAirQualityReading) == 24);
+static_assert(sizeof(ExtendedReading) == 24);
+
 constexpr uint8_t kLiveSampleFresh = 1, kLiveEstimateFresh = 2, kLiveGap = 4, kLiveTimingKnown = 8;
 constexpr size_t kOpticalBatchSize = 8;
 struct OpticalFrame { uint32_t red = 0, infrared = 0; uint16_t ageMs = 0; };
@@ -162,8 +233,10 @@ struct TelemetryPayload {
   PulseReading pulse;
   LiveReading live;
   MotionFeedback motionFeedback;
+  ExtendedReading extended;
 };
 
+constexpr size_t kMotionFeedbackTelemetryPayloadSize = offsetof(TelemetryPayload, extended);
 constexpr size_t kTimedTelemetryPayloadSize = offsetof(TelemetryPayload, motionFeedback);
 
 // V5 prefix retained for OTA migration from 4.0.0; station accepts both sizes.
@@ -200,17 +273,23 @@ static_assert(sizeof(TelemetryPacket) <= kMaxPacketSize,
 static_assert(sizeof(ConfigResponsePacket) <= kMaxPacketSize,
               "Config packet exceeds the ESP-NOW payload limit");
 
+constexpr size_t maxWirePacketSize(MessageType type) {
+  return type == static_cast<MessageType>(16) ? kMaxLargePacketSize : kMaxPacketSize;
+}
+
 // Cheap queue-admission check for radio callbacks. Full CRC and message
 // validation are still required before acting on a frame.
 inline bool readPacketType(const uint8_t* data, size_t length, MessageType& type) {
-  if (!data || length < sizeof(PacketHeader) || length > kMaxPacketSize) return false;
+  if (!data || length < sizeof(PacketHeader) || length > kMaxLargePacketSize) return false;
   uint32_t magic;
   memcpy(&magic, data, sizeof(magic));
   if (magic != kMagic || data[offsetof(PacketHeader, version)] != kVersion) return false;
   uint16_t payloadSize;
   memcpy(&payloadSize, data + offsetof(PacketHeader, payloadSize), sizeof(payloadSize));
   if (length != sizeof(PacketHeader) + payloadSize) return false;
-  type = static_cast<MessageType>(data[offsetof(PacketHeader, type)]);
+  const auto candidate = static_cast<MessageType>(data[offsetof(PacketHeader, type)]);
+  if (length > maxWirePacketSize(candidate)) return false;
+  type = candidate;
   return true;
 }
 

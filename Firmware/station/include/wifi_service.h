@@ -3,6 +3,7 @@
 #include <DNSServer.h>
 #include <ESPmDNS.h>
 #include <WiFi.h>
+#include <atomic>
 
 #include "app_config.h"
 
@@ -48,12 +49,17 @@ class WifiService {
   String apSsid_;
   uint32_t lastReconnectAttemptMs_ = 0;
   uint32_t lastMdnsAttemptMs_ = 0;
+  uint32_t lastRecoveryAttemptMs_ = 0;
   uint32_t disconnectedSinceMs_ = 0;
+  bool hasMdnsAttempt_ = false;
+  bool hasRecoveryAttempt_ = false;
+  bool hasDisconnectedSince_ = false;
+  std::atomic<uint8_t> lastStaChannel_{0};
   wl_status_t lastReportedStatus_ = WL_NO_SHIELD;
   bool mdnsStarted_ = false;
   bool setupPortalActive_ = false;
   bool setupPortalCompletionPending_ = false;
-  bool networkScanInProgress_ = false;
+  std::atomic<bool> networkScanInProgress_{false};
   WifiNetwork networkCache_[kNetworkCacheSize]{};
   size_t networkCacheCount_ = 0;
 };

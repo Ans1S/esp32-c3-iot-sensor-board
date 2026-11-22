@@ -95,5 +95,16 @@ int main() {
     assert(list.collect(id, "synthetic-account", "session-a", afterWait, final) == Poll::Ready);
     assert(final.success && final.channelId == 19 && final.slot == 2);
   }
+  // An uncollected Ready result can be evicted by a newer request on the same
+  // account (different owner or operation) without locking out the UI for 30 s.
+  const auto abandoned = start("synthetic-account", "session-a", expiry + 100);
+  assert(abandoned && list.take(request));
+  list.complete({true, 200, "[]", ""}, expiry + 100);
+  const auto replacement = start("synthetic-account", "session-b", expiry + 101);
+  assert(replacement && replacement != abandoned);
+  assert(list.collect(abandoned, "synthetic-account", "session-a", expiry + 101, result) == Poll::Missing);
+  assert(list.take(request) && request.ticket == replacement);
+  list.complete({true, 200, "[1]", ""}, expiry + 102);
+  assert(list.collect(replacement, "synthetic-account", "session-b", expiry + 102, result) == Poll::Ready);
   puts("ThingSpeak account jobs: deduplication, application without polling, account/session isolation and expiry passed");
 }

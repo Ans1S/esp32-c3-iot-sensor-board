@@ -2,7 +2,6 @@
 
 #include <WiFi.h>
 #include <esp_sleep.h>
-#include <esp_wifi.h>
 
 #include "sensor_log.h"
 #include "logical_clock.h"
@@ -18,9 +17,13 @@ namespace sensor {
   }
   flushDiagnosticLogging();
 
-  const uint64_t sleepMicroseconds =
-      static_cast<uint64_t>(max(seconds, 1UL)) * 1000000ULL +
+  uint64_t sleepMicroseconds =
+      static_cast<uint64_t>(seconds) * 1000000ULL +
       static_cast<uint64_t>(additionalMilliseconds) * 1000ULL;
+  if (sleepMicroseconds == 0) {
+    sleepMicroseconds = 1000000ULL;
+  }
+  esp_sleep_pd_config(ESP_PD_DOMAIN_XTAL, ESP_PD_OPTION_OFF);
   esp_sleep_enable_timer_wakeup(sleepMicroseconds);
   accountForDeepSleep(sleepMicroseconds);
   esp_deep_sleep_start();

@@ -13,9 +13,9 @@ constexpr bool batteryProtectionRequired(bool paused, bool valid, uint16_t mv,
 
 constexpr uint32_t discoverySleepSeconds(uint64_t ageSeconds,
                                          uint32_t maximumSeconds = 300) {
-  if (ageSeconds < 600) return 10;
+  if (ageSeconds < 600) return maximumSeconds < 10 ? maximumSeconds : 10;
   uint64_t steps = (ageSeconds - 600) / 3600;
-  uint32_t seconds = 300;
+  uint32_t seconds = maximumSeconds < 300 ? maximumSeconds : 300;
   while (steps > 0 && seconds < maximumSeconds) {
     --steps;
     seconds = seconds > maximumSeconds / 2 ? maximumSeconds : seconds * 2;
@@ -25,7 +25,8 @@ constexpr uint32_t discoverySleepSeconds(uint64_t ageSeconds,
 
 constexpr bool reportDue(bool attempted, uint64_t nowMs, uint64_t lastMs,
                          uint32_t intervalSeconds) {
-  return !attempted || nowMs - lastMs >= uint64_t(intervalSeconds) * 1000;
+  return !attempted || nowMs < lastMs ||
+         nowMs - lastMs >= uint64_t(intervalSeconds) * 1000;
 }
 
 constexpr uint32_t scheduledSleepSeconds(bool currentSchedule, uint64_t nowMs,

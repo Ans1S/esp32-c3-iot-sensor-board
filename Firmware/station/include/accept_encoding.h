@@ -7,6 +7,7 @@ namespace station {
 // Prefer gzip only when the client explicitly advertises it. A malformed
 // weight is treated as zero, so it cannot accidentally enable compression.
 inline bool acceptsDashboardGzip(const char* header) {
+  if (!header) return false;
   const char* p = header;
   while (*p) {
     while (*p == ' ' || *p == '\t' || *p == ',') ++p;

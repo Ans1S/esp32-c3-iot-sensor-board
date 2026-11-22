@@ -3,6 +3,11 @@
 #include "paged_history.h"
 #include "telemetry_validation.h"
 #include <LittleFS.h>
+#ifdef ESP_PLATFORM
+#include <esp_heap_caps.h>
+#include <esp_littlefs.h>
+#endif
+#include <algorithm>
 #include <errno.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -16,6 +21,7 @@ RecordingArchive recordingArchive;
 namespace {
 constexpr uint32_t kMagic = 0x41524331;
 constexpr size_t kReserveBytes = 256U * 1024U;
+constexpr size_t kRecordingPathCapacity = sizeof(RECORDING_MOUNT_PATH) + 64;
 #pragma pack(push, 1)
 struct Header {
   uint32_t magic = kMagic;
@@ -81,9 +87,26 @@ bool readableTail(FILE* file, const Header& header, uint32_t& count, lil::record
 }
 }
 bool RecordingArchive::begin() { mutex_ = xSemaphoreCreateMutex(); return mutex_ != nullptr && initializeFilesystemLock(); }
+size_t RecordingArchive::freeBytesLocked() const {
+  size_t total = 0, used = 0;
+#ifdef ESP_PLATFORM
+  if (esp_littlefs_info("spiffs", &total, &used) != ESP_OK) {
+    total = LittleFS.totalBytes();
+    used = LittleFS.usedBytes();
+  }
+#else
+  total = LittleFS.totalBytes();
+  used = LittleFS.usedBytes();
+#endif
+  return total > kReserveBytes && used < total - kReserveBytes
+             ? total - kReserveBytes - used
+             : 0;
+}
 size_t RecordingArchive::freeBytes() const {
-  const size_t total = LittleFS.totalBytes(), used = LittleFS.usedBytes();
-  return total > used + kReserveBytes ? total - used - kReserveBytes : 0;
+  if (!mutex_) return 0;
+  Guard guard(mutex_);
+  FilesystemGuard filesystem;
+  return freeBytesLocked();
 }
 bool RecordingArchive::append(const uint8_t mac[6], const lil::recording::Upload& upload) {
   const auto& record = upload.record;
@@ -94,22 +117,25 @@ bool RecordingArchive::append(const uint8_t mac[6], const lil::recording::Upload
   pagedHistory.reserveForArchive();
   Guard guard(mutex_);
   FilesystemGuard filesystem;
-  char path[320]; pathFor(mac, record.session, path, sizeof(path));
+  char path[kRecordingPathCapacity]; pathFor(mac, record.session, path, sizeof(path));
   FILE* file = fopen(path, "r+b");
   Header h{}; uint32_t count = 0; long fileLength = 0;
   if (!file) {
     if (errno != ENOENT) return false;
-    if (freeBytes() < sizeof(Header) + lil::recording::size(record.type) + 4096) return false;
+    if (freeBytesLocked() < sizeof(Header) + lil::recording::size(record.type) + 4096) return false;
     h.width = lil::recording::size(record.type); h.session = record.session;
     h.epochMs = upload.sessionEpochMs; h.expected = upload.totalRecords;
     h.durationMs = upload.durationMs; h.type = record.type;
     h.crc = lil::protocol::crc32(reinterpret_cast<const uint8_t*>(&h), sizeof(h)-4);
-    char temporary[336]; snprintf(temporary, sizeof(temporary), "%s.tmp", path);
+    char temporary[kRecordingPathCapacity + 8]; snprintf(temporary, sizeof(temporary), "%s.tmp", path);
     file = fopen(temporary, "w+b");
     if (!file) return false;
     const bool written = fwrite(&h, 1, sizeof(h), file) == sizeof(h) && !fflush(file) && !fsync(fileno(file));
     const bool closed = fclose(file) == 0;
-    if (!written || !closed || rename(temporary, path)) return false;
+    if (!written || !closed || rename(temporary, path)) {
+      ::remove(temporary);
+      return false;
+    }
     file = fopen(path, "r+b");
   }
   if (!file || !load(file, h, count, &fileLength)) { if (file) fclose(file); return false; }
@@ -140,23 +166,28 @@ bool RecordingArchive::append(const uint8_t mac[6], const lil::recording::Upload
   }
   const long committedEnd = sizeof(Header) + size_t(count)*h.width;
   if (count >= h.expected || (fileLength != committedEnd && ftruncate(fileno(file), committedEnd)) ||
-      freeBytes() < size_t(h.width) + 4096 ||
+      freeBytesLocked() < size_t(h.width) + 4096 ||
       fseek(file, committedEnd, SEEK_SET) ||
       fwrite(&record, 1, h.width, file) != h.width || fflush(file) || fsync(fileno(file))) { fclose(file); return false; }
   lil::recording::Record check{};
   const bool ok = readAt(file, h, count, check) == RowRead::Valid && !memcmp(&check, &record, h.width);
   const bool closed = fclose(file) == 0;
+  noteFilesystemMutation();
   return ok && closed; // Only this result permits the durable radio ACK.
 }
 std::vector<RecordingInfo> RecordingArchive::list(const uint8_t mac[6]) {
   std::vector<RecordingInfo> result;
   if (!mutex_) return result;
-  Guard guard(mutex_); char pre[24]; prefix(mac, pre, sizeof(pre));
+  Guard guard(mutex_);
+  FilesystemGuard filesystem;
+  char pre[24]; prefix(mac, pre, sizeof(pre));
+  const size_t preLen = strlen(pre);
   DIR* directory = opendir(RECORDING_MOUNT_PATH); if (!directory) return result;
   while (auto* entry = readdir(directory)) {
-    if (strncmp(entry->d_name, pre, strlen(pre)) || strlen(entry->d_name) != strlen(pre)+20 ||
-        strcmp(entry->d_name + strlen(entry->d_name)-4, ".bin")) continue;
-    char path[320]; snprintf(path, sizeof(path), RECORDING_MOUNT_PATH "/%s", entry->d_name);
+    const size_t nameLen = strlen(entry->d_name);
+    if (strncmp(entry->d_name, pre, preLen) || nameLen != preLen + 20 ||
+        strcmp(entry->d_name + nameLen - 4, ".bin")) continue;
+    char path[kRecordingPathCapacity]; snprintf(path, sizeof(path), RECORDING_MOUNT_PATH "/%.*s", 40, entry->d_name);
     FILE* file = fopen(path, "rb"); if (!file) continue;
     Header header{}; uint32_t count;
     if (load(file, header, count)) {
@@ -176,7 +207,9 @@ size_t RecordingArchive::read(const uint8_t mac[6], uint64_t session, uint32_t& 
     lil::recording::Record* output, size_t capacity, RecordingInfo& info, uint32_t fromMs) {
   info = {};
   if (!mutex_ || !output) return 0;
-  Guard guard(mutex_); char path[320]; pathFor(mac, session, path, sizeof(path));
+  Guard guard(mutex_);
+  FilesystemGuard filesystem;
+  char path[kRecordingPathCapacity]; pathFor(mac, session, path, sizeof(path));
   FILE* file = fopen(path, "rb");
   if (!file) {
     if (errno != ENOENT) { info.session = session; info.readError = true; }
@@ -206,16 +239,55 @@ size_t RecordingArchive::read(const uint8_t mac[6], uint64_t session, uint32_t& 
       fseek(file, sizeof(Header) + size_t(offset)*header.width, SEEK_SET)) {
     info.readError = true; fclose(file); return 0;
   }
-  while (offset < count && copied < capacity) {
-    if (readNext(file, header, output[copied]) != RowRead::Valid) { info.readError = true; break; }
-    ++copied; ++offset;
+  constexpr size_t kHeapBatchRows = 32;
+  constexpr size_t kStackBatchRows = 4;
+  uint8_t stackBatch[kStackBatchRows * sizeof(lil::recording::Record)];
+  uint8_t* heapBatch = nullptr;
+#ifdef ESP_PLATFORM
+  heapBatch = static_cast<uint8_t*>(heap_caps_malloc(
+      kHeapBatchRows * sizeof(lil::recording::Record),
+      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!heapBatch) {
+    heapBatch = static_cast<uint8_t*>(heap_caps_malloc(
+        kHeapBatchRows * sizeof(lil::recording::Record),
+        MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
   }
+#endif
+  uint8_t* const batch = heapBatch ? heapBatch : stackBatch;
+  const size_t batchRows = heapBatch ? kHeapBatchRows : kStackBatchRows;
+  while (offset < count && copied < capacity) {
+    const size_t wanted = std::min({batchRows, static_cast<size_t>(count - offset), capacity - copied});
+    const size_t got = fread(batch, header.width, wanted, file);
+    for (size_t i = 0; i < got; ++i) {
+      auto& record = output[copied];
+      record = {};
+      memcpy(&record, batch + i * header.width, header.width);
+      const bool valid = lil::recording::valid(record) &&
+          record.session == header.session && record.type == header.type &&
+          lil::protocol::validTelemetryValues(lil::recording::decode(record));
+      if (!valid) {
+        info.readError = true;
+#ifdef ESP_PLATFORM
+        if (heapBatch) heap_caps_free(heapBatch);
+#endif
+        fclose(file);
+        return copied;
+      }
+      ++copied; ++offset;
+    }
+    if (got < wanted) { info.readError = true; break; }
+  }
+#ifdef ESP_PLATFORM
+  if (heapBatch) heap_caps_free(heapBatch);
+#endif
   fclose(file); return copied;
 }
 bool RecordingArchive::remove(const uint8_t mac[6], uint64_t session) {
   if (!mutex_) return false;
-  Guard guard(mutex_); char path[320]; pathFor(mac, session, path, sizeof(path));
+  Guard guard(mutex_); char path[kRecordingPathCapacity]; pathFor(mac, session, path, sizeof(path));
   FilesystemGuard filesystem;
-  return ::remove(path) == 0;
+  const bool removed = ::remove(path) == 0;
+  if (removed) noteFilesystemMutation();
+  return removed;
 }
 }  // namespace station

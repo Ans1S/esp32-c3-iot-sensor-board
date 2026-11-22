@@ -19,6 +19,7 @@ class RecordingStore {
   bool begin(lil::protocol::EnvironmentalSensorType type);
   bool start();
   void stop(bool full = false);
+  void clearForReset();
   bool append(uint64_t capturedMs, const lil::protocol::TelemetryPayload& payload);
   bool next(lil::recording::Upload& upload);
   bool acknowledge(const lil::recording::Record& record);

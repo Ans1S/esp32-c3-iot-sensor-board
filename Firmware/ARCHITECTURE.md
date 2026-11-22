@@ -6,9 +6,9 @@ The W-Charger station is the continuously available control point. During
 initial setup or network recovery it runs a protected setup access point; after
 the first successful home Wi-Fi connection it normally operates as a Wi-Fi
 station. ESP-NOW remains active alongside the local web interface and the
-optional ThingSpeak uploader. Environmental sensor nodes wake briefly,
+optional ThingSpeak uploader. Most environmental sensor nodes wake briefly,
 measure, exchange one telemetry/configuration pair with the station and return
-to deep sleep. LSM6DSOX and TMP117 use fresh acquisition windows at the configured
+to deep sleep. Paired CCS811 nodes keep the heater powered between reports. LSM6DSOX and TMP117 use fresh acquisition windows at the configured
 normal interval and continuous acquisition during SW2 recordings. MAX30102
 acquires only during a manually started SW2 session.
 
@@ -91,8 +91,9 @@ normal histories on the station. See [resource limits](RESOURCE_AND_UX_REVIEW.md
 - `hardware_profile`: only PCB V3/V4 pins, polarities and battery scaling
 - `power_controller`: sensor and ADC power paths
 - `environmental_sensor`: shared, extensible I2C sensor facade
-- `bme280_driver`: BME280 in energy-efficient forced mode
-- `bme680_driver`: Bosch BSEC2 Static IAQ with the 3.3 V ULP profile, a
+- `extended_sensors`: CCS811 gas estimates, VL53L1X distance and AS7341 spectral channels
+- `bme280_driver`: BME280 and BMP280 in forced mode
+- `bme680_driver`: BME680/BME688 Bosch BSEC2 Static IAQ with the 3.3 V ULP profile, a
   continuous five-minute algorithm schedule, timer Light-sleep during the
   forced heater/conversion wait, deep sleep between measurements and
   persistent learning state; the BSEC operating mode never changes
@@ -109,7 +110,7 @@ a nominal divider factor of 1.667. Its 100 kOhm ADC series resistor and 100 nF
 filter capacitor produce an approximately 16 ms charging time constant with the
 divider, so the firmware waits 100 ms after enabling the path before sampling.
 With default V4 battery protection, that settling/read completes before any
-external sensor is enabled, including maintenance-only BME680 wakes. The
+external sensor is enabled, including maintenance-only BME680/BME688 wakes. The
 result is reused for a due report. Without the protection preflight, settling
 can overlap acquisition and is skipped when no report is due.
 
@@ -145,12 +146,12 @@ and selects discovery mode. Consequently an incomplete or interrupted setup
 cannot accidentally use the configured sleep and unicast path.
 
 Protocol V5 includes the sensor's current operating mode in telemetry:
-discovery, energy saving or channel recovery. The station exposes this value in
+discovery, energy saving, channel recovery, continuous motion/precision sensing or battery protection. The station exposes this value in
 `/api/status` and renders it in both the captive setup wizard and the normal
 dashboard. Unknown is reserved for a stored station entry without a current V5
 telemetry packet.
 
-BME680 nodes still wake every five minutes to maintain BSEC ULP timing, but
+BME680 and BME688 nodes wake every five minutes to maintain BSEC ULP timing, but
 ESP-NOW and ThingSpeak follow the configured reporting interval. The logical
 report clock includes time spent awake as well as deep-sleep time, preventing a
 few seconds of processing from postponing a due report by another five-minute
@@ -216,8 +217,7 @@ bootstrap, USB partition migration, limits and physical acceptance tests.
 ## Motion and OTA
 
 `lsm6dsox_driver` configures the I2C accelerometer/gyroscope and consumes its
-104 Hz FIFO. Only motion telemetry uses the extended V5 suffix. Environmental
-nodes retain the original V5 wire length. See [motion acquisition](LSM6DSOX.md)
+104 Hz FIFO. Motion, precision and extended sensor types use type-specific V5 payload lengths. Basic climate and battery reports retain the original short V5 payload. See [motion acquisition](LSM6DSOX.md)
 for interval summaries, scaling and FIFO limits.
 
 The sensor `ota_client` pulls signed firmware from the station `ota_service`.

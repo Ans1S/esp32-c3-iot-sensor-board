@@ -88,8 +88,19 @@ void checkOta(EspNowTransport& radio, const SensorRuntimeConfig& config,
     pendingBoot = false;
     if (bootTimer) { esp_timer_stop(bootTimer); esp_timer_delete(bootTimer); bootTimer = nullptr; }
   }
-  Packet q{}, r{};
-  const uint32_t nonce = esp_random();
+  struct OtaPackets {
+    Packet q{};
+    Packet r{};
+  };
+  std::unique_ptr<OtaPackets> packets(new (std::nothrow) OtaPackets{});
+  if (!packets) return;
+  Packet& q = packets->q;
+  Packet& r = packets->r;
+  auto nextNonce = []() -> uint32_t {
+    const uint32_t value = esp_random();
+    return value == 0 ? 1U : value;
+  };
+  uint32_t nonce = nextNonce();
   uint32_t sequence = esp_random();
   auto exchange = [&](size_t payloadSize = sizeof(Payload)) {
     q.payload.nonce = nonce;
@@ -102,21 +113,29 @@ void checkOta(EspNowTransport& radio, const SensorRuntimeConfig& config,
     if (failure != Failure::None) { q.payload.size = 1; q.payload.data[0] = static_cast<uint8_t>(failure); }
     return exchange();
   };
-  Identity identity{};
-  identity.release = firmwareIdentity.release; identity.pcb = firmwareIdentity.pcb;
-  identity.protocol = lil::protocol::kVersion; identity.batteryMv = battery.millivolts;
-  memcpy(identity.version, kVersion, sizeof(kVersion));
-  memcpy(identity.build, esp_app_get_description()->app_elf_sha256, sizeof(identity.build));
-  q.payload.op = Op::Hello; q.payload.state = bootState; q.payload.size = sizeof(identity);
-  memcpy(q.payload.data, &identity, sizeof(identity));
-  if (!exchange()) return;
+  auto sendHello = [&]() {
+    Identity identity{};
+    identity.release = firmwareIdentity.release; identity.pcb = firmwareIdentity.pcb;
+    identity.protocol = lil::protocol::kVersion; identity.batteryMv = battery.millivolts;
+    memcpy(identity.version, kVersion, sizeof(kVersion));
+    memcpy(identity.build, esp_app_get_description()->app_elf_sha256, sizeof(identity.build));
+    q.payload = {};
+    q.payload.op = Op::Hello; q.payload.state = bootState; q.payload.size = sizeof(identity);
+    memcpy(q.payload.data, &identity, sizeof(identity));
+    return exchange();
+  };
+  if (!sendHello()) return;
   if (attempted && r.payload.op == Op::Idle) prefs.remove("attempted");
   if (r.payload.op != Op::Offer || r.payload.size != sizeof(Manifest)) return;
   const size_t readPayloadSize = r.payload.offset & kOfferCompactRead ?
       kCompactReadPayloadSize : sizeof(Payload);
+  const bool useLargeBlocks = (r.payload.offset & kOfferLargeBlock) != 0 &&
+                              (r.payload.offset & kOfferCompactRead) != 0;
   Manifest manifest{}; memcpy(&manifest, r.payload.data, sizeof(manifest));
   const esp_partition_t* target = esp_ota_get_next_update_partition(nullptr);
-  if (!verifyManifest(manifest)) { status(State::Rejected, 0, Failure::ManifestInvalid); return; }
+  // Reject structurally invalid, mismatched, older, unallocated or low-battery
+  // offers before spending CPU/energy on ECDSA-P256 signature verification.
+  if (!validManifest(manifest)) { status(State::Rejected, 0, Failure::ManifestInvalid); return; }
   if (manifest.pcb != kHardware.pcbVersion || manifest.protocol != lil::protocol::kVersion) {
     status(State::Rejected, 0, Failure::HardwareMismatch); return;
   }
@@ -126,22 +145,28 @@ void checkOta(EspNowTransport& radio, const SensorRuntimeConfig& config,
     status(State::Rejected, 0, Failure::SlotUnavailable); return;
   }
   if (!battery.valid || battery.millivolts < minimumUpdateMv) { status(State::LowBattery, 0, Failure::LowBattery); return; }
-  Checkpoint checkpoint{};
+  if (!verifyManifest(manifest)) { status(State::Rejected, 0, Failure::ManifestInvalid); return; }
+
+  struct TransferScratch {
+    Checkpoint checkpoint{};
+    mbedtls_sha256_context hash{};
+  };
+  std::unique_ptr<TransferScratch> scratch(new (std::nothrow) TransferScratch{});
+  // Reuse the existing sector buffer for prefix verification and transfer.
+  // Only flushed bytes enter the hash or checkpoint; a lost tail is retried.
+  std::unique_ptr<uint8_t[]> writeBuffer(new (std::nothrow) uint8_t[kSectorSize]);
+  if (!scratch || !writeBuffer) {
+    status(State::Paused, 0, Failure::FlashBegin);
+    return;
+  }
+  Checkpoint& checkpoint = scratch->checkpoint;
+  mbedtls_sha256_context& hash = scratch->hash;
   if (prefs.getBytesLength("checkpoint") == sizeof(checkpoint)) prefs.getBytes("checkpoint", &checkpoint, sizeof(checkpoint));
   bool resume = checkpoint.magic == kCheckpointMagic &&
     checkpoint.crc == lil::protocol::crc32(reinterpret_cast<const uint8_t*>(&checkpoint), offsetof(Checkpoint, crc)) &&
     !memcmp(&checkpoint.manifest, &manifest, sizeof(manifest)) &&
     checkpoint.offset < manifest.imageSize && checkpoint.offset % kCheckpointBytes == 0;
-  mbedtls_sha256_context hash;
   mbedtls_sha256_init(&hash); mbedtls_sha256_starts(&hash, 0);
-  // Reuse the existing sector buffer for prefix verification and transfer.
-  // Only flushed bytes enter the hash or checkpoint; a lost tail is retried.
-  std::unique_ptr<uint8_t[]> writeBuffer(new (std::nothrow) uint8_t[kSectorSize]);
-  if (!writeBuffer) {
-    mbedtls_sha256_free(&hash);
-    status(State::Paused, 0, Failure::FlashBegin);
-    return;
-  }
   if (resume) {
     for (uint32_t offset = 0; offset < checkpoint.offset;) {
       const size_t size = min(size_t(kSectorSize), static_cast<size_t>(checkpoint.offset - offset));
@@ -164,7 +189,11 @@ void checkOta(EspNowTransport& radio, const SensorRuntimeConfig& config,
   } else {
     checkpoint = {}; checkpoint.magic = kCheckpointMagic; checkpoint.manifest = manifest;
     mbedtls_sha256_starts(&hash, 0);
+#ifdef OTA_WITH_SEQUENTIAL_WRITES
+    error = esp_ota_begin(target, OTA_WITH_SEQUENTIAL_WRITES, &handle);
+#else
     error = esp_ota_begin(target, manifest.imageSize, &handle);
+#endif
   }
   if (error != ESP_OK) {
     mbedtls_sha256_free(&hash);
@@ -177,19 +206,77 @@ void checkOta(EspNowTransport& radio, const SensorRuntimeConfig& config,
   bool ok = true;
   State interruption = State::Paused;
   Failure interruptionFailure = Failure::Transport;
+  std::unique_ptr<LargePacket> largeResp;
+  if (useLargeBlocks) {
+    largeResp.reset(new (std::nothrow) LargePacket{});
+  }
+  uint32_t blockSize = largeResp ? static_cast<uint32_t>(kLargeBlockSize)
+                                 : static_cast<uint32_t>(kBlockSize);
+  // Allow one bounded re-handshake if the station restarted mid-transfer and
+  // reset its volatile session nonce while the same job remains staged in NVS.
+  uint8_t rehandshakesRemaining = 1;
+  auto tryRehandshake = [&]() -> bool {
+    if (rehandshakesRemaining == 0) return false;
+    --rehandshakesRemaining;
+    const uint32_t previousNonce = nonce;
+    nonce = nextNonce();
+    if (nonce == previousNonce) nonce = previousNonce == UINT32_MAX ? 1U : previousNonce + 1U;
+    if (!sendHello() || r.payload.op != Op::Offer || r.payload.size != sizeof(Manifest) ||
+        memcmp(r.payload.data, &manifest, sizeof(manifest)) != 0) {
+      return false;
+    }
+    q.payload = {};
+    q.payload.op = Op::Read;
+    return true;
+  };
   q.payload = {};
   q.payload.op = Op::Read;
   while (offset < manifest.imageSize && millis() - started < kSessionMs) {
     q.payload.offset = offset;
-    if (!exchange(readPayloadSize) || r.payload.op != Op::Data || r.payload.offset != offset ||
-        r.payload.size != min(static_cast<uint32_t>(kBlockSize), manifest.imageSize - offset)) { ok = false; break; }
-    // Assemble full flash sectors from the 192-byte OTA response blocks.
+    q.payload.size = largeResp ? static_cast<uint16_t>(kLargeBlockSize) : 0U;
+    const uint32_t expectedBytes = min(blockSize, manifest.imageSize - offset);
+    const uint8_t* blockData = nullptr;
+    if (largeResp) {
+      q.payload.nonce = nonce;
+      lil::protocol::finalizePacket(&q, sizeof(lil::protocol::PacketHeader) + readPayloadSize,
+                                    kMessageType, ++sequence, readPayloadSize);
+      const bool exchanged = radio.otaExchangeLarge(config.stationMac, q, *largeResp);
+      if (exchanged && largeResp->payload.op == Op::Data &&
+          largeResp->payload.offset == offset &&
+          largeResp->payload.size == expectedBytes) {
+        blockData = largeResp->payload.data;
+      } else if (exchanged && largeResp->payload.op == Op::Idle) {
+        if (tryRehandshake()) continue;
+        ok = false; break;
+      } else {
+        // Fall back mid-session from 1024-byte ESP-NOW v2 frames to standard
+        // 192-byte blocks on RF loss so weak links finish in the same wake.
+        largeResp.reset();
+        blockSize = static_cast<uint32_t>(kBlockSize);
+        q.payload = {};
+        q.payload.op = Op::Read;
+        continue;
+      }
+    } else {
+      const bool exchanged = exchange(readPayloadSize);
+      if (!exchanged) { ok = false; break; }
+      if (r.payload.op == Op::Idle) {
+        if (tryRehandshake()) continue;
+        ok = false; break;
+      }
+      if (r.payload.op != Op::Data || r.payload.offset != offset ||
+          r.payload.size != expectedBytes) {
+        ok = false; break;
+      }
+      blockData = r.payload.data;
+    }
+    // Assemble full 4 KiB flash sectors from incoming OTA response blocks.
     // The final short sector is flushed before verification as well.
     uint32_t consumed = 0;
-    while (consumed < r.payload.size) {
-      const uint32_t count = min(static_cast<uint32_t>(r.payload.size - consumed),
-                                static_cast<uint32_t>(kSectorSize) - buffered);
-      memcpy(writeBuffer.get() + buffered, r.payload.data + consumed, count);
+    while (consumed < expectedBytes) {
+      const uint32_t count = min(expectedBytes - consumed,
+                                 static_cast<uint32_t>(kSectorSize) - buffered);
+      memcpy(writeBuffer.get() + buffered, blockData + consumed, count);
       buffered += count; offset += count; consumed += count;
       if (buffered == kSectorSize || offset == manifest.imageSize) {
         if (esp_ota_write(handle, writeBuffer.get(), buffered) != ESP_OK ||
@@ -210,7 +297,7 @@ void checkOta(EspNowTransport& radio, const SensorRuntimeConfig& config,
       }
     }
     if (!ok) break;
-    if (offset % 65536 < kBlockSize) {
+    if (offset % 65536 < blockSize) {
       battery = adc.readBattery(config.batteryCalibrationFactor);
       if (!battery.valid || battery.millivolts < minimumUpdateMv) {
         interruption = State::LowBattery; ok = false; break;
@@ -236,8 +323,11 @@ void checkOta(EspNowTransport& radio, const SensorRuntimeConfig& config,
   if (esp_ota_end(handle) != ESP_OK) { prefs.remove("checkpoint"); status(State::Rejected, offset, Failure::ImageValidation); return; }
   // Persist the attempted release before selecting it, allowing the old image
   // to report a bootloader rollback after a crash or failed communication test.
-  if (prefs.putUInt("attempted", manifest.release) != sizeof(uint32_t) ||
-      esp_ota_set_boot_partition(target) != ESP_OK) {
+  if (prefs.putUInt("attempted", manifest.release) != sizeof(uint32_t)) {
+    status(State::Rejected, offset, Failure::BootSelection); return;
+  }
+  if (esp_ota_set_boot_partition(target) != ESP_OK) {
+    prefs.remove("attempted");
     status(State::Rejected, offset, Failure::BootSelection); return;
   }
   prefs.remove("checkpoint");

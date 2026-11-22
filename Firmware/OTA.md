@@ -8,7 +8,7 @@ must stop before a scheduled OTA transfer starts.
 
 ## Updating the station without resetting settings
 
-Firmware 4.4.5 uses the existing recording partition and NVS layouts. See the
+Firmware 4.4.10 uses the existing recording partition and NVS layouts. See the
 [release archive](releases/README.md) for available signed packages and station
 images. `python Firmware/upload.py station --application-only` builds and
 writes only the installed station application. The distributed station BIN
@@ -113,7 +113,7 @@ Normal OTA never changes the bootloader or partition table.
   job only after signature and complete-image hash verification. Upload data
   and normal measurement history do not share a partition. A partially uploaded
   package is never offered. The browser can close after upload confirmation.
-- ESP-NOW packets remain under 250 bytes, with 192-byte data blocks. Each pull
+- Standard-mode ESP-NOW transfers use 192-byte data blocks and fit in 250-byte frames. Each pull
   request carries a session nonce and sequence; replies must come from the
   configured station and match both. The node retries five times and bounds
   each update session to ten minutes plus the current bounded operation.
@@ -152,11 +152,15 @@ Normal OTA never changes the bootloader or partition table.
 Environmental telemetry/configuration retain the original protocol V5 layouts.
 LSM6DSOX telemetry adds a motion suffix accepted by the current station. OTA uses an additional
 message type; old nodes continue normal operation but cannot update themselves.
-The station can advertise compact OTA reads in the `Offer` offset field.
-A capable sensor then sends 28-byte block requests. A sensor that receives
-an offer without the capability uses 220-byte requests. Stations that
-advertise it accept both forms. Data blocks and status messages use the
-220-byte form.
+The station can advertise compact OTA reads (`kOfferCompactRead`) and optional
+1024-byte ESP-NOW v2.0 data blocks (`kOfferLargeBlock`) in the `Offer` offset
+field. A capable sensor then sends 28-byte block requests and automatically
+falls back to 192-byte blocks mid-session without aborting if 1024-byte
+delivery fails. A sensor that receives an offer without those capabilities uses
+220-byte requests and 192-byte blocks. Stations that advertise them accept both
+forms. On an unexpected `Idle` reply during transfer, the sensor performs at
+most one fresh `Hello` re-handshake with a new non-zero nonce so a station
+reboot resumes cleanly while an explicit cancellation still stops the session.
 The station persists the package, selected MAC, target version, job state and
 reported node versions. Transfer progress is reconstructed from the node after
 a station restart rather than writing station NVS for every radio block.
@@ -228,10 +232,8 @@ for the compiler behavior. Scan the final application and signed package bytes
 with `python Firmware/tools/check_publication.py` before staging them. Never
 publish flash dumps containing device NVS, credentials or recordings.
 
-The current distribution contains the full 4.3.4 release and the PCB V4
-4.3.5 maintenance OTA package. Older binaries with
-personal compiler paths were withdrawn from the current tree and kept in an
-ignored local archive; the old objects still exist in published Git history.
+The [4.4.10 release](releases/README.md) includes the application-only station BIN and both signed sensor packages. Earlier public snapshots and their limitations are documented separately.
+
 See [publication scope](PUBLICATION_REVIEW.md). Keys and the trusted public
 header stay local; the public verification key embedded in a signed firmware
 is intentionally distributable and is not the private signing key.

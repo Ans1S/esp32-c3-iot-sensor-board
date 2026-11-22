@@ -32,7 +32,8 @@ uint32_t crc32(const uint8_t* data, size_t length) {
 
 void finalizePacket(void* packet, size_t packetSize, MessageType type,
                     uint32_t sequence, uint16_t payloadSize) {
-  if (packet == nullptr || packetSize < sizeof(PacketHeader)) {
+  if (packet == nullptr || packetSize != sizeof(PacketHeader) + payloadSize ||
+      packetSize > maxWirePacketSize(type)) {
     return;
   }
 
@@ -59,7 +60,7 @@ bool validatePacket(const void* packet, size_t packetSize,
     return false;
   }
 
-  if (packetSize > kMaxPacketSize) {
+  if (packetSize > maxWirePacketSize(expectedType)) {
     return false;
   }
   PacketHeader copiedHeader;

@@ -43,8 +43,8 @@ router, `http://w-charger/` may work as well.
 After setup, the responsive dashboard separates newly discovered sensors from
 configured sensors. A new device appears automatically and must be confirmed
 once in the three-step wizard. The wizard assigns its name and interval,
-selects the attached I2C sensor (automatic, BME280, BME680, LSM6DSOX or disabled),
-optionally adjusts BME680 temperature compensation, selects a saved ThingSpeak
+selects automatic detection, the [attached I²C module](../sensor/README.md) or battery-only operation,
+optionally adjusts BME680/BME688 temperature compensation, selects a saved ThingSpeak
 channel profile and maps measurements to fields 1 through 8. Only then does
 the sensor appear in the regular dashboard with its last contact, readings,
 battery voltage, radio quality and switchable local history. Available
@@ -117,7 +117,7 @@ pressure, IAQ, battery voltage and gas resistance to fields 1 through 6. The
 BME680 wizard adopts this mapping by default, but it remains editable before
 saving.
 
-For BME680 sensors, the dashboard shows BSEC accuracy from "background
+For BME680 and BME688 sensors, the dashboard shows BSEC accuracy from "background
 learning" through "high" next to the IAQ value, as well as raw gas resistance
 in kOhm. BSEC operates exclusively in its energy-efficient ULP mode from the
 first start and measures internally every five minutes. ESP-NOW and ThingSpeak
@@ -133,7 +133,7 @@ add button is now only a shortcut to that section. Configured sensors can be
 deleted from the local station. As long as a deleted sensor continues to
 transmit, it reappears as a new device on its next contact, as expected.
 
-The editing wizard also provides transparent BME680 commissioning, an explicit
+The editing wizard also provides BME680/BME688 commissioning, an explicit
 reset of the IAQ learning state and optional battery-voltage calibration using
 a multimeter reference. Independently of any open browser, the station stores
 an adaptive persistent history for normal measurements. Environmental/battery
@@ -159,44 +159,7 @@ highly discontinuous charts use bounded visual geometry while retaining the raw
 samples for the cursor and CSV. A simplified graph is labeled in the UI.
 Short-interval batches have a bounded uncommitted tail on sudden power loss.
 
-On 2026-11-12, a direct station comparison used the same fixed snapshot of 512
-actual points in both representations. Decoded fields and values matched: the
-object response was 75,562 bytes and the compact response 26,690 bytes. Three
-alternating requests per format had median completion times of 564 ms and
-305 ms respectively. These are a short local measurement, not a load test;
-results depend on the sensors' available fields, Wi-Fi and station load.
-The actual public dashboard also loaded a 2,745-point full CSV export, and
-switching within an already loaded window did not request the history again.
 
-A later single-run comparison against the same real station API switched from
-24 hours to seven days after a 1.5-second pause. Before prefetch this took
-841 ms and two history requests; after prefetch it took 24 ms and no new
-request. On the installed public dashboard the prefetched switch took 28 ms.
-These figures depend on the sensor, transfer time and how long the user waits;
-switching while prefetch is still in progress can still show a loading state.
-
-A separate single-run comparison with 2,747 real retained points loaded the
-30-day view after a seven-day view. Prefix reuse reduced requests from six to
-four, decoded JSON from 143,078 to 89,719 bytes and measured time from 2,082 to
-1,361 ms. The station had less than 30 days of data, so its year view needed
-no further requests; this does not measure a real one-year history. A synthetic
-17,520-point hourly history checked exact one- and two-year expansion and
-reduced the complete test scenario from 54 to 37 API pages.
-
-A 2026-11-12 browser comparison used the same live station APIs for the old and
-new local dashboard HTML, without deploying the new page. With 2,742 retained
-points, the old page loaded all points in seven history requests before the
-period control became usable (3,108 ms). The new page loaded 144 recent points
-in one request (243 ms); selecting seven days then loaded 1,022 points in two
-additional requests (1,165 ms). This was one sequential run per page through
-the public API, not a controlled load test. After an application-only update,
-the actual public dashboard loaded 145 recent points in one request in 839 ms,
-then 1,023 seven-day points in two requests in 1,395 ms. A second browser test
-delayed the first history request, selected seven days while it was pending,
-and confirmed that the obsolete response did not replace the new data. Browser
-fixtures also cover failed-page retries, navigation and full export. Latency
-and sensor histories vary; these timings include different browser and network
-conditions and do not establish a statistical speedup.
 
 The channel ID and read/write API keys can be entered in the captive portal and
 later in the station settings. The read key is used only to read private
@@ -297,18 +260,11 @@ names erased by an older station upload cannot be recovered from the node.
 Normal USB and OTA firmware updates preserve this data and the recording archive.
 
 
-## Firmware changes and verification
+## Firmware 4.4.10
 
-The **4.4.5 / 40405** source keeps ESP-NOW receive and storage work moving
-during delayed reply callbacks, reads only the requested history window and
-coalesces writes for large HTTP responses. The station also retains previously
-stored recordings when a flash read fails during an append.
-See [the complete change inventory](../CHANGELOG.md),
-[software verification](../PERFORMANCE_FOLLOWUP_2026-11-09.md),
-[release artifacts](../releases/README.md) and
-[publication review](../PUBLICATION_REVIEW.md). Build diagnostics use relative
-paths; installation keys and device data must stay local. Software tests do not
-replace physical accuracy, rail-voltage and sleep-current acceptance.
+The sensor wizard and dashboard support BMP280, BME688, CCS811, VL53L1X and AS7341. The detail view shows type-specific measurements and history, including range status and spectral bands. A sensor type change clears fields from its previous type. The station validates the checksum of compatible legacy latest-reading files on upgrade and caches history pages in PSRAM when available.
+
+The OTA service handles large and standard blocks in the same transfer and keeps an upload active through image verification. See the [release and installation instructions](../releases/README.md).
 
 ## Updating an installed station without resetting it
 
@@ -331,44 +287,3 @@ Accept-Encoding`. Other clients receive the original HTML. Authentication,
 security headers and no-store behavior are unchanged; the setup and login pages
 and live API requests are unaffected. Both copies use flash, not runtime gzip
 compression. The generated file is not a source file to edit or commit.
-
-On 2026-11-12, the installed station's direct dashboard was byte-identical to
-the checked-in HTML (180,192 bytes). Six sequential Pi-to-station requests
-with no load test took 426–500 ms in total; response headers arrived in
-24–46 ms. This shows substantial time between headers and completion, but
-does not isolate Wi-Fi throughput from the station's HTTP sending behavior.
-The local build-time gzip result was 50,103 bytes, a 72.2% reduction; the host
-test decompresses it and compares every byte to the source. Matching HTML alone
-does not establish the complete installed firmware version.
-
-On the existing Pi, the remote-view proxy uses a loopback-only adapter for the
-dashboard: the adapter requests gzip from the station and decompresses the
-response before the existing `sub_filter` rewrites it. The public proxy then
-compresses the filtered response when the browser supports gzip. Other routes
-continue through their existing paths. A station that ignores gzip still works.
-The proxy adjustment was checked with simulated compressed and uncompressed
-station responses, then with the updated station. A packet-level check observed
-the Pi request gzip and the station respond with gzip and 50,103 bytes. The
-adapter's copied proxy settings must be kept aligned with future changes to the
-original proxy configuration. Do not simply forward the browser's gzip
-preference to the station: that would bypass the required decompression before
-HTML rewriting.
-
-On 2026-11-12, five alternating direct Pi-to-station requests per representation
-took 376–406 ms (median 398 ms) for identity and 106–140 ms (median 111 ms) for
-gzip. Five gzip requests through the Pi's local public proxy took 110–155 ms
-(median 118 ms). Five public Funnel requests from the workstation took
-322–438 ms (median 328 ms); a previous short series before the change was about
-660–745 ms. These are individual new-connection requests, not a load test or a
-controlled experiment. The compressed and identity station responses decoded
-to the same 180,192 bytes, and the public response had the expected filtered
-HTML and `no-store`. Wi-Fi and all five configured sensor identities remained
-present after the application-only update; not every sensor had checked in
-again when tested.
-
-For verification, run `python3 Firmware/tests/test_dashboard_gzip.py` from
-the repository root and build the `station_s3` PlatformIO environment. For
-later deployments, compare direct gzip and identity requests and check the
-actual dashboard, login, no-cache/security headers and remote view on a test
-device; measure first-byte and total timings separately. The build alone does
-not verify device behavior.

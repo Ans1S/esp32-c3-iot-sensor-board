@@ -21,6 +21,7 @@ unsigned writes = 0;
 unsigned failConfigSaves = 0;
 bool failHistoryDelete = false;
 std::vector<uint8_t> histories[station::kMaxSensors];
+std::vector<uint8_t> latestBlobs[station::kMaxSensors];
 station::SensorConfig saved[station::kMaxSensors];
 station::SensorIdentity identities[station::kMaxSensorIdentities];
 void onStorage() { ++writes; auto hook = storageHook; if (hook) hook(); }
@@ -71,9 +72,22 @@ bool ConfigStore::deleteHistory(size_t index) {
   onStorage(); if (failHistoryDelete) return false;
   histories[index].clear(); return true;
 }
-bool ConfigStore::loadLatestTelemetry(size_t, void*, size_t) { return false; }
-bool ConfigStore::saveLatestTelemetry(size_t, const void*, size_t) { onStorage(); return true; }
-bool ConfigStore::deleteLatestTelemetry(size_t) { onStorage(); return true; }
+bool ConfigStore::loadLatestTelemetry(size_t index, void* out, size_t length) {
+  if (latestBlobs[index].size() != length) return false;
+  memcpy(out, latestBlobs[index].data(), length);
+  return true;
+}
+bool ConfigStore::saveLatestTelemetry(size_t index, const void* data, size_t length) {
+  onStorage();
+  const auto* bytes = static_cast<const uint8_t*>(data);
+  latestBlobs[index].assign(bytes, bytes + length);
+  return true;
+}
+bool ConfigStore::deleteLatestTelemetry(size_t index) {
+  onStorage();
+  latestBlobs[index].clear();
+  return true;
+}
 }
 
 void liveRingRegression(bool benchmark) {
@@ -299,28 +313,40 @@ int main(int argc, char** argv) {
   assert(!registry.cloudUploadMatches(mac, generation, 123, "key", cloudSnapshot.thingSpeakFields));
   assert(registry.removeThingSpeakProfile(0));
   assert(!registry.cloudUploadMatches(mac, generation, 456, "new-key", cloudSnapshot.thingSpeakFields));
+  station::SensorView view;
+  assert(registry.findView(mac, view) && !view.runtime.configPersistencePending);
 
   // A command acknowledged during a write must stay pending for another save.
+  // First acknowledge command flags via a discovery packet so a real NVS config
+  // save runs in persistTelemetry while kAwaitingProvisioningAck remains pending.
+  {
+    station::SensorConfig current;
+    assert(registry.findConfig(mac, current));
+    auto prep = telemetry;
+    prep.flags = lil::protocol::kDiscoveryBeacon;
+    prep.appliedConfigRevision = current.revision;
+    assert(registry.registerTelemetry(mac, 2, prep, -60, response,
+                                       txPower, duplicate, generation));
+  }
   storageHook = [&] {
     storageHook = nullptr;
     station::SensorConfig current;
     assert(registry.findConfig(mac, current));
     telemetry.appliedConfigRevision = current.revision;
-    assert(registry.registerTelemetry(mac, 2, telemetry, -60, response,
+    assert(registry.registerTelemetry(mac, 3, telemetry, -60, response,
                                        txPower, duplicate, generation));
   };
-  assert(registry.persistTelemetry(mac, 1, telemetry, -60, generation, received));
-  station::SensorView view;
+  assert(registry.persistTelemetry(mac, 2, telemetry, -60, generation, received));
   assert(registry.findView(mac, view));
   assert(view.runtime.configPersistencePending);
-  assert(registry.persistTelemetry(mac, 2, telemetry, -60, generation, received));
+  assert(registry.persistTelemetry(mac, 3, telemetry, -60, generation, received));
   assert(registry.findView(mac, view) && !view.runtime.configPersistencePending);
   assert(saved[0].pendingFlags == view.config.pendingFlags);
 
   telemetry.flags = lil::protocol::kBme680RawFallback;
-  assert(registry.registerTelemetry(mac, 3, telemetry, -60, response,
+  assert(registry.registerTelemetry(mac, 4, telemetry, -60, response,
                                      txPower, duplicate, generation));
-  assert(registry.persistTelemetry(mac, 3, telemetry, -60, generation, received + 60));
+  assert(registry.persistTelemetry(mac, 4, telemetry, -60, generation, received + 60));
   size_t count = registry.history(mac, samples, 200);
   assert(count > 0 && (samples[count - 1].capabilities & lil::protocol::kIaq) == 0);
   storageHook = nullptr;
@@ -330,8 +356,8 @@ int main(int argc, char** argv) {
   telemetry.sensorType = lil::protocol::EnvironmentalSensorType::kBme280;
   telemetry.flags = 0;
   const uint32_t recent = static_cast<uint32_t>(time(nullptr)) - 1;
-  assert(registry.registerTelemetry(mac, 4, telemetry, -60, response, txPower, duplicate, generation));
-  assert(registry.persistTelemetry(mac, 4, telemetry, -60, generation, recent));
+  assert(registry.registerTelemetry(mac, 5, telemetry, -60, response, txPower, duplicate, generation));
+  assert(registry.persistTelemetry(mac, 5, telemetry, -60, generation, recent));
   count = registry.history(mac, samples, 200);
   assert(samples[count - 1].timestamp == recent);
   assert(registry.updateConfig(mac, "Environmental", 60, 0, "", false, {}, 0xff,
@@ -347,14 +373,14 @@ int main(int argc, char** argv) {
   telemetry.motion.angularRateDps[1] = -123.4F;
   telemetry.motion.peakAccelerationG = 2.5F;
   telemetry.motion.fifoOverrun = 1;
-  assert(registry.registerTelemetry(mac, 5, telemetry, -60, response, txPower, duplicate, generation));
-  assert(registry.persistTelemetry(mac, 5, telemetry, -60, generation, received));
+  assert(registry.registerTelemetry(mac, 6, telemetry, -60, response, txPower, duplicate, generation));
+  assert(registry.persistTelemetry(mac, 6, telemetry, -60, generation, received));
   const unsigned fastWrites = writes;
   for (uint32_t i = 1; i <= 901; ++i) {
     testMillis += 100;
     testTimeUs = static_cast<int64_t>(testMillis) * 1000;
-    assert(registry.registerTelemetry(mac, 5 + i, telemetry, -60, response, txPower, duplicate, generation));
-    assert(registry.persistTelemetry(mac, 5 + i, telemetry, -60, generation, received + i));
+    assert(registry.registerTelemetry(mac, 6 + i, telemetry, -60, response, txPower, duplicate, generation));
+    assert(registry.persistTelemetry(mac, 6 + i, telemetry, -60, generation, received + i));
   }
   assert(writes == fastWrites); // No per-report flash writes in fast mode.
   station::LiveSample motionSamples[station::kLiveCapacity]{};
@@ -585,6 +611,51 @@ int main(int argc, char** argv) {
   assert(longRunning.registerTelemetry(mac, 3, longLived, -60, response, txPower, duplicate, generation));
   assert(longRunning.liveHistory(mac, motionSamples, station::kLiveCapacity) == 1);
   assert(motionSamples[0].receivedMs == testMillis && motionSamples[0].telemetry.temperatureC == 22.5F);
+  // Cold-boot random sequence recovery: a recent trailing replay (< 1024
+  // behind) is flagged duplicate, whereas a cold-boot random sequence far
+  // behind the previous sequence (> 1024 lag) must be accepted cleanly.
+  longLived.bootCount = 5;
+  assert(longRunning.registerTelemetry(mac, 0x90000000UL, longLived, -60, response, txPower, duplicate, generation));
+  assert(!duplicate);
+  assert(longRunning.registerTelemetry(mac, 0x90000000UL - 500UL, longLived, -60, response, txPower, duplicate, generation));
+  assert(duplicate);
+  longLived.bootCount = 1;
+  assert(longRunning.registerTelemetry(mac, 0x12345678UL, longLived, -60, response, txPower, duplicate, generation));
+  assert(!duplicate);
+  // Upgrading from 4.4.4-4.4.6 preserves CRC-protected 191-byte /latest-N.bin records.
+  {
+    struct OldMotionFeedback {
+      uint32_t magic;
+      uint8_t version;
+      uint8_t payload[lil::protocol::kMotionFeedbackTelemetryPayloadSize];
+      int8_t rssi;
+    };
+    struct OldMotionFeedbackV2 {
+      OldMotionFeedback base;
+      uint32_t crc32;
+    } oldLatest{};
+    oldLatest.base.magic = 0x4C415354UL;
+    oldLatest.base.version = lil::protocol::kVersion;
+    oldLatest.base.rssi = -64;
+    lil::protocol::TelemetryPayload src{};
+    src.sensorType = lil::protocol::EnvironmentalSensorType::kBme280;
+    src.capabilities = lil::protocol::kTemperature | lil::protocol::kBattery;
+    src.temperatureC = 23.25F;
+    src.batteryMillivolts = 3890;
+    memcpy(oldLatest.base.payload, &src, sizeof(oldLatest.base.payload));
+    oldLatest.crc32 = lil::protocol::crc32(
+        reinterpret_cast<const uint8_t*>(&oldLatest.base), sizeof(oldLatest.base));
+    const auto* raw = reinterpret_cast<const uint8_t*>(&oldLatest);
+    latestBlobs[0].assign(raw, raw + sizeof(oldLatest));
+    station::SensorRegistry upgraded;
+    assert(upgraded.begin(store, 600));
+    station::SensorView upgradedView{};
+    assert(upgraded.findView(mac, upgradedView) && upgradedView.runtime.hasPersistedTelemetry);
+    assert(upgradedView.runtime.telemetry.temperatureC == 23.25F &&
+           upgradedView.runtime.telemetry.batteryMillivolts == 3890 &&
+           upgradedView.runtime.stationRssi == -64);
+    latestBlobs[0].clear();
+  }
   liveRingRegression(argc == 2 && !strcmp(argv[1], "--benchmark"));
   if (argc == 2 && !strcmp(argv[1], "--benchmark")) registrationBenchmark();
   puts("Registry: radio/storage interleaving, durable settings, cloud cancellation, semantic validation and bounded history passed");

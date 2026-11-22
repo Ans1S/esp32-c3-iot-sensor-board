@@ -23,38 +23,38 @@ const dashboardHtml = dashboardSource.match(
   /const char kDashboardPage\[\].*?R"WCH\((.*?)\)WCH";/s)[1];
 const otaHtml = otaSource.match(/R"HTML\((.*?)\)HTML"/s)[1];
 const origin = 'http://station.test';
-const fixedNow = Date.UTC(2026, 9, 25, 12, 0, 0);
+const fixedNow = Date.UTC(2026, 10, 22, 12, 0, 0);
 
 const common = {
   provisioned: true, seen: true, online: true, pcbVersion: 4,
   revision: 3, appliedRevision: 3, historyRevision: 1, operatingMode: 2,
   ageMs: 18000, rssi: -56, profileSlot: 255, uploadEnabled: false,
-  version: '4.4.2', build: 'demo-build-v4', live: false,
+  version: '4.4.10', build: 'demo-build-v4', live: false,
   normalHistory: true, temperatureField: 1, humidityField: 2,
   pressureField: 3, batteryField: 5
 };
 const demoSensors = [
   {
-    ...common, mac: '02:00:00:00:10:01', name: 'Climate node',
-    sensorType: 1, configuredSensorType: 1, capabilities: 23,
-    sleepSeconds: 900, batteryMv: 3940, temperature: 21.6,
-    humidity: 48.3, pressure: 1012.4
+    ...common, mac: '02:00:00:00:10:01', name: 'Spectral light',
+    sensorType: 10, configuredSensorType: 10, capabilities: 1040,
+    sleepSeconds: 900, batteryMv: 3940, spectralIntMs: 50, spectralGain: 4,
+    spectral: [780, 1410, 2380, 3120, 3900, 2740, 1620, 940, 7300, 650]
   },
   {
-    ...common, mac: '02:00:00:00:10:02', name: 'Air-quality node',
-    sensorType: 2, configuredSensorType: 2, capabilities: 127,
+    ...common, mac: '02:00:00:00:10:02', name: 'Indoor air quality',
+    sensorType: 7, configuredSensorType: 7, capabilities: 127,
     sleepSeconds: 600, batteryMv: 3820, temperature: 22.2,
     humidity: 46.1, pressure: 1012.8, iaq: 42, iaqAccuracy: 3,
     gasResistanceOhms: 126400, iaqCalibrationPhase: 3
   },
   {
-    ...common, mac: '02:00:00:00:10:03', name: 'Temperature node',
-    sensorType: 4, configuredSensorType: 4, capabilities: 80,
-    sleepSeconds: 10, batteryMv: 3910, temperature: 23.125,
-    operatingMode: 4, recording: { state: 1, pending: 0, capacity: 44352 }
+    ...common, mac: '02:00:00:00:10:03', name: 'Distance',
+    sensorType: 9, configuredSensorType: 9, capabilities: 2064,
+    sleepSeconds: 60, batteryMv: 3910, distanceMm: 623, rangeStatus: 0,
+    signalRateKcps: 1464, ambientRateKcps: 176
   },
   {
-    ...common, mac: '02:00:00:00:10:04', name: 'Motion node',
+    ...common, mac: '02:00:00:00:10:04', name: 'Motion node', version: '4.4.5',
     sensorType: 3, configuredSensorType: 3, capabilities: 144,
     sleepSeconds: 10, batteryMv: 3900, operatingMode: 4,
     ax: 0.12, ay: -0.24, az: 1.0, gx: 12, gy: -24, gz: 0,
@@ -154,12 +154,12 @@ function demoResponse(url) {
     const points = recordingPoints.slice(offset, offset + 128);
     body = { ...recording, nextOffset: offset + points.length, points };
   } else if (url.pathname === '/api/ota') body = {
-    available: true, mac: demoSensors[1].mac, targetVersion: '4.4.3',
+    available: true, mac: demoSensors[3].mac, targetVersion: '4.4.10', targetRelease: 40410,
     state: 'Waiting for next contact', bytes: 0,
-    total: fs.statSync(path.join(repoRoot, 'Firmware/releases/sensor-v4-4.4.3.ota')).size,
+    total: fs.statSync(path.join(repoRoot, 'Firmware/releases/sensor-v4-4.4.10.ota')).size,
     reason: 'The signed package is stored on the station. The sensor will request it at its next scheduled contact.',
     nodes: demoSensors.map(sensor => ({ mac: sensor.mac, pcb: sensor.pcbVersion,
-      version: sensor.version, release: 40402, build: sensor.build }))
+      version: sensor.version, release: sensor.version === '4.4.5' ? 40405 : 40410, build: sensor.build }))
   };
   else if (url.pathname === '/favicon.ico') return { contentType: 'image/x-icon', body: '' };
   else throw new Error('Missing public fixture for ' + url.pathname);
@@ -187,7 +187,7 @@ async function saveWebp(page, name, options = {}) {
     await page.setViewportSize({ width: viewport.width, height });
   }
   const png = await page.screenshot({ animations: 'disabled', ...options });
-  const output = path.join(__dirname, name + '-4.4.3.webp');
+  const output = path.join(__dirname, name + '-4.4.10.webp');
   await sharp(png).webp({ quality: 88, effort: 6 }).toFile(output);
   if (options.fullPage) await page.setViewportSize(viewport);
   console.log('Created ' + path.relative(repoRoot, output));
@@ -228,7 +228,7 @@ async function generateScreenshots() {
 
     await page.locator('.sensorSummary').nth(1).locator('.meta').click();
     await page.evaluate(() => loadFirmwareVersions());
-    await page.locator('[data-firmware]').first().filter({ hasText: 'Software 4.4.2' }).waitFor();
+    await page.locator('[data-firmware]').first().filter({ hasText: 'Software 4.4.10' }).waitFor();
     await page.locator('.historySvg').waitFor();
     await page.waitForFunction(mac => (stationHistory[mac] || []).length > 0
       && historyRevisions[mac] != null, demoSensors[1].mac);
@@ -245,7 +245,7 @@ async function generateScreenshots() {
     await page.locator('.sensorSummary').first().waitFor();
     await page.evaluate(mac => openSensorDetail(mac), demoSensors[3].mac);
     await page.evaluate(() => loadFirmwareVersions());
-    await page.locator('[data-firmware]').first().filter({ hasText: 'Software 4.4.2' }).waitFor();
+    await page.locator('[data-firmware]').first().filter({ hasText: 'Software 4.4.5' }).waitFor();
     await page.getByLabel('Recording selection').selectOption(recording.session);
     await page.waitForFunction(() => document.querySelector('.recordingCharts svg.liveSvg')
       && !recordingViews['02:00:00:00:10:04'].busy);
@@ -254,9 +254,9 @@ async function generateScreenshots() {
     await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; window.scrollTo(0, 0); });
     await saveWebp(page, 'station-recording', { fullPage: true });
 
-    await page.goto(origin + '/updates?mac=' + encodeURIComponent(demoSensors[1].mac));
+    await page.goto(origin + '/updates?mac=' + encodeURIComponent(demoSensors[3].mac));
     await page.locator('#stateBadge').filter({ hasText: 'Waiting for next contact' }).waitFor();
-    await page.locator('#file').setInputFiles(path.join(repoRoot, 'Firmware/releases/sensor-v4-4.4.3.ota'));
+    await page.locator('#file').setInputFiles(path.join(repoRoot, 'Firmware/releases/sensor-v4-4.4.10.ota'));
     await page.waitForFunction(() => document.getElementById('compatibilityValue').textContent === 'Compatible');
     await page.evaluate(() => { document.documentElement.dataset.theme = 'light'; window.scrollTo(0, 0); });
     await saveWebp(page, 'station-ota', { fullPage: true });

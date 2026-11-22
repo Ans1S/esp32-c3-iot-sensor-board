@@ -1,29 +1,89 @@
 #include "measurement_budget.h"
 
+#ifdef ESP_PLATFORM
+#include <freertos/FreeRTOS.h>
+#include <freertos/portmacro.h>
+#else
+#include <atomic>
+#endif
 #include <esp_timer.h>
 #include "low_power_wait.h"
 
 namespace sensor {
 namespace {
+#ifdef ESP_PLATFORM
+portMUX_TYPE budgetMux = portMUX_INITIALIZER_UNLOCKED;
 int64_t deadlineUs = 0;
 int64_t fetchDeadlineUs = 0;
 
 int64_t effectiveDeadlineUs() {
-  if (deadlineUs == 0) return fetchDeadlineUs;
-  if (fetchDeadlineUs == 0) return deadlineUs;
-  return deadlineUs < fetchDeadlineUs ? deadlineUs : fetchDeadlineUs;
+  portENTER_CRITICAL(&budgetMux);
+  const int64_t mainDeadline = deadlineUs;
+  const int64_t fetchDeadline = fetchDeadlineUs;
+  portEXIT_CRITICAL(&budgetMux);
+  if (mainDeadline == 0) return fetchDeadline;
+  if (fetchDeadline == 0) return mainDeadline;
+  return mainDeadline < fetchDeadline ? mainDeadline : fetchDeadline;
 }
+#else
+std::atomic<int64_t> deadlineUs{0};
+std::atomic<int64_t> fetchDeadlineUs{0};
+
+int64_t effectiveDeadlineUs() {
+  const int64_t mainDeadline = deadlineUs.load(std::memory_order_acquire);
+  const int64_t fetchDeadline = fetchDeadlineUs.load(std::memory_order_acquire);
+  if (mainDeadline == 0) return fetchDeadline;
+  if (fetchDeadline == 0) return mainDeadline;
+  return mainDeadline < fetchDeadline ? mainDeadline : fetchDeadline;
+}
+#endif
 }
 
 void beginMeasurementBudget(uint32_t milliseconds) {
+  const int64_t next =
+      esp_timer_get_time() + static_cast<int64_t>(milliseconds) * 1000;
+#ifdef ESP_PLATFORM
+  portENTER_CRITICAL(&budgetMux);
   fetchDeadlineUs = 0;
-  deadlineUs = esp_timer_get_time() + static_cast<int64_t>(milliseconds) * 1000;
+  deadlineUs = next;
+  portEXIT_CRITICAL(&budgetMux);
+#else
+  fetchDeadlineUs.store(0, std::memory_order_release);
+  deadlineUs.store(next, std::memory_order_release);
+#endif
 }
 
-void endMeasurementBudget() { deadlineUs = 0; fetchDeadlineUs = 0; }
+void endMeasurementBudget() {
+#ifdef ESP_PLATFORM
+  portENTER_CRITICAL(&budgetMux);
+  deadlineUs = 0;
+  fetchDeadlineUs = 0;
+  portEXIT_CRITICAL(&budgetMux);
+#else
+  deadlineUs.store(0, std::memory_order_release);
+  fetchDeadlineUs.store(0, std::memory_order_release);
+#endif
+}
 
-void beginFetchWindow() { fetchDeadlineUs = esp_timer_get_time() + 500000; }
-void endFetchWindow() { fetchDeadlineUs = 0; }
+void beginFetchWindow() {
+  const int64_t next = esp_timer_get_time() + 500000;
+#ifdef ESP_PLATFORM
+  portENTER_CRITICAL(&budgetMux);
+  fetchDeadlineUs = next;
+  portEXIT_CRITICAL(&budgetMux);
+#else
+  fetchDeadlineUs.store(next, std::memory_order_release);
+#endif
+}
+void endFetchWindow() {
+#ifdef ESP_PLATFORM
+  portENTER_CRITICAL(&budgetMux);
+  fetchDeadlineUs = 0;
+  portEXIT_CRITICAL(&budgetMux);
+#else
+  fetchDeadlineUs.store(0, std::memory_order_release);
+#endif
+}
 
 bool measurementBudgetExpired() {
   const int64_t deadline = effectiveDeadlineUs();

@@ -1,14 +1,42 @@
 #include "recording_journal.h"
+#if defined(ESP_PLATFORM)
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#endif
 
 namespace lil::recording {
 namespace {
 constexpr uint32_t kMagic = 0x52454331;
 bool erased(const void* data, size_t count) {
   const auto* bytes = static_cast<const uint8_t*>(data);
-  for (size_t i = 0; i < count; ++i) if (bytes[i] != 0xff) return false;
+  size_t i = 0;
+  for (; i + 4 <= count; i += 4) {
+    uint32_t word;
+    memcpy(&word, bytes + i, sizeof(word));
+    if (word != 0xFFFFFFFFUL) return false;
+  }
+  for (; i < count; ++i) if (bytes[i] != 0xff) return false;
   return true;
 }
 bool bit(const uint8_t* bits, uint8_t slot) { return bits[slot / 8] & (1U << (slot % 8)); }
+bool pageFullyAcknowledged(const uint8_t* committed, const uint8_t* acknowledged, uint8_t slots) {
+  size_t fullWords = slots / 32;
+  for (size_t w = 0; w < fullWords; ++w) {
+    uint32_t c, a;
+    memcpy(&c, committed + w * 4, sizeof(c));
+    memcpy(&a, acknowledged + w * 4, sizeof(a));
+    if ((c | a) != 0U) return false;
+  }
+  const uint8_t rem = slots % 32;
+  if (rem) {
+    uint32_t c, a;
+    memcpy(&c, committed + fullWords * 4, sizeof(c));
+    memcpy(&a, acknowledged + fullWords * 4, sizeof(a));
+    const uint32_t mask = (1UL << rem) - 1UL;
+    if (((c | a) & mask) != 0U) return false;
+  }
+  return true;
+}
 }
 bool Journal::readHeader(size_t page, Header& header) {
   return flash_->read(page * kPageBytes, &header, sizeof(header));
@@ -21,15 +49,40 @@ bool Journal::clearBit(size_t page, size_t field, uint8_t slot) {
   uint32_t check;
   return flash_->write(offset, &word, 4) && flash_->read(offset, &check, 4) && check == word;
 }
-bool Journal::begin(Flash& flash, uint64_t sessionFilter) {
+bool Journal::begin(Flash& flash, uint64_t sessionFilter, bool freshSession) {
   flash_ = &flash; fault_ = false; pending_ = generation_ = lastSampleMs_ = 0;
   ackOffset_ = 0;
-  pages_.assign(flash.bytes() / kPageBytes, {});
-  if (pages_.empty()) return false;
-  for (size_t page = 0; page < pages_.size(); ++page) {
+  const size_t count = flash.bytes() / kPageBytes;
+  if (count == 0) {
+    pages_.reset();
+    pageCount_ = 0;
+    return false;
+  }
+  if (pageCount_ != count || !pages_) {
+    pages_.reset(new (std::nothrow) Page[count]());
+    if (!pages_) {
+      pageCount_ = 0;
+      return false;
+    }
+    pageCount_ = count;
+  } else {
+    for (size_t i = 0; i < pageCount_; ++i) pages_[i] = Page{};
+  }
+  auto failBegin = [&]() {
+    fault_ = true;
+    pending_ = 0;
+    pageCount_ = 0;
+    pages_.reset();
+    flash_ = nullptr;
+    return false;
+  };
+  for (size_t page = 0; page < pageCount_; ++page) {
+#if defined(ESP_PLATFORM)
+    if ((page & 15U) == 15U) vTaskDelay(1);
+#endif
     Header header;
     auto& state = pages_[page];
-    if (!readHeader(page, header)) return false;
+    if (!readHeader(page, header)) return failBegin();
     if (erased(&header, sizeof(header))) continue;
     if (header.magic != kMagic || header.version != kFormat ||
         (header.width != 32 && header.width != 64 && header.width != 128) ||
@@ -39,16 +92,28 @@ bool Journal::begin(Flash& flash, uint64_t sessionFilter) {
     state.generation = header.generation; state.width = header.width;
     if (state.generation > generation_) generation_ = state.generation;
     const uint8_t slots = (kPageBytes - kHeaderBytes) / state.width;
+    // A brand-new user-started session replaces prior pages; headers alone
+    // establish the highest generation without scanning all 1.375 MiB of data.
+    if (freshSession) {
+      state.width = 0;
+      continue;
+    }
+    // A full page with every slot committed and acknowledged has no pending
+    // data and can skip the 4 KiB payload scan on reboot.
+    if (pageFullyAcknowledged(header.committed, header.acknowledged, slots)) {
+      state.next = slots;
+      continue;
+    }
     bool belongs = false;
     // Read consecutive records together to avoid a flash transaction for
-    // every slot during startup and explicit session replacement. Each slot
-    // is still validated separately before its commit/ACK state is considered.
+    // every slot during startup recovery. Each slot is still validated
+    // separately before its commit/ACK state is considered.
     constexpr size_t kBatchSlots = 4;
     alignas(uint32_t) uint8_t batch[kBatchSlots * sizeof(Record)];
     for (size_t first = 0; first < slots; first += kBatchSlots) {
       const size_t batchSlots = slots - first < kBatchSlots ? slots - first : kBatchSlots;
       if (!flash.read(page * kPageBytes + kHeaderBytes + first * state.width,
-                      batch, batchSlots * state.width)) return false;
+                      batch, batchSlots * state.width)) return failBegin();
       for (size_t index = 0; index < batchSlots; ++index) {
         const uint8_t slot = static_cast<uint8_t>(first + index);
         Record record{};
@@ -58,12 +123,21 @@ bool Journal::begin(Flash& flash, uint64_t sessionFilter) {
           continue;
         }
         state.next = slot + 1; // Torn writes burn a slot, never overwrite it.
-        if (sessionFilter && record.session != sessionFilter) continue;
-        belongs = true;
         const bool recordValid = valid(record);
+        const bool pendingCommitted = !bit(header.committed, slot) && bit(header.acknowledged, slot);
+        if (sessionFilter && record.session != sessionFilter) {
+          // A bit flip inside bytes 0..7 corrupts both session and CRC. Never
+          // silently recycle a committed, unacknowledged corrupted slot.
+          if (pendingCommitted && !recordValid) {
+            fault_ = true;
+            state.usable = false;
+          }
+          continue;
+        }
+        belongs = true;
         if (recordValid && record.sampleMs > lastSampleMs_) lastSampleMs_ = record.sampleMs;
         if (bit(header.committed, slot) && size(record.type) == state.width && recordValid) {
-          if (!clearBit(page, offsetof(Header, committed), slot)) return false;
+          if (!clearBit(page, offsetof(Header, committed), slot)) return failBegin();
           header.committed[slot / 8] &= ~(1U << (slot % 8));
         }
         if (!bit(header.committed, slot) && bit(header.acknowledged, slot)) {
@@ -74,46 +148,56 @@ bool Journal::begin(Flash& flash, uint64_t sessionFilter) {
     }
     // A new user-started session logically replaces the old one. Erase pages
     // lazily as needed, not all 1.375 MiB before the first measurement.
-    if (sessionFilter && !belongs && state.usable) state = {};
+    if (sessionFilter && !belongs && state.usable) {
+      state.width = 0;
+      state.next = 0;
+      state.pending = 0;
+    }
   }
   return true;
 }
 bool Journal::clear() {
   if (!flash_) return false;
-  for (size_t page = 0; page < pages_.size(); ++page)
+  for (size_t page = 0; page < pageCount_; ++page)
     if (!flash_->erase(page * kPageBytes, kPageBytes)) { fault_ = true; return false; }
   return begin(*flash_);
 }
 bool Journal::initialize(size_t page, size_t width) {
-  if (pages_[page].pending || !pages_[page].usable || generation_ == UINT32_MAX) return false;
+  if (pages_[page].pending || !pages_[page].usable || generation_ >= UINT32_MAX - 1) return false;
   if (!flash_->erase(page * kPageBytes, kPageBytes)) { fault_ = true; return false; }
   Header header;
   memset(&header, 0xff, sizeof(header));
   header.magic = kMagic; header.generation = ++generation_;
   header.width = width; header.version = kFormat;
   header.crc = protocol::crc32(reinterpret_cast<const uint8_t*>(&header), 12);
-  if (!flash_->write(page * kPageBytes, &header, 16)) { fault_ = true; pages_[page].usable = false; return false; }
+  uint8_t check[16];
+  if (!flash_->write(page * kPageBytes, &header, 16) ||
+      !flash_->read(page * kPageBytes, check, 16) ||
+      memcmp(&header, check, 16) != 0) {
+    fault_ = true; pages_[page].usable = false; return false;
+  }
   pages_[page] = {}; pages_[page].width = width; pages_[page].generation = generation_;
   return true;
 }
 bool Journal::append(const Record& record) {
   if (!flash_ || !valid(record)) return false;
+  if (!reconcileAcknowledgement()) return false;
   const size_t width = size(record.type);
-  size_t chosen = pages_.size();
+  size_t chosen = pageCount_;
   uint32_t newest = 0;
-  for (size_t i = 0; i < pages_.size(); ++i) {
+  for (size_t i = 0; i < pageCount_; ++i) {
     const auto& page = pages_[i];
     if (page.usable && page.width == width && page.next < (kPageBytes - kHeaderBytes) / width && page.generation > newest) {
       chosen = i; newest = page.generation;
     }
   }
-  if (chosen == pages_.size()) {
+  if (chosen == pageCount_) {
     uint32_t oldest = UINT32_MAX;
-    for (size_t i = 0; i < pages_.size(); ++i)
+    for (size_t i = 0; i < pageCount_; ++i)
       if (pages_[i].usable && !pages_[i].pending && pages_[i].generation < oldest) {
         chosen = i; oldest = pages_[i].generation;
       }
-    if (chosen == pages_.size() || !initialize(chosen, width)) return false;
+    if (chosen == pageCount_ || !initialize(chosen, width)) return false;
   }
   auto& page = pages_[chosen];
   const uint8_t slot = page.next++;
@@ -142,10 +226,10 @@ bool Journal::reconcileAcknowledgement() {
 }
 bool Journal::locate(size_t& page, uint8_t& slot, Header& header) {
   if (!reconcileAcknowledgement()) return false;
-  page = pages_.size(); uint32_t oldest = UINT32_MAX;
-  for (size_t i = 0; i < pages_.size(); ++i)
+  page = pageCount_; uint32_t oldest = UINT32_MAX;
+  for (size_t i = 0; i < pageCount_; ++i)
     if (pages_[i].pending && pages_[i].generation < oldest) { page = i; oldest = pages_[i].generation; }
-  if (page == pages_.size()) return false;
+  if (page == pageCount_) return false;
   if (!readHeader(page, header)) { fault_ = true; return false; }
   for (slot = 0; slot < pages_[page].next; ++slot)
     if (!bit(header.committed, slot) && bit(header.acknowledged, slot)) return true;

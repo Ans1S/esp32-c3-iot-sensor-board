@@ -1,10 +1,6 @@
-# Live precision sensors (4.3.1)
+# Live precision sensors
 
-The same PCB V3/V4 sensor image includes BME280, BME680, LSM6DSOX, TMP117 and
-MAX30102 drivers. One I2C sensor type is active per node. The three live types
-form a dashboard category; this is not simultaneous acquisition of three
-modules on one node. Explicit selection takes priority; automatic detection
-retains Bosch-first behavior, followed by LSM6DSOX, TMP117 and MAX30102.
+LSM6DSOX, TMP117 and MAX30102 are the three SW2 recording types on PCB V3/V4. Each node samples one attached sensor. For the full range of scheduled and continuous sensors, see the [sensor guide](sensor/README.md).
 
 | Sensor | Acquisition | Normal measurement interval | SW2 recording cadence | Display |
 | --- | --- | --- | --- | --- |

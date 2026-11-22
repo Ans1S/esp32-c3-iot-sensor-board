@@ -1,5 +1,20 @@
 # Firmware change inventory
 
+## 4.4.10 / 40410 — 2026-11-22
+
+- **Five new I²C sensors** cover pressure (BMP280), indoor air quality (BME688 and CCS811), distance (VL53L1X) and spectral light (AS7341). Both PCB revisions use the same driver set.
+- **Sensor nodes** reject repeated Bosch factory calibration data, retry failed acquisitions within a bounded window and recover the radio channel after a link change. The V4 low-battery cutoff also applies to continuous CCS811 operation.
+- **Station** displays the new measurements, preserves compatible older latest-reading records during upgrades and caches history pages. CSV exports retain the underlying samples.
+- **Sensor updates** can use 1,024-byte data blocks on compatible links, fall back to 192 bytes during a transfer and retry the handshake after a station restart.
+
+The AS7341 driver checks saturation at the configured integration time. The VL53L1X driver reads corrected signal and ambient rates from separate result registers. The CCS811 driver allows clock stretching and waits for application start. BMP280 exposes temperature and pressure fields; the station offers BSEC calibration for both Bosch gas sensors.
+
+Radio transfers recover missing peers, adapt transmit power during retries and use a bounded wait for late application replies. The station reuses its large-frame buffer and guards package verification against concurrent uploads. V3/V4 restore commanded GPIO levels after light sleep. A failed journal scan resets transient scan state so the next attempt can start cleanly.
+
+Intermediate development builds 40406–40409 included Bosch double-precision compensation and forced-conversion recovery, bounded BSEC I²C waits, large-block OTA, watchdog and recording-journal fixes. This public release includes them and uses a higher release number for nodes already running those builds.
+
+Station and sensor settings use the existing partition layouts. Update the station first. See the [release archive](releases/README.md) for signed packages, upgrade steps and checksums.
+
 ## 4.4.5 release — station dashboard and history
 
 - Generate a gzip dashboard at build time and negotiate it per request while
@@ -27,7 +42,7 @@
 - Coalesce streamed dashboard responses, copy only the new live sample suffix
   and expire ThingSpeak jobs with a single queue pass.
 - Preserve ESP-NOW protocol V5 and existing partition and data formats. See
-  [software tests, target builds and machine-code comparisons](PERFORMANCE_FOLLOWUP_2026-11-09.md).
+  [software tests, target builds and machine-code comparisons](https://github.com/Ans1S/esp32-c3-iot-sensor-board/blob/v4.4.5/Firmware/PERFORMANCE_FOLLOWUP_2026-11-09.md).
 
 ## 4.4.4 / 40404 - firmware efficiency release, 2026-11-07
 
@@ -37,13 +52,13 @@
   sector buffer for resume hashing, prefetch station OTA reads with direct-read
   fallbacks, and remove a full registration payload temporary. Add full-slot,
   fault, exact-wire and operation-count checks. See
-  [the flow/transfer review](FLOW_TRANSFER_REVIEW.md) for measured scope and costs.
+  [the flow/transfer review](https://github.com/Ans1S/esp32-c3-iot-sensor-board/blob/v4.4.5/Firmware/FLOW_TRANSFER_REVIEW.md) for measured scope and costs.
 
 - Follow-up MCU work preserves exact BME280 compensation while reducing
   software-double operations; defers gyro square root to window readout;
   copies contiguous station live-history runs; validates CRC without a payload
   copy; and drains MAX30102 snapshots in bounded complete-frame bursts.
-  See [the MCU follow-up](MCU_OPTIMIZATION_REVIEW.md) for target machine code,
+  See [the MCU follow-up](https://github.com/Ans1S/esp32-c3-iot-sensor-board/blob/v4.4.5/Firmware/MCU_OPTIMIZATION_REVIEW.md) for target machine code,
   unchanged numerical outputs, stack/code tradeoffs and hardware acceptance.
 
 - Reuse an exact integer sliding sum for the MAX30102 centered mean. Preserve
@@ -56,7 +71,7 @@
   scalar references in recording, status, history and OTA JSON conversion.
 - Add numerical equivalence, file-operation/fault and unaligned-record tests,
   reproducible source/ELF inventory tools and a scoped before/after audit.
-  See [the audit](EFFICIENCY_AUDIT.md) for evidence and hardware limitations.
+  See [the audit](https://github.com/Ans1S/esp32-c3-iot-sensor-board/blob/v4.4.5/Firmware/EFFICIENCY_AUDIT.md) for evidence and hardware limitations.
 
 Release 4.4.4 packages include these changes. Earlier packages, protocol V5,
 persisted layouts, signing identity, intervals and protection thresholds remain

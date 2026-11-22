@@ -5,6 +5,7 @@
 #include <functional>
 #include <vector>
 #include "espnow_transport.h"
+#include <esp_wifi.h>
 #include "WiFi.h"
 #include "protocol_counter.h"
 
@@ -403,6 +404,41 @@ int main() {
   assert(transport.begin());
   assert(transport.exchange(packet, config).configReceived);
   assert(lastTelemetrySize == sizeof(packet));
+  transport.end();
+  reset();
+  assert(transport.begin());
+  transport.configureLink(6, 44);
+  lil::ota::Packet otaReq{}, otaResp{};
+  otaReq.payload.nonce = 99; otaReq.payload.op = lil::ota::Op::Read; otaReq.payload.offset = 0;
+  lil::protocol::finalize(otaReq, lil::ota::kMessageType, 200);
+  // OTA MAC failure shrinks wait to the 60 ms grace window and escalates TX power to 20 dBm.
+  deliverySuccess = false;
+  assert(!transport.otaExchange(config.stationMac, otaReq, otaResp) && sends == 5);
+  assert(testMillis < 450 && testLastTxPower == 84);
+  // OTA MAC failure with an application reply arriving inside the 60 ms grace window succeeds on attempt 0.
+  reset(); deliverySuccess = false; responseDelay = 30;
+  assert(transport.begin());
+  transport.configureLink(6, 44);
+  assert(transport.otaExchange(config.stationMac, otaReq, otaResp) && sends == 1);
+  transport.end();
+  // Recording exchange MAC failure fast-fails (~62 ms) and escalates TX power across retries.
+  reset(); deliverySuccess = false; config.txPowerQuarterDbm = 44;
+  assert(transport.begin());
+  lil::recording::StatusPacket recReq{};
+  recReq.payload.session = 555; recReq.payload.elapsedMs = 2000;
+  lil::protocol::finalize(recReq, lil::recording::kStatusMessage, 301);
+  lil::recording::Ack recAck{};
+  assert(!transport.recordingExchange(config, &recReq, sizeof(recReq), 555, 2000, 0, recAck));
+  assert(testMillis < 100 && testLastTxPower == 44);
+  assert(!transport.recordingExchange(config, &recReq, sizeof(recReq), 555, 2000, 0, recAck));
+  assert(testLastTxPower == 56);  // Escalated +3 dBm
+  deliverySuccess = true; responseDelay = 4;
+  assert(transport.recordingExchange(config, &recReq, sizeof(recReq), 555, 2000, 0, recAck));
+  assert(testLastTxPower == 68);  // Escalated +6 dBm before succeeding
+  delay(5);
+  assert(transport.recordingExchange(config, &recReq, sizeof(recReq), 555, 2000, 0, recAck));
+  assert(testLastTxPower == 44);  // Reset back to configured power after success
+  delay(5);
   transport.end();
   puts("ESP-NOW timing and V5 environmental/IMU wire compatibility tests passed");
 }

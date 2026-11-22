@@ -30,6 +30,7 @@ class UploadScheduler {
   }
 
   void expire(uint32_t now) {
+    pruneRates(now);
     size_t retained = 0;
     for (size_t i = 0; i < count_; ++i) {
       if (now - entries_[i].bornMs >= kLifetimeMs) continue;
@@ -66,26 +67,30 @@ class UploadScheduler {
     return false;
   }
 
-  void complete(Entry entry, uint32_t now, bool success, bool retryable) {
-    size_t slot = Capacity;
-    for (size_t i = 0; i < Capacity; ++i) {
-      if (rates_[i].channel == entry.job.channelId) { slot = i; break; }
-    }
-    if (slot == Capacity) {
+  void complete(Entry entry, uint32_t now, bool success, bool retryable,
+                bool recordChannelRate = true) {
+    pruneRates(now);
+    if (recordChannelRate && entry.job.channelId != 0) {
+      size_t slot = Capacity;
       for (size_t i = 0; i < Capacity; ++i) {
-        if (rates_[i].channel == 0 || now - rates_[i].finishedMs >= kIntervalMs) {
-          slot = i;
-          break;
+        if (rates_[i].channel == entry.job.channelId) { slot = i; break; }
+      }
+      if (slot == Capacity) {
+        for (size_t i = 0; i < Capacity; ++i) {
+          if (rates_[i].channel == 0 || now - rates_[i].finishedMs >= kIntervalMs) {
+            slot = i;
+            break;
+          }
         }
       }
+      // take() reserves an eligible channel; only one request may be in flight.
+      if (slot == Capacity) { ++dropped_; return; }
+      rates_[slot] = Rate{entry.job.channelId, now};
     }
-    // take() reserves an eligible channel; only one request may be in flight.
-    if (slot == Capacity) { ++dropped_; return; }
-    rates_[slot] = Rate{entry.job.channelId, now};
     if (success) return;
     ++entry.attempts;
     if (!retryable || entry.attempts >= 3 || now - entry.bornMs >= kLifetimeMs) {
-      ++dropped_;
+      if (recordChannelRate) ++dropped_;
       return;
     }
     entry.retryStartedMs = now;
@@ -97,15 +102,24 @@ class UploadScheduler {
 
  private:
   struct Rate { uint32_t channel = 0; uint32_t finishedMs = 0; };
+  void pruneRates(uint32_t now) {
+    for (auto& rate : rates_) {
+      if (rate.channel != 0 && now - rate.finishedMs >= kIntervalMs) {
+        rate.channel = 0;
+        rate.finishedMs = 0;
+      }
+    }
+  }
   static uint32_t remaining(uint32_t elapsed, uint32_t duration) {
     return elapsed < duration ? duration - elapsed : 0;
   }
   uint32_t channelWait(uint32_t channel, uint32_t now) const {
+    if (channel == 0) return 0;
     uint32_t slotWait = kIntervalMs;
     for (const auto& rate : rates_) {
-      const uint32_t wait = remaining(now - rate.finishedMs, kIntervalMs);
+      const uint32_t wait = rate.channel == 0 ? 0U : remaining(now - rate.finishedMs, kIntervalMs);
       if (rate.channel == channel) return wait;
-      slotWait = std::min(slotWait, rate.channel == 0 ? 0U : wait);
+      slotWait = std::min(slotWait, wait);
     }
     return slotWait;
   }

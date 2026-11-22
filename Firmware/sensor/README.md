@@ -1,7 +1,16 @@
 # W-Charger Sensor Firmware
 
-The firmware supports LSM6DSOX, TMP117 and MAX30102 acquisition on PCB V3/V4.
-See [precision sensor operation and timing](../PRECISION_SENSORS.md).
+PCB V3 and V4 support ten selectable I²C sensors. The five additions in **4.4.10** are listed below.
+
+| Sensor | Measurements | Operation |
+| --- | --- | --- |
+| **BMP280** | Temperature and barometric pressure | Forced measurement at the reporting interval |
+| **BME688** | Temperature, humidity, pressure, gas resistance and Static IAQ | Five-minute Bosch BSEC maintenance with separate reporting |
+| **CCS811** | Estimated CO₂ equivalent (eCO₂) and total volatile organic compounds (TVOC) | Paired nodes keep the heater powered between reports for warm-up and baseline stability |
+| **VL53L1X (TOF400C)** | Time-of-flight distance, range status, signal and ambient rates | Ranging at the configured interval |
+| **AS7341** | Eight visible spectral bands plus clear and near-infrared counts | Two measurement passes with gain and saturation status |
+
+LSM6DSOX, TMP117 and MAX30102 also support [SW2 recording](../PRECISION_SENSORS.md).
 
 One shared firmware codebase supports PCB V3 and V4. The only differences are
 the build environment and the `hardware_profile`.
@@ -56,15 +65,11 @@ mode with broadcast traffic and complete channel scans.
 | Deleted by the station and deletion response received | Discovery | Station identity cleared; all-channel broadcast resumes |
 | Incomplete or invalid persisted assignment | Discovery | Safe fallback; energy-saving mode is rejected |
 | Fully provisioned BME280 or no environmental sensor | Energy saving | Configured interval; saved-channel unicast only while communication succeeds |
-| Fully provisioned BME680 | Energy saving | Five-minute BSEC ULP wake; radio only at the configured report interval |
+| Fully provisioned BME680/BME688 | Energy saving | Five-minute BSEC ULP wake; radio only at the configured report interval |
+| Fully provisioned CCS811 | Continuous gas sensing | Heated sensor stays powered between interval reports; V4 battery protection takes priority |
 | Saved station channel no longer responds | Recovery | Bounded recovery, except the protected setup-AP transition |
 
-The sensor type is no longer compiled into a separate firmware image. When a
-sensor is added or edited on the station, select **Automatic**, **BME280**,
-**BME680**, **LSM6DSOX** or **No environmental sensor**. The selection and BME680 temperature
-correction are transferred with the next ESP-NOW response. Automatic mode
-checks the Bosch chip IDs at `0x76` and `0x77`, then the LSM6DSOX
-at `0x6A` and `0x6B`.
+Choose **Automatic**, the attached module, or **No environmental sensor** in the station. The node receives the selection at its next exchange. Automatic detection checks the Bosch IDs and variant first, followed by the IMU, precision temperature, optical, spectral, distance and gas drivers.
 
 A normal BME280 cycle performs only these steps:
 
@@ -100,13 +105,22 @@ interval.
 | I2C SDA / SCL | GPIO5 / GPIO4 | GPIO5 / GPIO4 |
 | Battery scaling | field-validated software factor 1.67 | 100 kOhm / 150 kOhm, factor 1.667 |
 
+J1 uses pin 1 for sensor power, pin 2 for SDA, pin 3 for SCL and pin 4 for
+ground on both boards. On V3, GPIO10 drives pin 1 directly. R9 and R10
+(5.1 kOhm) pull SDA and SCL up to the permanent 3.3 V supply. Releasing the
+MCU's I2C pins therefore leaves an external path to a connected module.
+On V4, GPIO10 controls Q5. R18 pulls the gate high to turn Q5 off.
+R9 and R10 connect to J1 pin 1 on this revision, so the sensor and the
+board's I2C pull-ups share the switched supply. GPIO6 controls the V4
+battery divider independently.
+
 The station can logically restore a sensor to factory settings on its next
 contact. The web interface allows integer-second intervals from one second to 24 hours,
 covering both short tests and energy-efficient long-term operation.
 
-## BME680 and indoor air quality
+## BME680, BME688 and indoor air quality
 
-The BME680 runs Bosch's BSEC2 algorithm and uses **Static IAQ** for a stationary
+BME680 and BME688 run Bosch's BSEC2 algorithm and use **Static IAQ** for a stationary
 indoor device. An index calculated independently from gas resistance would not
 be equivalent: humidity compensation, sensor ageing, drift and the adaptive
 baseline are part of the algorithm. The index ranges from 0 (clean air) to 500
@@ -141,8 +155,9 @@ temperature, humidity, pressure and raw gas resistance. It intentionally does
 **not** generate a substitute IAQ value: only a Static IAQ value actually
 provided by BSEC is marked or uploaded as IAQ.
 
-The I2C sensor power rail is **fully switched off on PCB V3 and V4**. The BME680
-itself retains no state while unpowered. It is therefore reinitialized after
+The firmware commands sensor power off between measurement windows. On V3,
+verify the residual voltage at J1 pin 1 with the actual module connected
+before assuming a complete power-on reset. The BME680 is reinitialized after
 every wake-up, while the previously serialized BSEC learning state and a
 continuous logical time are saved before shutdown and restored on the next
 start. This follows Bosch's intended `getState()`/`setState()` flow for complete
@@ -155,7 +170,7 @@ continues learning the gas/IAQ path in normal operation and can improve through
 Accuracy 2 to 3. There is no separate fast-start mode with increased heater or
 radio load.
 
-When BME680 is selected explicitly, the reporting interval must be five minutes
+When BME680 or BME688 is selected explicitly, the reporting interval must be five minutes
 or a multiple of five minutes. The default temperature offset of `0.466 degC`
 comes from Bosch's ULP example and can be adjusted on the station for each
 installation. It should be changed only after comparison in an enclosure that
@@ -212,8 +227,8 @@ cannot mark it as a new device again.
 `environmental_sensor` is only the shared facade. Measurements use the neutral
 `EnvironmentalReading` type, while BME280, BME680 and BSEC persistence each
 have separate header and CPP files. A future I2C sensor therefore needs a new
-driver, a new value in `EnvironmentalSensorType` and an entry in `beginType()`;
-radio, ADC, deep sleep and configuration storage remain unchanged.
+driver, a new `EnvironmentalSensorType` value, probe and initialization paths in
+`EnvironmentalSensor`, and matching protocol, persistence, dashboard and power-policy handling.
 
 ## Calibrating battery voltage
 
@@ -256,15 +271,6 @@ the normal interval and starts durable replay. See
 [operation, accuracy limits and OTA migration](../PRECISION_SENSORS.md).
 
 
-## Firmware changes and verification
+## Updating a node
 
-The **4.4.5 / 40405** source reduces radio callback polling, discovery packet
-preparation and MAX30102 autocorrelation work. TMP117 samples require a fresh
-conversion after an I²C failure. Recording replay preserves its journal and
-handles delayed radio callbacks within a bounded wait.
-See [the complete change inventory](../CHANGELOG.md),
-[software verification](../PERFORMANCE_FOLLOWUP_2026-11-09.md),
-[release artifacts](../releases/README.md) and
-[publication review](../PUBLICATION_REVIEW.md). Build diagnostics use relative
-paths; installation keys and device data must stay local. Software tests do not
-replace physical accuracy, rail-voltage and sleep-current acceptance.
+Install the [4.4.10 station application and matching PCB package](../releases/README.md). The normal node update preserves compatible settings. BME280/BMP280 acquisitions with repeated calibration words are rejected before compensation. A module with damaged trim or unstable power still needs hardware diagnosis.

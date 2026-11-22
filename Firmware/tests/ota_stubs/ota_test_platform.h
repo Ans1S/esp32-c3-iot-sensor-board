@@ -106,20 +106,53 @@ inline Hardware kHardware;
 inline lil::ota::Manifest offer;
 inline std::vector<uint8_t> image;
 inline uint32_t breakAt=UINT32_MAX, readDelayMs=0;
+inline uint32_t largeFailAt=UINT32_MAX, idleOnceAt=UINT32_MAX, idleCancelAt=UINT32_MAX;
 inline bool signatureValid=true, offerEnabled=true;
-inline bool offerCompactRead=false;
-inline size_t readRequestBytes=0, readRequests=0;
+inline bool offerCompactRead=false, offerLargeBlock=false;
+inline size_t readRequestBytes=0, readRequests=0, largeRequests=0, helloRequests=0;
 inline uint32_t lastStatusOffset=0;
 inline std::vector<lil::ota::State> states;
 inline std::vector<lil::ota::Failure> failures;
 class EspNowTransport {
  public:
+  bool otaExchangeLarge(const uint8_t*, const lil::ota::Packet& q, lil::ota::LargePacket& r) {
+    using namespace lil::ota;
+    testTime += 2;
+    r = {};
+    r.payload.nonce = q.payload.nonce;
+    r.payload.offset = q.payload.offset;
+    ++largeRequests;
+    const size_t length = sizeof(lil::protocol::PacketHeader) + q.header.payloadSize;
+    Packet decoded{};
+    assert(decodeRequest(reinterpret_cast<const uint8_t*>(&q), length, decoded));
+    assert(q.payload.op == Op::Read && q.payload.size == kLargeBlockSize);
+    testTime += readDelayMs;
+    if (q.payload.offset >= breakAt || q.payload.offset >= largeFailAt) return false;
+    if (q.payload.offset >= idleCancelAt) {
+      offerEnabled = false;
+      r.payload.op = Op::Idle;
+      return true;
+    }
+    if (q.payload.offset >= idleOnceAt) {
+      idleOnceAt = UINT32_MAX;
+      r.payload.op = Op::Idle;
+      return true;
+    }
+    r.payload.op = Op::Data;
+    r.payload.size = static_cast<uint16_t>(min(size_t(kLargeBlockSize), image.size() - q.payload.offset));
+    memcpy(r.payload.data, image.data() + q.payload.offset, r.payload.size);
+    return true;
+  }
   bool otaExchange(const uint8_t*,const lil::ota::Packet& q,lil::ota::Packet& r) {
     using namespace lil::ota;
     testTime+=2; r={}; r.payload.op=Op::Idle;
-    if(q.payload.op==Op::Hello && offerEnabled) {
-      r.payload.offset=offerCompactRead ? kOfferCompactRead : 0U;
-      r.payload.op=Op::Offer; r.payload.size=sizeof(offer); memcpy(r.payload.data,&offer,sizeof(offer));
+    if(q.payload.op==Op::Hello) {
+      ++helloRequests;
+      if (offerEnabled) {
+        r.payload.offset=(offerCompactRead ? kOfferCompactRead : 0U) |
+                         (offerLargeBlock ? kOfferLargeBlock : 0U);
+        r.payload.op=Op::Offer; r.payload.size=sizeof(offer); memcpy(r.payload.data,&offer,sizeof(offer));
+      }
     } else if(q.payload.op==Op::Read) {
       ++readRequests;
       const size_t length = sizeof(lil::protocol::PacketHeader) + q.header.payloadSize;
@@ -129,6 +162,16 @@ class EspNowTransport {
       readRequestBytes += length;
       testTime += readDelayMs;
       if(q.payload.offset >= breakAt) return false;
+      if (q.payload.offset >= idleCancelAt) {
+        offerEnabled = false;
+        r.payload.op = Op::Idle;
+        return true;
+      }
+      if (q.payload.offset >= idleOnceAt) {
+        idleOnceAt = UINT32_MAX;
+        r.payload.op = Op::Idle;
+        return true;
+      }
       r.payload.op=Op::Data; r.payload.offset=q.payload.offset;
       r.payload.size=min(size_t(kBlockSize),image.size()-q.payload.offset);
       memcpy(r.payload.data,image.data()+q.payload.offset,r.payload.size);

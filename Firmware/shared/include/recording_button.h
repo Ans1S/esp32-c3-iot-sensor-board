@@ -15,6 +15,7 @@ class Button {
     if (!armed_) return false;
     armed_ = false; return true;
   }
+  bool debouncing() const { return raw_ != stable_; }
  private:
   bool raw_ = false, stable_ = false, armed_ = false;
   uint32_t changedMs_ = 0;

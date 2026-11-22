@@ -2,6 +2,8 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "esp_err.h"
+constexpr esp_err_t ESP_ERR_ESPNOW_NO_MEM = 3;
+constexpr esp_err_t ESP_ERR_ESPNOW_NOT_FOUND = 5;
 constexpr esp_err_t ESP_ERR_ESPNOW_EXIST = 1;
 constexpr int WIFI_IF_STA = 0;
 constexpr size_t ESP_NOW_MAX_TOTAL_PEER_NUM = 20;
