@@ -24,7 +24,7 @@ constexpr uint32_t kRtcSignature = 0x42525439UL;  // "BRT9"
 constexpr uint64_t kNvsSaveIntervalMs = 6ULL * 60ULL * 60ULL * 1000ULL;
 constexpr uint32_t kUlpStabilizationSeconds = 20UL * 60UL;
 constexpr uint16_t kRawHeaterTemperatureC = 320;
-constexpr uint16_t kRawHeaterDurationMs = 150;
+constexpr uint16_t kRawHeaterDurationMs = 100;
 constexpr uint32_t kRawMeasurementMarginUs = 10000;
 // A power-cycled BME680 has no previous field which BSEC can consume.  Keep
 // the rail on for one bounded acquisition window and require a genuinely new
@@ -257,12 +257,12 @@ bool Bme680Driver::beginRaw(uint8_t address) {
   }
   // This path is only a one-shot availability fallback. With no continuous
   // sample stream there is no useful IIR history, so filtering is disabled
-  // and modest oversampling avoids heating the MCU/sensor rail unnecessarily.
+  // and 1x oversampling minimizes awake/rail time for indoor room sensing.
   rawConfiguration_.filter = BME68X_FILTER_OFF;
   rawConfiguration_.odr = BME68X_ODR_NONE;
-  rawConfiguration_.os_temp = BME68X_OS_2X;
+  rawConfiguration_.os_temp = BME68X_OS_1X;
   rawConfiguration_.os_hum = BME68X_OS_1X;
-  rawConfiguration_.os_pres = BME68X_OS_4X;
+  rawConfiguration_.os_pres = BME68X_OS_1X;
   rawHeater_ = bme68x_heatr_conf{};
   rawHeater_.enable = BME68X_ENABLE;
   rawHeater_.heatr_temp = kRawHeaterTemperatureC;

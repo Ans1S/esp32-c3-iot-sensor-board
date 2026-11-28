@@ -1,5 +1,7 @@
 # Firmware regression checks
 
+Run `node Firmware/tests/test_onboarding.cjs` with the same Playwright installation as the other browser suites. It exercises initial setup, late detection, re-enrollment, capacity, slow or lost saves, confirmation and WLAN recovery on the embedded page.
+
 The host suite covers the production drivers, storage migration, radio and OTA state machines. The browser suites exercise the embedded UI. Run all of them for a release, then build the three production targets. See the [hardware acceptance plan](../HARDWARE_TESTPLAN.md) for physical checks.
 
 Run from the repository root after resolving/building the sensor dependencies:
@@ -84,6 +86,8 @@ Coverage:
 The RTOS substitutes detect lock-order violations and deterministic event
 interleavings. They do not replace on-device concurrent-load, RF, TLS, GPIO,
 BSEC algorithm or current measurements. See `../HARDWARE_TESTPLAN.md`.
+
+For the 4.4.11 commissioning changes, run the browser onboarding suite and the transport, registry, boot and recording-store host suites before packaging.
 
 ## Motion support
 

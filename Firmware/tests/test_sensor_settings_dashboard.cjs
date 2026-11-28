@@ -88,6 +88,21 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
     Object.assign(node,{name:'Renamed again',seen:false,configuredSensorType:5,configPending:true,revision:3});
     await page.waitForFunction(()=>document.querySelector('.sensor h3').textContent==='Renamed again');
     assert((await page.locator('.sensorIdentity').textContent()).includes('MAX30102'));
+    Object.assign(node,{seen:true,live:false,sensorType:8,configuredSensorType:8,configPending:false,
+      appliedRevision:4,revision:4,operatingMode:5,sleepSeconds:60,telemetryFlags:1,capabilities:16,
+      ccsStatus:0x90,ccsError:0});
+    await page.getByText('CCS811 sample unavailable',{exact:true}).waitFor();
+    assert.equal(await page.locator('.sensor .modeBadge').textContent(),'Continuous gas sensing');
+    assert(!(await page.locator('.sensor').textContent()).includes('Check power, SDA/SCL'));
+    Object.assign(node,{telemetryFlags:0,iaqCalibrationPhase:1,iaqCalibrationRemainingMinutes:19});
+    await page.getByText('CCS811 conditioning · 19 min remaining at last report.').waitFor();
+    Object.assign(node,{telemetryFlags:1,ccsStatus:0x91,ccsError:0x20});
+    await page.getByText('Environmental sensor could not be read',{exact:true}).waitFor();
+    assert((await page.locator('.sensor .cloudMessage.bad').textContent()).includes('HEATER_SUPPLY'));
+    Object.assign(node,{telemetryFlags:0,ccsStatus:0x98,ccsError:0,iaqCalibrationPhase:0,
+      iaqCalibrationRemainingMinutes:0,capabilities:4112,eco2:612,tvoc:42});
+    await page.waitForFunction(()=>document.querySelector('.sensor .values').textContent.includes('612'));
+    assert((await page.locator('.sensor .values').textContent()).includes('42 ppb'));
     assert.deepEqual(errors,[]);
     console.log('Sensor settings UI: six-axis zero, saved plots, raw CSV, clear reference, pending type, applied type and offline names passed');
   }finally{await browser.close()}

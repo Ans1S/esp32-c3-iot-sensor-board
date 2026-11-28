@@ -36,6 +36,9 @@ int main() {
   assert(!batteryProtectionRequired(false, false, 0, 0, 150));
   assert(!reportDue(true, 86399999, 0, 86400));
   assert(reportDue(true, 86400000, 0, 86400));
+  assert(discoverySleepForAgeMs(599999) == 10 && discoverySleepForAgeMs(600000) == 300);
+  assert(discoverySleepForAgeMs(4199999, 3600) == 300 && discoverySleepForAgeMs(4200000, 3600) == 600);
+  assert(discoverySleepSeconds(UINT64_MAX, 3600) == 3600);
   assert(discoverySleepSeconds(599) == 10);
   assert(discoverySleepSeconds(600) == 300);
   assert(discoverySleepSeconds(360000) == 300);

@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-146c43.svg)](LICENSE)
 ![Sensor](https://img.shields.io/badge/Sensor-ESP32--C3-146c43.svg)
 ![Station](https://img.shields.io/badge/Station-ESP32--S3-146c43.svg)
-[![Firmware](https://img.shields.io/badge/Firmware-4.4.10-146c43.svg)](Firmware/releases/README.md)
+[![Firmware](https://img.shields.io/badge/Firmware-4.4.11-146c43.svg)](Firmware/releases/README.md)
 
 **[Dashboard](#one-dashboard-for-the-whole-network)** · **[Hardware](#choose-your-sensor)** · **[Get started](#from-clone-to-first-measurement)** · **[Downloads](Firmware/releases/README.md)**
 
@@ -24,14 +24,18 @@ signed sensor updates. Optional ThingSpeak export adds cloud access.
   <img src="Readme/second-life-flow.svg" alt="Recovered battery powers a sensor node that sends measurements to the station" width="960">
 </p>
 
-## Firmware 4.4.10
+## Firmware 4.4.11
+
+Install the station application over USB first. In **Firmware updates**, choose the signed package matching each sensor PCB. This version adds assisted discovery, durable reset acknowledgement and recovery from interrupted setup.
+
+### Features introduced in 4.4.10
 
 - **Five new I²C sensors** cover pressure (BMP280), indoor air quality (BME688 and CCS811), distance (VL53L1X) and spectral light (AS7341). Both PCB revisions use the same driver set.
 - **Sensor nodes** reject repeated Bosch factory calibration data, retry failed acquisitions within a bounded window and recover the radio channel after a link change. The V4 low-battery cutoff also applies to continuous CCS811 operation.
 - **Station** displays the new measurements, preserves compatible older latest-reading records during upgrades and caches history pages. CSV exports retain the underlying samples.
 - **Sensor updates** can use 1,024-byte data blocks on compatible links, fall back to 192 bytes during a transfer and retry the handshake after a station restart.
 
-[Download the complete update](Firmware/releases/w-charger-4.4.10.zip) · [Installation and checksums](Firmware/releases/README.md)
+[Download the complete update](Firmware/releases/w-charger-4.4.11.zip) · [Installation and checksums](Firmware/releases/README.md)
 
 ## One dashboard for the whole network
 
@@ -193,7 +197,7 @@ python Firmware/upload.py sensor-v3
 4. Open **Find sensors**, name the node, select its sensor and save.
 5. Use the dashboard for measurements, settings, recordings and signed updates.
 
-The [4.4.10 bundle](Firmware/releases/w-charger-4.4.10.zip) contains the station application, signed V3 and V4 sensor updates, installation instructions and SHA-256 checksums.
+The [4.4.11 bundle](Firmware/releases/w-charger-4.4.11.zip) contains the station application, signed V3 and V4 sensor updates, installation instructions and SHA-256 checksums.
 
 Published sensor packages require the signing identity trusted by the installed
 base firmware; new builders use their own key and matching packages.

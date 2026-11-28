@@ -29,7 +29,7 @@ verify a target without writing to a connected device.
 - [Architecture](ARCHITECTURE.md)
 - [Hardware test plan](HARDWARE_TESTPLAN.md)
 
-The current full release is **4.4.10 / 40410**, protocol V5. The
+The current full release is **4.4.11 / 40411**, protocol V5. The
 [release archive](releases/README.md) lists the complete bundle, both signed
 sensor OTA packages and the application-only station image.
 For an installed station, `python Firmware/upload.py station --application-only`

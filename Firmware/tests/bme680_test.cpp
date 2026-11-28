@@ -21,11 +21,13 @@ extern "C" {
 int8_t bme68x_init(bme68x_dev*) { return BME68X_OK; }
 int8_t bme68x_get_conf(bme68x_conf* conf, bme68x_dev*) { *conf = {}; return BME68X_OK; }
 int8_t bme68x_set_conf(bme68x_conf* conf, bme68x_dev*) {
-  assert(conf->filter == BME68X_FILTER_OFF && conf->odr == BME68X_ODR_NONE);
+  assert(conf->filter == BME68X_FILTER_OFF && conf->odr == BME68X_ODR_NONE &&
+         conf->os_temp == BME68X_OS_1X && conf->os_hum == BME68X_OS_1X &&
+         conf->os_pres == BME68X_OS_1X);
   return BME68X_OK;
 }
 int8_t bme68x_set_heatr_conf(uint8_t mode, const bme68x_heatr_conf* conf, bme68x_dev*) {
-  assert(mode == BME68X_FORCED_MODE && conf->heatr_dur == 150);
+  assert(mode == BME68X_FORCED_MODE && conf->heatr_dur == 100);
   return BME68X_OK;
 }
 int8_t bme68x_set_op_mode(uint8_t mode, bme68x_dev*) {
@@ -105,7 +107,7 @@ int main() {
   // A future ULP slot does not justify keeping the rail awake for five seconds.
   reset(); testBsec.emit = false; testBsec.nextCallNs = (testLogicalMs + 300000) * 1000000;
   assert(driver.begin(0x76,0)); const uint32_t started = millis(); reading = driver.read();
-  assert(reading.valid && reading.bme680RawFallback && millis() - started == 180);
+  assert(reading.valid && reading.bme680RawFallback && millis() - started == 130);
   assert(testBsec.runs == 1 && rawStarts == 1 && driver.recommendedSleepSeconds(300) == 300);
 
   // Fractional BSEC deadlines round up before sleeping. A sub-millisecond
@@ -127,7 +129,7 @@ int main() {
     reading = driver.read();
     assert(reading.valid && reading.bme680RawFallback && rawStarts == 1);
     assert(testBsec.runs == (fractionNs == 0 ? 2 : 1));
-    assert(millis() - start == (fractionNs == 0 ? 5180 : 180));
+    assert(millis() - start == (fractionNs == 0 ? 5130 : 130));
   }
 
   // A corrupt extreme schedule cannot overflow while rounding nanoseconds.

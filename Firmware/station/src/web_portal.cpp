@@ -22,6 +22,7 @@
 #include "history_json.h"
 #include "accept_encoding.h"
 #include "dashboard_gzip.h"
+#include "setup_gzip.h"
 
 namespace station {
 
@@ -72,11 +73,14 @@ PsramJsonAllocator* psramJsonAllocator() {
 // drops on transient TCP send-window pressure).
 class BufferedJsonClientWriter {
  public:
-  explicit BufferedJsonClientWriter(WebServer& server) : server_(server) {
-    heapBuf_ = static_cast<uint8_t*>(
-        heap_caps_malloc(kHeapBufBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  explicit BufferedJsonClientWriter(WebServer& server, size_t expectedBytes = SIZE_MAX)
+      : server_(server) {
+    const size_t wanted = min(expectedBytes, kHeapBufBytes);
+    if (wanted > sizeof(stackBuf_)) {
+      heapBuf_ = static_cast<uint8_t*>(heap_caps_malloc(wanted, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    }
     buf_ = heapBuf_ ? heapBuf_ : stackBuf_;
-    cap_ = heapBuf_ ? kHeapBufBytes : sizeof(stackBuf_);
+    cap_ = heapBuf_ ? wanted : sizeof(stackBuf_);
   }
   ~BufferedJsonClientWriter() {
     if (heapBuf_) heap_caps_free(heapBuf_);
@@ -135,7 +139,7 @@ void sendStreamedJsonDocument(WebServer& server, const JsonDocument& document) {
   server.client().setNoDelay(true);
   server.setContentLength(length);
   server.send(200, "application/json", "");
-  BufferedJsonClientWriter writer(server);
+  BufferedJsonClientWriter writer(server, length);
   serializeJson(document, writer);
   (void)writer.flush();
   server.setContentLength(CONTENT_LENGTH_NOT_SET);
@@ -315,14 +319,15 @@ void sendNoCache(WebServer& server) {
       "form-action 'self'");
 }
 
-void sendDashboard(WebServer& server) {
+template <size_t N>
+void sendPage(WebServer& server, const char* plain, const unsigned char (&gzip)[N]) {
   server.sendHeader("Vary", "Accept-Encoding");
   if (acceptsDashboardGzip(server.header("Accept-Encoding").c_str())) {
     server.sendHeader("Content-Encoding", "gzip");
     server.send_P(200, "text/html; charset=utf-8",
-                  reinterpret_cast<const char*>(kDashboardGzip), sizeof(kDashboardGzip));
+                  reinterpret_cast<const char*>(gzip), N);
   } else {
-    server.send_P(200, "text/html; charset=utf-8", kDashboardPage);
+    server.send_P(200, "text/html; charset=utf-8", plain);
   }
 }
 }  // namespace
@@ -350,9 +355,9 @@ bool WebPortal::begin(StationConfig& config, ConfigStore& store,
     }
     sendNoCache(server_);
     if (config_->wifiSsid[0] == '\0') {
-      server_.send_P(200, "text/html; charset=utf-8", kSetupWizardPage);
+      sendPage(server_, kSetupWizardPage, kSetupWizardGzip);
     } else {
-      sendDashboard(server_);
+      sendPage(server_, kDashboardPage, kDashboardGzip);
     }
   });
   server_.on("/setup", HTTP_GET, [this]() {
@@ -362,14 +367,14 @@ bool WebPortal::begin(StationConfig& config, ConfigStore& store,
       server_.send(302, "text/plain", "");
       return;
     }
-    server_.send_P(200, "text/html; charset=utf-8", kSetupWizardPage);
+    sendPage(server_, kSetupWizardPage, kSetupWizardGzip);
   });
   server_.on("/dashboard", HTTP_GET, [this]() {
     if (!requireAuthentication(true)) {
       return;
     }
     sendNoCache(server_);
-    sendDashboard(server_);
+    sendPage(server_, kDashboardPage, kDashboardGzip);
   });
   server_.on("/login", HTTP_GET, [this]() { handleLogin(); });
   server_.on("/login", HTTP_POST, [this]() { handleLogin(); });
@@ -377,7 +382,14 @@ bool WebPortal::begin(StationConfig& config, ConfigStore& store,
     if (requireAuthentication() && verifyCsrf()) handleLogout();
   });
   server_.on("/api/status", HTTP_GET, [this]() {
-    if (requireAuthentication()) sendJsonStatus();
+    if (!requireAuthentication()) return;
+    if (server_.hasArg("reconnect")) {
+      JsonDocument doc;
+      doc["wifi"]["connected"] = wifi_->stationConnected();
+      sendNoCache(server_);
+      sendStreamedJsonDocument(server_, doc);
+    } else if (server_.hasArg("setupSensors")) sendDiscoveryStatus();
+    else sendJsonStatus();
   });
   server_.on("/api/ota", HTTP_GET, [this]() {
     if (!requireAuthentication()) return;
@@ -481,6 +493,11 @@ bool WebPortal::begin(StationConfig& config, ConfigStore& store,
   });
   server_.on("/api/setup", HTTP_POST, [this]() {
     if (requireAuthentication() && verifyCsrf()) saveSetup();
+  });
+  server_.on("/api/enrollment", HTTP_POST, [this]() {
+    if (!requireAuthentication() || !verifyCsrf()) return;
+    registry_->openEnrollmentWindow();
+    sendJsonResult(true, "Listening for nearby sensors.");
   });
   server_.on("/api/setup-sensor", HTTP_POST, [this]() {
     if (requireAuthentication() && verifyCsrf()) saveSetupSensor();
@@ -918,8 +935,40 @@ void WebPortal::loop() {
   }
 }
 
+void WebPortal::sendDiscoveryStatus() {
+  DiscoveryView rows[kMaxSensors];
+  const size_t count = registry_->discoveryViews(rows, kMaxSensors);
+  JsonDocument doc(psramJsonAllocator());
+  doc["capacity"] = kMaxSensors;
+  auto sensors = doc["sensors"].to<JsonArray>();
+  for (size_t i = 0; i < count; ++i) {
+    const auto& row = rows[i];
+    auto item = sensors.add<JsonObject>();
+    item["mac"] = SensorRegistry::formatMac(row.mac);
+    item["name"] = row.name;
+    item["sensorType"] = row.sensorType;
+    item["pcbVersion"] = row.pcbVersion;
+    item["operatingMode"] = row.operatingMode;
+    item["provisioned"] = row.provisioned;
+    if (row.provisioned) {
+      item["configuredSensorType"] = row.configuredType;
+      item["sleepSeconds"] = row.sleepSeconds;
+    }
+    item["confirmed"] = row.confirmed;
+    item["measured"] = row.measured;
+    if (row.resetPending) item["resetPending"] = true;
+  }
+  sendNoCache(server_);
+  if (doc.overflowed()) {
+    server_.send(503, "application/json", "{\"success\":false}");
+    return;
+  }
+  sendStreamedJsonDocument(server_, doc);
+}
+
 void WebPortal::sendJsonStatus() {
   JsonDocument document(psramJsonAllocator());
+  document["capacity"] = kMaxSensors;
   document["storageAvailable"] = store_->storageAvailable();
   document["uptimeMs"] = lil::timing::signedUsToMs(esp_timer_get_time());
   document["freeHeap"] = ESP.getFreeHeap();
@@ -1037,8 +1086,8 @@ void WebPortal::sendJsonStatus() {
         view.config.thingSpeakFields.gasResistance;
     item["configuredSensorType"] =
         static_cast<uint8_t>(view.config.environmentalSensorType);
-    item["configPending"] = !view.runtime.hasTelemetry ||
-        view.runtime.telemetry.appliedConfigRevision != view.config.revision;
+    item["configPending"] = !commissioningConfirmed(view.config, view.runtime);
+    item["resetPending"] = (view.config.pendingFlags & lil::protocol::kFactoryReset) != 0;
     item["sensorType"] =
         static_cast<uint8_t>(view.runtime.telemetry.sensorType);
     item["temperatureOffsetC"] = view.config.temperatureOffsetC;
@@ -2906,7 +2955,7 @@ void WebPortal::resetSensorIaqCalibration() {
 void WebPortal::deleteSensor() {
   uint8_t mac[6];
   const bool ok = SensorRegistry::parseMac(server_.arg("mac"), mac) &&
-                  registry_->deleteSensor(mac);
+                  registry_->deleteSensor(mac, server_.arg("pendingOnly") == "1");
   if (ok) otaService.forget(mac);
   sendJsonResult(
       ok,

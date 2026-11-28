@@ -8,7 +8,9 @@ constexpr int ESP_OK = 0, ESP_PARTITION_TYPE_DATA = 1;
 struct esp_partition_t { size_t size = 0x160000; };
 inline esp_partition_t recordingPartition;
 inline std::vector<uint8_t> recordingFlash(0x160000,0xff);
-inline bool recordingPartitionAvailable = true;
+inline bool recordingPartitionAvailable = true, recordingFailErase = false;
+inline unsigned recordingSectorErases = 0;
+inline size_t recordingFailSector = SIZE_MAX;
 inline bool recordingFailReadAfterWrite = false, recordingFailNextRead = false;
 inline const esp_partition_t* esp_partition_find_first(int, int subtype, const char* label) {
   return recordingPartitionAvailable && subtype == 0x41 && !strcmp(label,"recordings") ? &recordingPartition : nullptr;
@@ -29,6 +31,7 @@ inline int esp_partition_write(const esp_partition_t*, size_t offset, const void
   return 0;
 }
 inline int esp_partition_erase_range(const esp_partition_t*, size_t offset, size_t length) {
-  if (offset+length > recordingFlash.size() || offset%4096 || length%4096) return -1;
+  if (recordingFailErase || offset == recordingFailSector || offset+length > recordingFlash.size() || offset%4096 || length%4096) return -1;
+  recordingSectorErases += length / 4096;
   std::fill(recordingFlash.begin()+offset,recordingFlash.begin()+offset+length,0xff); return 0;
 }

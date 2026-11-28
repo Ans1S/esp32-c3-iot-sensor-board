@@ -4,6 +4,25 @@ Successful compiler builds validate interfaces and memory limits, but they do
 not replace tests on real hardware. Record each result with the date, firmware
 commit, board revision, power source and measurement equipment.
 
+## Onboarding acceptance
+
+Record power-on, first ESP-NOW reception, portal visibility, durable station save,
+node confirmation and first valid measurement as separate timestamps. Use both
+PCB revisions, a fresh node and a node idle for over ten minutes. Repeat with
+channel 1, channel 13, the AP moving to home Wi-Fi, two stations, a simultaneous
+Wi-Fi scan and an absent station. Compare p50/p95, frame counts and charge per
+successful enrollment, including every failed attempt. Run through Android and
+iOS captive windows, mDNS, LAN IP fallback and incorrect Wi-Fi credentials.
+
+On a test node with a disposable recording, interrupt the reset between sectors
+and before the node configuration commit. Confirm the pending command survives
+and pairing becomes available after the reset receipt. Repeat after replacing
+the recording module with an environmental sensor. Power-cycle a paired node
+and exercise a short SW2 press, a seven-second hold with release and a stuck
+switch. Check V4 with invalid ADC, below 2800 mV and on recovery at 2950 mV.
+Verify the rail and capture current on the released-switch cold start and normal
+timer wakes. [Expected firmware behavior](ONBOARDING_REVIEW.md)
+
 ## Acceptance for the five additional sensors
 
 Run on both PCB revisions. Compare BMP280 pressure/temperature against a reference and verify its rail shuts down. Check that BME688 reports its variant, honors the five-minute maintenance schedule and retains BSEC calibration. Allow CCS811 to warm up with the rail powered between reports, check V4 low-battery protection and compare eCO₂/TVOC under repeatable conditions. Check VL53L1X range and invalid returns at known distances. Check AS7341 bands, clear/NIR counts and saturation under reproducible lighting. For every module, compare dashboard values, saved history and exported units after a station restart.

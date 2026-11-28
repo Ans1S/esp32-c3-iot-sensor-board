@@ -385,7 +385,7 @@ void EspNowGateway::handleTelemetry(const EspNowRxEvent& event) {
   response.payload.requestSequence = packet.header.sequence;
   // pendingFlags also contains station-internal handshake state. Only actual
   // protocol commands may cross the radio boundary.
-  response.payload.flags = responseConfig.pendingFlags & kSensorCommandFlags;
+  response.payload.flags = responseConfig.pendingFlags & (kSensorCommandFlags | lil::protocol::kEnrollmentActive);
   if (wifi_->stationConnected() && !wifi_->networkScanInProgress()) {
     response.payload.flags |= lil::protocol::kStationChannelStable;
   }

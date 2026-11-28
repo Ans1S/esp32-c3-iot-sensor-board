@@ -12,8 +12,11 @@ namespace sensor {
 class ExtendedSensors {
  public:
   static bool probe(lil::protocol::EnvironmentalSensorType type, uint8_t& address);
+  static void clearCcs811Baseline();
+  bool resetCcs811();
   bool begin(lil::protocol::EnvironmentalSensorType type, uint8_t address);
   EnvironmentalReading read();
+  bool setCcs811Interval(uint32_t reportSeconds);
   EnvironmentalReading readContinuous();
 
  private:
@@ -36,7 +39,13 @@ class ExtendedSensors {
   bool beginCcs811();
   static bool ccs811ReadReg(uint8_t address, uint8_t reg, uint8_t* data, uint8_t count);
   static bool ccs811SoftReset(uint8_t address);
-  EnvironmentalReading readCcs811(bool keepRunning = false);
+  EnvironmentalReading readCcs811();
+  uint8_t ccsDriveMode_ = 0;
+  bool ccsCooling_ = false;
+  bool ccsConditioned_ = false;
+  uint32_t ccsModeStartedMs_ = 0;
+  uint32_t ccsLastReadyMs_ = 0;
+  uint32_t ccsLastSaveMs_ = 0;
 
   lil::protocol::EnvironmentalSensorType type_ =
       lil::protocol::EnvironmentalSensorType::kAutoDetect;

@@ -39,14 +39,28 @@ bool RecordingStore::begin(lil::protocol::EnvironmentalSensorType type) {
   if (journal_.fault()) state_ = State::Fault;
   return true;
 }
-void RecordingStore::clearForReset() {
-  if (!available_) return;
-  (void)journal_.clear();
-  (void)prefs_.clear();
-  session_ = epochMs_ = startedMs_ = 0;
-  total_ = durationMs_ = 0;
-  sameBoot_ = false;
-  state_ = State::Ready;
+bool RecordingStore::clearForReset() {
+  RecordingFlash flash;
+  constexpr size_t sectorBytes = lil::recording::Journal::kPageBytes;
+  if (!flash.begin() && flash.bytes() != 0) return false;
+  if (flash.bytes() % sectorBytes != 0) return false;
+  // A legacy layout can lack an archive partition. A damaged journal in a
+  // present partition must still be clearable after changing the sensor type.
+  uint32_t words[128];
+  for (size_t sector = 0; sector < flash.bytes(); sector += sectorBytes) {
+    for (size_t offset = 0; offset < sectorBytes; offset += sizeof(words)) {
+      if (!flash.read(sector + offset, words, sizeof(words))) return false;
+      bool blank = true;
+      for (const auto word : words) {
+        if (word != UINT32_MAX) { blank = false; break; }
+      }
+      if (blank) continue;
+      if (!flash.erase(sector, sectorBytes)) return false;
+      break;
+    }
+  }
+  Preferences prefs;
+  return prefs.begin("recording", false) && prefs.clear();
 }
 bool RecordingStore::start() {
   if (!available_) return false;

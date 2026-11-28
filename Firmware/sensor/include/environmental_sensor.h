@@ -19,6 +19,7 @@ class EnvironmentalSensor {
   // false is reserved for the acquisition owner immediately after pollLive().
   // Driver validity and sample-age checks still run for the snapshot.
   EnvironmentalReading read(bool pollFirst = true);
+  bool setCcs811Interval(uint32_t reportSeconds);
   EnvironmentalReading readContinuous();
   EnvironmentalReading readForReport(float temperatureOffsetC);
   bool pollLive() {
@@ -44,7 +45,7 @@ class EnvironmentalSensor {
       lil::protocol::EnvironmentalSensorType activeType =
           lil::protocol::EnvironmentalSensorType::kAutoDetect);
   uint32_t bme680RecommendedSleepSeconds(uint32_t fallbackSeconds) const;
-  bool clearIaqState();
+  bool clearIaqState(bool resetRunningCcs811 = false);
   lil::protocol::EnvironmentalSensorType detectedType() const;
 
  private:

@@ -80,7 +80,27 @@ int main() {
   assert(recoveredWrite.append(testMillis, payload));
   recoveredWrite.stop();
   assert(recoveredWrite.status(0).pending == 1);
-  recoveredWrite.clearForReset();
+  recordingFailNextRead = true;
+  assert(!sensor::RecordingStore::clearForReset());
+  recordingFailErase = true;
+  assert(!sensor::RecordingStore::clearForReset() && !recordingPreferences.empty());
+  recordingFailErase = false;
+  recordingFailClear = true;
+  assert(!sensor::RecordingStore::clearForReset() && !recordingPreferences.empty());
+  const auto erased = recordingSectorErases;
+  recordingFailClear = false;
+  assert(sensor::RecordingStore::clearForReset() && recordingSectorErases == erased);
+  assert(std::all_of(recordingFlash.begin(), recordingFlash.end(), [](uint8_t b){return b == 0xff;}));
+  recordingFlash[0] = recordingFlash[4096] = 0;
+  recordingFailSector = 4096;
+  assert(!sensor::RecordingStore::clearForReset() && recordingFlash[0] == 0xff && recordingFlash[4096] == 0);
+  recordingFailSector = SIZE_MAX;
+  const auto partialErases = recordingSectorErases;
+  assert(sensor::RecordingStore::clearForReset() && recordingSectorErases == partialErases + 1);
+  recordingPartitionAvailable = false; // Legacy installations may only have recording preferences.
+  recordingPreferences["state"] = {1};
+  assert(sensor::RecordingStore::clearForReset() && recordingPreferences.empty());
+  recordingPartitionAvailable = true;
   sensor::RecordingStore afterReset;
   assert(afterReset.begin(Type::kTmp117));
   assert(afterReset.status(0).state == State::Ready && afterReset.status(0).pending == 0);

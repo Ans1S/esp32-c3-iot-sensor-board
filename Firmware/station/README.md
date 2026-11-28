@@ -31,12 +31,19 @@ sensors are not locked out while a cloud upload is in progress.
 4. Follow the setup wizard to configure the measurement interval, optional
    ThingSpeak integration, sensors and home Wi-Fi. An optional but recommended
    website password can be set at the end.
-5. Confirm the summary. The station saves the configuration and restarts.
+5. For each nearby node, keep **Auto detect** or select its known module.
+   **Add sensor** saves the selection. The wizard shows when the node confirms
+   it and when the station receives the first valid measurement for that revision.
+   A MAX30102 sample requires an SW2 recording. The registry holds 19 nodes
+   including pending entries. An offline pending entry can be removed from the list.
+6. Confirm the summary. The station saves the configuration and restarts.
+   Join the home WLAN and open the hostname link. If the recovery AP reports a
+   disconnected home WLAN, open its local settings to correct the credentials.
 
 A serial monitor is not required for setup. The setup Wi-Fi remains active
 until the first successful connection to the home network and then switches
-off automatically. It starts again only after a fresh installation or factory
-reset. On the home network, the station is available at
+off automatically. When a previously configured station loses its home WLAN for
+about 30 seconds it opens a recovery AP. On the home network the station is available at
 `http://w-charger.local/` when the client supports mDNS. Depending on the
 router, `http://w-charger/` may work as well.
 
@@ -67,6 +74,8 @@ wizard, pending-sensor list and configured dashboard cards display **Setup
 mode**, **Energy-saving mode**, **Channel recovery** or **Mode unknown**. The
 badge represents the last mode reported by the sensor rather than an estimate
 from the station configuration.
+**Find sensors** opens six minutes of assisted enrollment. The nearby list reads a compact status snapshot. Background dashboard traffic leaves the enrollment timer alone. A node factory reset returns the slot to Auto with the station default interval and clears its cloud assignment. The station keeps the node name and its separate archives. The pending entry becomes configurable again after the node reports the completed reset.
+
 The station setup wizard is available only after a fresh installation or
 factory reset. During normal operation, changes are made directly under
 **Settings**.
@@ -259,6 +268,10 @@ A full station factory reset or full-flash erase clears remembered identities;
 names erased by an older station upload cannot be recovered from the node.
 Normal USB and OTA firmware updates preserve this data and the recording archive.
 
+
+## Firmware 4.4.11
+
+Install the station application over USB first. In **Firmware updates**, choose the signed package matching each sensor PCB. This version adds assisted discovery, durable reset acknowledgement and recovery from interrupted setup.
 
 ## Firmware 4.4.10
 

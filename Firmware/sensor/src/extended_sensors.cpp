@@ -2,8 +2,11 @@
 
 #include <Arduino.h>
 #include <Wire.h>
+#include <esp_attr.h>
 #include <string.h>
 
+#include "logical_clock.h"
+#include "low_power_wait.h"
 #include "measurement_budget.h"
 #include "sensor_log.h"
 
@@ -80,11 +83,27 @@ constexpr uint8_t kCcs811Addresses[2] = {0x5A, 0x5B};
 constexpr uint8_t kCcs811RegStatus = 0x00;
 constexpr uint8_t kCcs811RegMeasMode = 0x01;
 constexpr uint8_t kCcs811RegAlgResultData = 0x02;
+constexpr uint8_t kCcs811RegBaseline = 0x11;
 constexpr uint8_t kCcs811RegHwId = 0x20;
 constexpr uint8_t kCcs811RegErrorId = 0xE0;
 constexpr uint8_t kCcs811RegAppStart = 0xF4;
 constexpr uint8_t kCcs811RegSwReset = 0xFF;
 constexpr uint8_t kCcs811HwId = 0x81;
+
+constexpr uint32_t kCcsConditioningMs = 20UL * 60 * 1000;
+constexpr uint32_t kCcsCoolingMs = 10UL * 60 * 1000;
+constexpr uint32_t kCcsDayMs = 24UL * 60 * 60 * 1000;
+constexpr uint8_t kCcsAppRunning = 0x90;  // FW_MODE | APP_VALID
+constexpr uint8_t kCcsDataReady = 0x08;
+constexpr uint8_t kCcsError = 0x01;
+
+struct Ccs811RtcBaseline {
+  uint64_t savedMs;
+  uint8_t address;
+  uint8_t bytes[2];
+};
+// Modes 1, 2 and 3 learn different baselines (ams AN000370).
+RTC_DATA_ATTR Ccs811RtcBaseline rtcCcs811Baselines[3]{};
 
 uint16_t little16(const uint8_t* b) {
   return static_cast<uint16_t>(b[0]) | (static_cast<uint16_t>(b[1]) << 8);
@@ -200,12 +219,12 @@ bool ExtendedSensors::begin(Type type, uint8_t address) {
 EnvironmentalReading ExtendedSensors::read() {
   if (type_ == Type::kAs7341) return readAs7341();
   if (type_ == Type::kVl53l1x) return readVl53l1x();
-  if (type_ == Type::kCcs811) return readCcs811(false);
+  if (type_ == Type::kCcs811) return readCcs811();
   return EnvironmentalReading{};
 }
 
 EnvironmentalReading ExtendedSensors::readContinuous() {
-  if (type_ == Type::kCcs811) return readCcs811(true);
+  if (type_ == Type::kCcs811) return readCcs811();
   return read();
 }
 
@@ -475,6 +494,10 @@ EnvironmentalReading ExtendedSensors::readVl53l1x() {
 
 // --- CCS811 eCO2 / TVOC gas sensor ---
 
+void ExtendedSensors::clearCcs811Baseline() {
+  for (auto& entry : rtcCcs811Baselines) entry = {};
+}
+
 bool ExtendedSensors::ccs811ReadReg(uint8_t address, uint8_t reg, uint8_t* data, uint8_t count) {
   // Per ams DS000459 Fig. 12 and AN000369, CCS811 supports STOP between the
   // mailbox register write and the read transfer. Avoiding Repeated-START
@@ -492,6 +515,20 @@ bool ExtendedSensors::ccs811ReadReg(uint8_t address, uint8_t reg, uint8_t* data,
   return false;
 }
 
+namespace {
+bool ccs811WriteBurst(uint8_t address, uint8_t reg, const uint8_t* data, uint8_t count) {
+  for (uint8_t attempt = 0; attempt < 2; ++attempt) {
+    if (measurementBudgetExpired()) return false;
+    Wire.beginTransmission(address);
+    Wire.write(reg);
+    for (uint8_t i = 0; i < count; ++i) Wire.write(data[i]);
+    if (Wire.endTransmission(true) == 0) return true;
+    if (attempt == 0) measurementWaitUs(2000);
+  }
+  return false;
+}
+}  // namespace
+
 bool ExtendedSensors::ccs811SoftReset(uint8_t address) {
   static constexpr uint8_t kResetSeq[4] = {0x11, 0xE5, 0x72, 0x8A};
   if (!writeReg8Burst(address, kCcs811RegSwReset, kResetSeq, sizeof(kResetSeq))) {
@@ -501,7 +538,23 @@ bool ExtendedSensors::ccs811SoftReset(uint8_t address) {
   return true;
 }
 
+struct Ccs811I2cGuard {
+  Ccs811I2cGuard() {
+#if defined(ESP_PLATFORM)
+    pushLowPowerWaitInhibit();
+#endif
+  }
+  ~Ccs811I2cGuard() {
+#if defined(ESP_PLATFORM)
+    popLowPowerWaitInhibit();
+#endif
+  }
+};
+
 bool ExtendedSensors::beginCcs811() {
+  // Keep the ESP32-C3 I2C peripheral active across CCS811 clock-stretching
+  // waits; entering light sleep mid-session disrupts 50 kHz Wire state.
+  Ccs811I2cGuard i2cGuard;
   // CCS811 relies heavily on I2C clock stretching (DS000459 §6).
   // Use 50 kHz and a 100 ms bus timeout for reliable ESP32-C3 communication.
   Wire.setClock(50000);
@@ -513,10 +566,6 @@ bool ExtendedSensors::beginCcs811() {
   }
   uint8_t status = 0;
   if (!ccs811ReadReg(address_, kCcs811RegStatus, &status, 1)) return false;
-  if ((status & 0x01U) != 0U) {
-    uint8_t err = 0;
-    (void)ccs811ReadReg(address_, kCcs811RegErrorId, &err, 1);
-  }
   if ((status & 0x10U) == 0U) {  // APP_VALID must be set
     if (!ccs811SoftReset(address_) ||
         !ccs811ReadReg(address_, kCcs811RegStatus, &status, 1) ||
@@ -535,7 +584,7 @@ bool ExtendedSensors::beginCcs811() {
       for (uint8_t wait = 0; wait < 5; ++wait) {
         measurementWaitUs(5000);
         if (ccs811ReadReg(address_, kCcs811RegStatus, &status, 1) &&
-            (status & 0x80U) != 0U) {
+            (status & kCcsAppRunning) == kCcsAppRunning) {
           startedApp = true;
           break;
         }
@@ -543,97 +592,132 @@ bool ExtendedSensors::beginCcs811() {
     }
     if (!startedApp) return false;
   }
-  // Mode 1: Constant power IAQ measurement every 1 second (0x10).
-  uint8_t verifyMode = 0;
-  if (!writeReg8(address_, kCcs811RegMeasMode, 0x10)) return false;
-  measurementWaitUs(10000);
-  if (!ccs811ReadReg(address_, kCcs811RegMeasMode, &verifyMode, 1) ||
-      (verifyMode & 0x70U) != 0x10U) {
-    return false;
-  }
-  if (ccs811ReadReg(address_, kCcs811RegStatus, &status, 1) && (status & 0x01U) != 0U) {
-    uint8_t err = 0;
-    (void)ccs811ReadReg(address_, kCcs811RegErrorId, &err, 1);
-  }
+  uint8_t mode = 0;
+  if (!ccs811ReadReg(address_, kCcs811RegMeasMode, &mode, 1)) return false;
+  ccsDriveMode_ = mode & 0x70U;
+  ccsCooling_ = false;
+  ccsConditioned_ = false;
+  ccsModeStartedMs_ = ccsLastReadyMs_ = ccsLastSaveMs_ = millis();
   initialized_ = true;
   return true;
 }
 
-EnvironmentalReading ExtendedSensors::readCcs811(bool keepRunning) {
+bool ExtendedSensors::resetCcs811() {
+  initialized_ = false;
+  return ccs811SoftReset(address_) && beginCcs811();
+}
+
+bool ExtendedSensors::setCcs811Interval(uint32_t reportSeconds) {
+  if (!initialized_ || type_ != Type::kCcs811) return false;
+  // Select the lowest-power drive that can supply a fresh value per report.
+  const uint8_t requested = reportSeconds >= 60 ? 0x30 : reportSeconds >= 10 ? 0x20 : 0x10;
+  if (requested == ccsDriveMode_) return true;
+  if (ccsCooling_ && millis() - ccsModeStartedMs_ < kCcsCoolingMs) return true;
+
+  // DS000459 requires ten minutes in idle before slowing the sample rate.
+  const bool cooling = ccsDriveMode_ != 0 &&
+      (ccsDriveMode_ == 0x40 || requested > ccsDriveMode_);
+  const uint8_t next = cooling ? 0 : requested;
+  uint8_t verified = 0;
+  if (!ccs811WriteBurst(address_, kCcs811RegMeasMode, &next, 1) ||
+      !ccs811ReadReg(address_, kCcs811RegMeasMode, &verified, 1) ||
+      (verified & 0x70U) != next) return false;
+  ccsDriveMode_ = next;
+  ccsCooling_ = cooling;
+  ccsConditioned_ = false;
+  ccsModeStartedMs_ = ccsLastReadyMs_ = ccsLastSaveMs_ = millis();
+  return true;
+}
+
+EnvironmentalReading ExtendedSensors::readCcs811() {
   EnvironmentalReading reading{};
   reading.sensorType = Type::kCcs811;
   if (!initialized_) return reading;
-
-  Wire.setClock(50000);
-  Wire.setTimeOut(100);
-
-  const uint32_t started = millis();
-  const uint32_t timeoutMs = keepRunning ? 2500U : 1800U;
+  auto& aq = reading.extended.airQuality;
   uint8_t status = 0;
-  bool ready = false;
-  while (millis() - started < timeoutMs && !measurementBudgetExpired()) {
-    if (!ccs811ReadReg(address_, kCcs811RegStatus, &status, 1)) {
-      if (!keepRunning) (void)writeReg8(address_, kCcs811RegMeasMode, 0x00);
-      return reading;
+  if (!ccs811ReadReg(address_, kCcs811RegStatus, &status, 1)) return reading;
+  aq.status = status;
+  if ((status & kCcsError) != 0) {
+    // Consume any affected frame before clearing its error. Otherwise a
+    // second read could see DATA_READY with the same frame and a cleared ERROR.
+    if ((status & (kCcsAppRunning | kCcsDataReady)) == (kCcsAppRunning | kCcsDataReady)) {
+      uint8_t discarded[8];
+      if (!ccs811ReadReg(address_, kCcs811RegAlgResultData, discarded, sizeof(discarded))) return reading;
+      aq.errorId = discarded[5];
     }
-    // Recover in-place if a rail brownout dropped CCS811 back into bootloader mode.
-    if (keepRunning && (status & 0x80U) == 0U) {
-      if (!beginCcs811()) return reading;
-      continue;
-    }
-    if ((status & 0x08U) != 0U) {  // DATA_READY
-      ready = true;
-      break;
-    }
-    measurementWaitUs(40000);
-  }
-  if (!ready) {
-    reading.extended.airQuality.status = status;
-    if ((status & 0x01U) != 0U) {
-      (void)ccs811ReadReg(address_, kCcs811RegErrorId, &reading.extended.airQuality.errorId, 1);
-    }
-    if (!keepRunning) (void)writeReg8(address_, kCcs811RegMeasMode, 0x00);
+    // Only an explicit ERROR_ID read clears the latched error.
+    uint8_t error = 0;
+    if (ccs811ReadReg(address_, kCcs811RegErrorId, &error, 1)) aq.errorId |= error;
     return reading;
   }
-
+  if ((status & kCcsAppRunning) != kCcsAppRunning) {
+    // A brownout may return the powered module to its bootloader. Restore
+    // the application once; the next service call selects the report mode.
+    (void)beginCcs811();
+    return reading;
+  }
+  if (ccsDriveMode_ == 0) {
+    // Discovery only identifies the module. Paired nodes can also be cooling.
+    reading.valid = true;
+    return reading;
+  }
+  if (ccsDriveMode_ > 0x30) return reading;
+  const uint32_t now = millis();
+  const uint32_t periodMs = ccsDriveMode_ == 0x30 ? 60000 : ccsDriveMode_ == 0x20 ? 10000 : 1000;
+  const uint32_t modeAgeMs = now - ccsModeStartedMs_;
+  if (!ccsConditioned_ && modeAgeMs < kCcsConditioningMs) {
+    reading.iaqCalibrationPhase = lil::protocol::IaqCalibrationPhase::kStabilizing;
+    reading.iaqCalibrationRemainingMinutes = (kCcsConditioningMs - modeAgeMs + 59999) / 60000;
+  }
+  if ((status & kCcsDataReady) == 0) {
+    // Allow for the sensor oscillator tolerance. A persistently stuck 0x90
+    // still reaches the existing fault and recovery path.
+    reading.valid = now - ccsLastReadyMs_ <= periodMs + periodMs / 10;
+    return reading;
+  }
   uint8_t raw[8]{};
-  const bool readOk = ccs811ReadReg(address_, kCcs811RegAlgResultData, raw, sizeof(raw));
-  uint8_t errId = raw[5];
-  if (readOk && (raw[4] & 0x01U) != 0U) {
-    // Reading ERROR_ID explicitly clears the latched STATUS.ERROR flag (DS000459 §7.11).
-    uint8_t clearedErr = 0;
-    if (ccs811ReadReg(address_, kCcs811RegErrorId, &clearedErr, 1) && errId == 0U) {
-      errId = clearedErr;
+  if (!ccs811ReadReg(address_, kCcs811RegAlgResultData, raw, sizeof(raw))) return reading;
+  aq.status = raw[4];
+  if ((raw[4] & kCcsError) != 0) {
+    aq.errorId = raw[5];
+    uint8_t error = 0;
+    if (ccs811ReadReg(address_, kCcs811RegErrorId, &error, 1)) aq.errorId |= error;
+    return reading;
+  }
+  if ((raw[4] & (kCcsAppRunning | kCcsDataReady)) != (kCcsAppRunning | kCcsDataReady)) return reading;
+  ccsLastReadyMs_ = now;
+  auto& baseline = rtcCcs811Baselines[(ccsDriveMode_ >> 4) - 1];
+  if (!ccsConditioned_) {
+    if (modeAgeMs < kCcsConditioningMs) {
+      reading.valid = true;
+      return reading;
+    }
+    const bool restore = baseline.address == address_ &&
+        logicalTimeMs() - baseline.savedMs <= 7ULL * kCcsDayMs;
+    if (restore && !ccs811WriteBurst(address_, kCcs811RegBaseline, baseline.bytes, 2)) return reading;
+    ccsConditioned_ = true;
+    if (restore) {
+      // The frame just consumed predates the baseline write.
+      reading.valid = true;
+      return reading;
     }
   }
-  // In one-shot mode, return to idle before rail shutdown. In continuous mode,
-  // keep Mode 1 active so the MOX micro-hotplate stays heated through burn-in.
-  if (!keepRunning) {
-    (void)writeReg8(address_, kCcs811RegMeasMode, 0x00);
-  }
-  if (!readOk) return reading;
-
   const uint16_t eco2 = big16(raw);
   const uint16_t tvoc = big16(raw + 2);
-  auto& aq = reading.extended.airQuality;
+  if (eco2 < 400 || eco2 > 29206 || tvoc > 32768) return reading;
   aq.eco2Ppm = eco2;
   aq.tvocPpb = tvoc;
-  aq.status = raw[4];
-  aq.errorId = errId;
-  aq.rawCurrentUa = static_cast<uint8_t>(raw[6] >> 2);
-  aq.rawAdc = static_cast<uint16_t>((static_cast<uint16_t>(raw[6] & 0x03U) << 8) | raw[7]);
+  aq.rawCurrentUa = raw[6] >> 2;
+  aq.rawAdc = (static_cast<uint16_t>(raw[6] & 3U) << 8) | raw[7];
+  reading.capabilities = lil::protocol::kAirQualityGas;
+  reading.valid = true;
 
-  const bool noError = (raw[4] & 0x01U) == 0U;
-  // Support both CCS811 v1.1 (400..8192 ppm / 0..1187 ppb) and v2.0+ (up to 32768).
-  const bool inRange = eco2 >= 400U && eco2 <= 32768U && tvoc <= 32768U;
-  if (noError && inRange) {
-    reading.valid = true;
-    reading.capabilities = lil::protocol::kAirQualityGas;
-  } else if (keepRunning && noError && eco2 < 400U) {
-    // Cold-start / burn-in sample: sensor responded without hardware error,
-    // keep kAirQualityGas unset so the dashboard displays warm-up instead of
-    // a sensor read fault while battery telemetry continues updating.
-    reading.valid = true;
+  if (now - ccsLastSaveMs_ >= kCcsDayMs) {
+    uint8_t bytes[2];
+    if (ccs811ReadReg(address_, kCcs811RegBaseline, bytes, 2)) {
+      baseline = {logicalTimeMs(), address_, {bytes[0], bytes[1]}};
+      ccsLastSaveMs_ = now;
+    }
   }
   return reading;
 }

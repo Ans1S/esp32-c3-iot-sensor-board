@@ -1,6 +1,12 @@
 # Firmware packages
 
-## Latest full release 4.4.10
+## Firmware 4.4.11 / 40411
+
+Install the station application over USB first. In **Firmware updates**, choose the signed package matching each sensor PCB. This version adds assisted discovery, durable reset acknowledgement and recovery from interrupted setup.
+
+[Complete bundle](w-charger-4.4.11.zip) · [Station application](station-4.4.11.bin) · [PCB V3](sensor-v3-4.4.11.ota) · [PCB V4](sensor-v4-4.4.11.ota) · [Installation](INSTALL-4.4.11.txt) · [Checksums](SHA256SUMS-4.4.11.txt) · [Release notes](RELEASE-NOTES-4.4.11.txt)
+
+## Previous full release 4.4.10
 
 Install the station first to enable the five new sensor types. Use the application-only USB update on a compatible station, then select the matching signed package on its **Firmware updates** page. All three targets use release **40410**, ESP-NOW protocol V5.
 

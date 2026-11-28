@@ -1,0 +1,16 @@
+W-Charger 4.4.11 / 40411 - 2026-11-28
+
+Install the station application over USB on the compatible recording layout.
+Use the matching signed sensor package on the station's Firmware updates page.
+
+Find sensors opens a six-minute enrollment window. After first contact,
+older unpaired nodes can retry after ten seconds up to three times.
+The setup wizard retains edits, recovers interrupted saves and shows when
+a node confirms its settings and delivers its first valid measurement.
+Discovery handles competing stations and incomplete stored assignments.
+A deliberate local SW2 transfer allows enrollment with a replacement station.
+Factory reset acknowledges successful storage operations before re-enrollment.
+Module detection and V4 discovery voltage reporting are more reliable.
+
+See Firmware/ONBOARDING_REVIEW.md for measured software behavior and
+Firmware/HARDWARE_TESTPLAN.md for physical acceptance checks.

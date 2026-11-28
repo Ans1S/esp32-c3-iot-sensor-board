@@ -4,8 +4,8 @@
 
 namespace lil::ota {
 constexpr uint32_t kPackageMagic = 0x3141544f; // OTA1
-constexpr uint32_t kRelease = 40410;
-#define WCH_FIRMWARE_VERSION "4.4.10"
+constexpr uint32_t kRelease = 40411;
+#define WCH_FIRMWARE_VERSION "4.4.11"
 constexpr char kVersion[] = WCH_FIRMWARE_VERSION;
 constexpr size_t kBlockSize = 192;
 // ESP-NOW v2.0 (ESP-IDF 5.5, 1470-byte frames) optional 1024-byte OTA data block.

@@ -246,6 +246,20 @@ int main(int argc, char** argv) {
                                      txPower, duplicate, generation));
   assert(!duplicate && writes == 0 && testAllocations == 0);
   const uint32_t initialGeneration = generation;
+  station::DiscoveryView discovery[station::kMaxSensors]{};
+  assert(registry.discoveryViews(discovery,station::kMaxSensors) == 1 && !discovery[0].confirmed);
+  assert(!(response.pendingFlags & lil::protocol::kEnrollmentActive));
+  registry.openEnrollmentWindow();
+  const auto startUs = testTimeUs;
+  testTimeUs += 359999999;
+  assert(registry.registerTelemetry(mac,1,telemetry,-60,response,txPower,duplicate,generation));
+  assert(response.pendingFlags & lil::protocol::kEnrollmentActive);
+  assert(registry.findConfig(mac,response) && !(response.pendingFlags & lil::protocol::kEnrollmentActive));
+  registry.discoveryViews(discovery,station::kMaxSensors); // Read-only polls cannot prolong the window.
+  ++testTimeUs;
+  assert(registry.registerTelemetry(mac,1,telemetry,-60,response,txPower,duplicate,generation));
+  assert(!(response.pendingFlags & lil::protocol::kEnrollmentActive));
+  testTimeUs = startUs;
 
   // Every flash operation injects a radio registration. If the registry mutex
   // is still held, the non-blocking test mutex detects the original deadlock.
@@ -290,6 +304,21 @@ int main(int argc, char** argv) {
   assert(registry.historyCapacity(mac) == 900);
   assert(registry.requestIaqCalibrationReset(mac));
   assert(registry.requestFactoryReset(mac));
+  station::SensorConfig resetConfig{};
+  assert(registry.findConfig(mac, resetConfig));
+  assert(!resetConfig.provisioned && resetConfig.sleepSeconds == 600 &&
+         resetConfig.environmentalSensorType == lil::protocol::EnvironmentalSensorType::kAutoDetect &&
+         resetConfig.pendingFlags == lil::protocol::kFactoryReset && !strcmp(resetConfig.name, "Test"));
+  assert(registry.requestFactoryReset(mac)); // An HTTP retry keeps the command revision.
+  assert(!registry.setThingSpeakChannel(mac, 123, "key", 0) && !registry.deleteSensor(mac,true));
+  auto resetReport = telemetry;
+  resetReport.bootCount = 8;
+  resetReport.appliedConfigRevision = resetConfig.revision;
+  assert(registry.registerTelemetry(mac, 1, resetReport, -60, response, txPower, duplicate, generation));
+  assert(response.pendingFlags & lil::protocol::kFactoryReset);
+  resetReport.flags = lil::protocol::kDiscoveryBeacon;
+  assert(registry.registerTelemetry(mac, 2, resetReport, -60, response, txPower, duplicate, generation));
+  assert(!(response.pendingFlags & lil::protocol::kFactoryReset));
   assert(registry.setThingSpeakChannel(mac, 123, "key", 0));
   station::SensorConfig cloudSnapshot{};
   assert(registry.findConfig(mac, cloudSnapshot, &generation));
@@ -316,6 +345,7 @@ int main(int argc, char** argv) {
   station::SensorView view;
   assert(registry.findView(mac, view) && !view.runtime.configPersistencePending);
 
+  assert(registry.requestIaqCalibrationReset(mac));
   // A command acknowledged during a write must stay pending for another save.
   // First acknowledge command flags via a discovery packet so a real NVS config
   // save runs in persistTelemetry while kAwaitingProvisioningAck remains pending.
@@ -333,8 +363,11 @@ int main(int argc, char** argv) {
     station::SensorConfig current;
     assert(registry.findConfig(mac, current));
     telemetry.appliedConfigRevision = current.revision;
-    assert(registry.registerTelemetry(mac, 3, telemetry, -60, response,
+    auto ackOnly = telemetry;
+    ackOnly.flags |= lil::protocol::kSensorReadFailed;
+    assert(registry.registerTelemetry(mac, 3, ackOnly, -60, response,
                                        txPower, duplicate, generation));
+    assert(registry.discoveryViews(discovery,1) == 1 && discovery[0].confirmed && !discovery[0].measured);
   };
   assert(registry.persistTelemetry(mac, 2, telemetry, -60, generation, received));
   assert(registry.findView(mac, view));
@@ -346,6 +379,7 @@ int main(int argc, char** argv) {
   telemetry.flags = lil::protocol::kBme680RawFallback;
   assert(registry.registerTelemetry(mac, 4, telemetry, -60, response,
                                      txPower, duplicate, generation));
+  assert(registry.discoveryViews(discovery,1) == 1 && discovery[0].confirmed && discovery[0].measured);
   assert(registry.persistTelemetry(mac, 4, telemetry, -60, generation, received + 60));
   size_t count = registry.history(mac, samples, 200);
   assert(count > 0 && (samples[count - 1].capabilities & lil::protocol::kIaq) == 0);

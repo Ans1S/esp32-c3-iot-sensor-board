@@ -31,7 +31,9 @@ class EspNowTransport {
   ExchangeResult exchange(const lil::protocol::TelemetryPacket& packet,
                           const SensorRuntimeConfig& config,
                           bool trialBoot = false,
-                          bool liveStream = false);
+                          bool liveStream = false, bool slowDiscovery = false);
+  ExchangeResult acknowledgeReset(const lil::protocol::TelemetryPacket& receipt,
+                                  const lil::protocol::ConfigResponsePayload& request);
   ExchangeResult exchangeLpChannel(
       const lil::protocol::TelemetryPacket& packet,
       const SensorRuntimeConfig& config, uint8_t channel,
@@ -97,6 +99,9 @@ class EspNowTransport {
   };
   bool receiveResponse(ExchangeResult& result, const uint8_t destination[6],
                        TickType_t waitTicks);
+  void preferEnrollmentReply(ExchangeResult& result);
+  void discover(const lil::protocol::TelemetryPacket& packet, const SensorRuntimeConfig& config,
+                PreparedTelemetry& prepared, ExchangeResult& result, bool slowDiscovery);
   QueueHandle_t responses_ = nullptr;
   struct OtaEvent { uint8_t mac[6]{}; lil::ota::Packet packet{}; bool completion = false; };
   // Publish lazy queues only after initialization; Wi-Fi callbacks acquire them.
