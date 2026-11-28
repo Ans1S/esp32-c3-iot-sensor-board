@@ -1,14 +1,17 @@
 # Manual recordings, synchronization and USB migration
 
-Firmware **4.4.10**, internal release **40410**.
+Firmware **4.4.11**, internal release **40411**.
 
 ## Button operation on PCB V3 and V4
 
 Both PCB layouts connect **SW2 between GPIO9 and GND**: V3 uses
 `Net-(U3-GPIO9)` and V4 uses `Net-(U2-GPIO9)`. Firmware uses an input pull-up,
-35 ms debounce and one event per press. A held button at firmware startup is
-ignored until released. Do not hold SW2 during power-on/reset: GPIO9 is a boot
-strapping pin and can select the ROM download mode.
+35 ms debounce and one event per press. Power on with SW2 released because GPIO9 selects the boot mode.
+On a paired cold start, pressing SW2 within the first second and holding it
+for about seven seconds before release requests a station transfer. This
+preserves the node's recordings and battery calibration. Use a short press
+during normal operation to control a recording.
+[Station transfer procedure](sensor/README.md#discovery-and-re-adding-sensors)
 
 For a provisioned LSM6DSOX, TMP117 or MAX30102 node:
 

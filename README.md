@@ -26,7 +26,17 @@ signed sensor updates. Optional ThingSpeak export adds cloud access.
 
 ## Firmware 4.4.11
 
-Install the station application over USB first. In **Firmware updates**, choose the signed package matching each sensor PCB. This version adds assisted discovery, durable reset acknowledgement and recovery from interrupted setup.
+A new node sleeps for ten seconds between initial searches. If an unpaired node has been powered for more than ten minutes, first contact can take a five-minute sleep plus startup and radio time. Open **Nearby sensors** in setup or **Find sensors** on the dashboard to start a six-minute enrollment window. After the node hears the invitation it can retry three times with ten-second sleeps.
+
+| What you see | What it means |
+| --- | --- |
+| A nearby node | Choose a name and interval. Keep automatic module detection or choose the installed sensor. |
+| Settings saved | The station has stored your choices. The node applies them at a radio contact. |
+| Node confirmed | The node has acknowledged the current configuration. The wizard separately reports the first valid measurement. For MAX30102, start a recording with SW2. |
+
+Update an installed station with a compatible recording layout over USB first. Then use **Firmware updates** to send each configured node its signed package. Blank boards require the initial USB installation.
+
+[Download 4.4.11](Firmware/releases/w-charger-4.4.11.zip) · [Installation and checksums](Firmware/releases/README.md) · [Deletion, reset and station transfer](Firmware/sensor/README.md#discovery-and-re-adding-sensors)
 
 ### Features introduced in 4.4.10
 
@@ -34,8 +44,6 @@ Install the station application over USB first. In **Firmware updates**, choose 
 - **Sensor nodes** reject repeated Bosch factory calibration data, retry failed acquisitions within a bounded window and recover the radio channel after a link change. The V4 low-battery cutoff also applies to continuous CCS811 operation.
 - **Station** displays the new measurements, preserves compatible older latest-reading records during upgrades and caches history pages. CSV exports retain the underlying samples.
 - **Sensor updates** can use 1,024-byte data blocks on compatible links, fall back to 192 bytes during a transfer and retry the handshake after a station restart.
-
-[Download the complete update](Firmware/releases/w-charger-4.4.11.zip) · [Installation and checksums](Firmware/releases/README.md)
 
 ## One dashboard for the whole network
 
@@ -192,10 +200,10 @@ python Firmware/upload.py sensor-v3
 ```
 
 1. Flash the station and join its `W-Charger-XXXXXX` setup network.
-2. Follow the browser wizard for Wi-Fi, a default interval and optional website password/cloud setup.
-3. Flash the sensor target matching the physical PCB V3 or V4.
-4. Open **Find sensors**, name the node, select its sensor and save.
-5. Use the dashboard for measurements, settings, recordings and signed updates.
+2. If the captive browser stays closed, open `http://192.168.4.1/`. Set the default interval and home Wi-Fi in the wizard.
+3. USB-flash the target matching the sensor PCB and power it within radio range.
+4. In **Nearby sensors**, add the node and watch for confirmation. You can also finish setup first and add it later from **Find sensors**.
+5. After the station restarts, join the home WLAN and follow the dashboard link. If joining the WLAN failed, reconnect to the setup network and correct the Wi-Fi settings.
 
 The [4.4.11 bundle](Firmware/releases/w-charger-4.4.11.zip) contains the station application, signed V3 and V4 sensor updates, installation instructions and SHA-256 checksums.
 

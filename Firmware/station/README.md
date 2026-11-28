@@ -290,13 +290,6 @@ The settings schema is unchanged; dashboard preferences use a separate key.
 For a bare/new board use the normal installation target to install the layout.
 Only the explicitly named factory-reset target erases all flash.
 
-## Dashboard transfer
+## Dashboard and setup page transfer
 
-The dashboard is embedded in the firmware. At build time PlatformIO generates
-a gzip copy from the same HTML source in its build directory. For `/dashboard`
-and the configured station's `/`, clients that explicitly advertise gzip with
-a positive quality receive that copy with `Content-Encoding: gzip` and `Vary:
-Accept-Encoding`. Other clients receive the original HTML. Authentication,
-security headers and no-store behavior are unchanged; the setup and login pages
-and live API requests are unaffected. Both copies use flash, not runtime gzip
-compression. The generated file is not a source file to edit or commit.
+The build embeds plain and gzip representations of the dashboard and captive setup wizard. Clients that accept gzip can receive the compressed page at the unconfigured root or setup route as well as the dashboard. The response varies by `Accept-Encoding`. Other clients receive plain HTML. Both copies use flash, with no compression work at request time.
