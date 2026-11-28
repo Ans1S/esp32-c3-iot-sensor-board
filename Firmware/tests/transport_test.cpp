@@ -14,7 +14,8 @@ std::vector<Event> events;
 std::vector<uint8_t> channels;
 std::vector<std::vector<uint8_t>> telemetryFrames;
 std::vector<uint32_t> telemetryFrameTimes;
-unsigned sends = 0;
+unsigned sends = 0, broadcasts = 0;
+int idleStationChannel = 0, enrollingStationChannel = 0;
 bool pending = false;
 int completionDelay = 2;
 int responseDelay = -1;
@@ -39,13 +40,30 @@ void testRadioTick() {
 esp_err_t esp_wifi_set_channel(uint8_t channel, int) {
   assert(!pending); channels.push_back(channel); return ESP_OK;
 }
-esp_err_t esp_now_send(const uint8_t*, const uint8_t* bytes, size_t length) {
+esp_err_t esp_now_send(const uint8_t* destination, const uint8_t* bytes, size_t length) {
   assert(!pending); pending = true; ++sends;
   lil::protocol::PacketHeader wireHeader{};
   memcpy(&wireHeader, bytes, sizeof(wireHeader));
   if (wireHeader.type == lil::protocol::MessageType::kTelemetry) {
     assert(lil::protocol::validatePacket(bytes, length, wireHeader.type, wireHeader.payloadSize));
     telemetryFrames.emplace_back(bytes, bytes + length); telemetryFrameTimes.push_back(testMillis);
+    if (destination[0] == 0xff) {
+      ++broadcasts;
+      for (bool offer : {false, true}) {
+        const int channel = offer ? enrollingStationChannel : idleStationChannel;
+        if (!channel || channels.empty() || channels.back() != channel) continue;
+        events.push_back({testMillis + (offer ? 15U : 4U), [offer, channel, wireHeader] {
+          lil::protocol::ConfigResponsePacket packet{};
+          auto& p = packet.payload;
+          p.stationMac[0] = offer ? 4 : 2; p.requestSequence = wireHeader.sequence;
+          p.wifiChannel = channel; p.provisioned = offer; p.sleepIntervalSeconds = 600;
+          p.batteryCalibrationFactor = 1; p.txPowerQuarterDbm = 52; p.revision = 1;
+          lil::protocol::finalize(packet,lil::protocol::MessageType::kConfigResponse,wireHeader.sequence);
+          RxControl control; esp_now_recv_info_t info{p.stationMac,&control};
+          testReceiveCallback(&info,reinterpret_cast<const uint8_t*>(&packet),sizeof(packet));
+        }});
+      }
+    }
   }
   if (completionDelay >= 0) {
     events.push_back({testMillis + uint32_t(completionDelay), [] {
@@ -120,6 +138,7 @@ esp_err_t esp_now_send(const uint8_t*, const uint8_t* bytes, size_t length) {
   return ESP_OK;
 }
 void reset() {
+  idleStationChannel = enrollingStationChannel = 0; broadcasts = 0;
   events.clear(); channels.clear(); sends = 0; pending = false; testMillis = 0;
   testQueueTimedReceives = 0;
   telemetryFrames.clear(); telemetryFrameTimes.clear();
@@ -132,7 +151,58 @@ void reset() {
   WiFi.shutdowns = 0; droppedTelemetryReplies = 0;
   wrongRecordingSequence = floodInvalidReplies = false;
 }
+void testEnrollmentRadio() {
+  for (unsigned sequence = 0; sequence < 13; ++sequence) {
+    for (uint8_t channel = 1; channel <= 13; ++channel) {
+      reset();
+      config.provisioned = config.stationKnown = false;
+      enrollingStationChannel = channel;
+      sensor::EspNowTransport radio; assert(radio.begin());
+      lil::protocol::TelemetryPacket packet{}; packet.header.sequence = sequence;
+      const auto result = radio.exchange(packet,config);
+      assert(result.configReceived && result.config.provisioned && result.config.wifiChannel == channel);
+      assert(broadcasts == sends && sends <= 13 && channels.front() == 6);
+      bool seen[14]{};
+      for (const uint8_t ch : channels) { assert(ch && ch <= 13 && !seen[ch]); seen[ch] = true; }
+      radio.end();
+    }
+  }
+  for (unsigned scenario = 0; scenario < 6; ++scenario) {
+    reset();
+    idleStationChannel = 6; enrollingStationChannel = scenario == 0 ? 6 : 13;
+    if (scenario == 3 || scenario == 4) {
+      // Both flags may be set in a damaged V6 blob.
+      if (scenario == 3) memset(config.stationMac,0,6);
+      else { config.stationMac[0] = 0xff; config.wifiChannel = 14; }
+      idleStationChannel = 0;
+    } else config.provisioned = config.stationKnown = false;
+    sensor::EspNowTransport radio; assert(radio.begin());
+    lil::protocol::TelemetryPacket packet{}; packet.header.sequence = (scenario == 2 || scenario == 5) ? 3 : 4;
+    testTelemetryFinalizations = 0;
+    const auto result = radio.exchange(packet,config,false,false,scenario == 5);
+    assert(result.configReceived && result.config.provisioned == (scenario != 2));
+    assert(testTelemetryFinalizations == 1 && broadcasts == sends && sends <= 13);
+    if (scenario == 0) assert(testMillis == 15 && broadcasts == 1);
+    if (scenario == 2) assert(broadcasts == 1);
+    for (const auto ch : channels) assert(ch >= 1 && ch <= 13);
+    radio.end();
+  }
+  for (bool differentStation : {false,true}) {
+    reset(); responseDelay = 4; config.stationMac[0] = differentStation ? 4 : 2;
+    sensor::EspNowTransport radio; assert(radio.begin());
+    lil::protocol::TelemetryPacket receipt{}; receipt.header.sequence = 87;
+    receipt.payload.flags = lil::protocol::kDiscoveryBeacon; receipt.payload.appliedConfigRevision = 12;
+    lil::protocol::ConfigResponsePayload owner{}; owner.stationMac[0] = 2; owner.wifiChannel = 6;
+    const auto confirm = radio.acknowledgeReset(receipt,owner);
+    assert(confirm.configReceived == !differentStation && sends == 1 && broadcasts == 0);
+    assert(channels.size() == 1 && channels.front() == 6);
+    radio.end();
+  }
+  puts("Onboarding radio: all 169 channel/rotation combinations, two stations on one or different channels, and corrupt pairing passed");
+}
+
 int main() {
+  testEnrollmentRadio();
   {
     reset();
     sensor::EspNowTransport radio;

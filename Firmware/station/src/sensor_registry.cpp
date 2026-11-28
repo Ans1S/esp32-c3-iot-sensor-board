@@ -289,10 +289,16 @@ SensorIdentity* SensorRegistry::ensureIdentitiesScratchLocked() {
   return identitiesScratch_;
 }
 
+void SensorRegistry::openEnrollmentWindow() {
+  LockGuard lock(mutex_);
+  enrollmentUntilUs_ = esp_timer_get_time() + 360000000LL;
+}
+
 void SensorRegistry::resetForFactory() {
   if (!mutex_ || !storageMutex_) return;
   LockGuard storage(storageMutex_);
   LockGuard lock(mutex_);
+  enrollmentUntilUs_ = 0;
   for (size_t i = 0; i < kMaxSensors; ++i) {
     ++generations_[i];
     configs_[i] = SensorConfig{};
@@ -763,6 +769,12 @@ bool SensorRegistry::registerTelemetry(
 
   generation = generations_[index];
   SensorConfig& config = configs_[index];
+  const auto prepareResponse = [&] {
+    responseConfig = config;
+    if (!config.provisioned && enrollmentUntilUs_ && esp_timer_get_time() < enrollmentUntilUs_) {
+      responseConfig.pendingFlags |= lil::protocol::kEnrollmentActive;
+    }
+  };
   auto& current = runtime_[index];
   const bool discoveryMode =
       (telemetry.flags & lil::protocol::kDiscoveryBeacon) != 0;
@@ -779,7 +791,7 @@ bool SensorRegistry::registerTelemetry(
       sequenceLag < 1024U;
   if (staleWithinSameBoot) {
     duplicate = true;
-    responseConfig = config;
+    prepareResponse();
     txPowerQuarterDbm = current.txPowerInitialized
                             ? current.sensorTxPowerQuarterDbm
                             : kDefaultTxPowerQuarterDbm;
@@ -787,6 +799,7 @@ bool SensorRegistry::registerTelemetry(
   }
   if (telemetry.appliedConfigRevision == config.revision) {
     uint16_t acknowledgedFlags = config.pendingFlags & kSensorCommandFlags;
+    if (!discoveryMode) acknowledgedFlags &= ~lil::protocol::kFactoryReset;
     // Provisioning is confirmed only by a packet which was created after the
     // sensor persisted provisioned=true. A stale discovery packet may already
     // carry an older/current revision but must not complete the handshake.
@@ -825,6 +838,17 @@ bool SensorRegistry::registerTelemetry(
   // Preserve the two cached IAQ scalars before replacing the runtime payload;
   // avoid a second full packed-payload copy through a stack temporary.
   current.telemetry = telemetry;
+  if (config.provisioned && !discoveryMode && telemetry.appliedConfigRevision == config.revision &&
+      !(telemetry.flags & (lil::protocol::kBatteryProtectionActive | lil::protocol::kSensorTypeMismatch))) {
+    const bool batteryOnly = config.environmentalSensorType == lil::protocol::EnvironmentalSensorType::kDisabled;
+    const uint16_t moduleValues = telemetry.capabilities & ~(lil::protocol::kPcbV4PowerGates | lil::protocol::kBattery);
+    if (batteryOnly ? (telemetry.capabilities & lil::protocol::kBattery) != 0 :
+        (moduleValues && !(telemetry.flags & lil::protocol::kSensorReadFailed) &&
+         !(telemetry.live.flags & lil::protocol::kLiveGap) &&
+         (!lil::protocol::isLiveSensor(telemetry.sensorType) ||
+          !(telemetry.live.flags & lil::protocol::kLiveTimingKnown) ||
+          (telemetry.live.flags & lil::protocol::kLiveSampleFresh)))) current.measurementRevision = config.revision;
+  }
   if (rawFallback && previousIaqAvailable) {
     // A direct Bosch reading contains fresh T/H/P/gas values but no new BSEC
     // IAQ.  Keep the last real IAQ for the dashboard instead of replacing it
@@ -895,7 +919,7 @@ bool SensorRegistry::registerTelemetry(
     config.bme680QuickStartComplete = true;
     current.configPersistencePending = true;
   }
-  responseConfig = config;
+  prepareResponse();
   txPowerQuarterDbm = current.sensorTxPowerQuarterDbm;
   return true;
 }
@@ -1011,6 +1035,29 @@ size_t SensorRegistry::liveHistory(const uint8_t mac[6], LiveSample* output,
   return count;
 }
 
+size_t SensorRegistry::discoveryViews(DiscoveryView* output, size_t capacity) const {
+  LockGuard lock(mutex_);
+  size_t count = 0;
+  for (size_t i = 0; i < kMaxSensors && count < capacity; ++i) {
+    const auto& config = configs_[i];
+    if (!config.occupied) continue;
+    const auto& runtime = runtime_[i];
+    auto& row = output[count++];
+    memcpy(row.mac, config.mac, sizeof(row.mac));
+    memcpy(row.name, config.name, sizeof(row.name));
+    row.sensorType = static_cast<uint8_t>(runtime.telemetry.sensorType);
+    row.configuredType = static_cast<uint8_t>(config.environmentalSensorType);
+    row.sleepSeconds = config.sleepSeconds;
+    row.pcbVersion = runtime.telemetry.pcbVersion;
+    row.operatingMode = static_cast<uint8_t>(runtime.telemetry.operatingMode);
+    row.provisioned = config.provisioned;
+    row.confirmed = commissioningConfirmed(config, runtime);
+    row.measured = row.confirmed && runtime.measurementRevision == config.revision;
+    row.resetPending = (config.pendingFlags & lil::protocol::kFactoryReset) != 0;
+  }
+  return count;
+}
+
 size_t SensorRegistry::views(SensorView* output, size_t capacity) const {
   if (output == nullptr || capacity == 0) {
     return 0;
@@ -1055,6 +1102,7 @@ bool SensorRegistry::updateConfig(const uint8_t mac[6], const String& name,
   }
   SensorConfig config = configs_[index];
   const SensorConfig previousConfig = config;
+  if (config.pendingFlags & lil::protocol::kFactoryReset) return false;
   const bool wasProvisioned = config.provisioned;
   const bool sensorTypeChanged =
       config.environmentalSensorType != sensorType;
@@ -1151,6 +1199,7 @@ bool SensorRegistry::setThingSpeakChannel(const uint8_t mac[6],
   }
   SensorConfig config = configs_[index];
   const SensorConfig previousConfig = config;
+  if (config.pendingFlags & lil::protocol::kFactoryReset) return false;
   const bool wasProvisioned = config.provisioned;
   config.thingSpeakChannelId = channelId;
   copyText(config.thingSpeakWriteKey, writeKey);
@@ -1286,12 +1335,15 @@ bool SensorRegistry::requestFactoryReset(const uint8_t mac[6]) {
   if (index < 0) {
     return false;
   }
-  SensorConfig config = configs_[index];
-  const SensorConfig previousConfig = config;
-  config.provisioned = false;
-  config.pendingFlags &= ~kAwaitingProvisioningAck;
-  config.pendingFlags |= lil::protocol::kFactoryReset;
-  ++config.revision;
+  const SensorConfig previousConfig = configs_[index];
+  if (previousConfig.pendingFlags & lil::protocol::kFactoryReset) return true;
+  SensorConfig config{};
+  config.occupied = true;
+  memcpy(config.mac, previousConfig.mac, sizeof(config.mac));
+  copyText(config.name, previousConfig.name);
+  config.sleepSeconds = defaultSleepSeconds_;
+  config.pendingFlags = lil::protocol::kFactoryReset;
+  config.revision = previousConfig.revision + 1;
   if (config.revision == 0) {
     config.revision = 1;
   }
@@ -1320,6 +1372,7 @@ bool SensorRegistry::requestIaqCalibrationReset(const uint8_t mac[6]) {
   }
   const SensorConfig previousConfig = configs_[index];
   SensorConfig config = previousConfig;
+  if (config.pendingFlags & lil::protocol::kFactoryReset) return false;
   config.pendingFlags |= lil::protocol::kResetIaqCalibration;
   config.bme680QuickStartComplete = true;
   ++config.revision;
@@ -1333,11 +1386,12 @@ bool SensorRegistry::requestIaqCalibrationReset(const uint8_t mac[6]) {
   return saved;
 }
 
-bool SensorRegistry::deleteSensor(const uint8_t mac[6]) {
+bool SensorRegistry::deleteSensor(const uint8_t mac[6], bool pendingOnly) {
   LockGuard storage(storageMutex_);
   LockGuard lock(mutex_);
   const int index = findIndexLocked(mac);
-  if (index < 0) return false;
+  if (index < 0 || (pendingOnly && (configs_[index].provisioned ||
+      (configs_[index].pendingFlags & lil::protocol::kFactoryReset)))) return false;
   lock.unlock();
   if(paged_&&!paged_->clear(mac))return false;
   // Keep the durable identity until its old slot files are removed. A failed
@@ -1349,22 +1403,20 @@ bool SensorRegistry::deleteSensor(const uint8_t mac[6]) {
   }
   lock.relock();
   ++generations_[index];
-  if (live_[index].samples) heap_caps_free(live_[index].samples);
+  auto* oldLive = live_[index].samples;
+  auto* oldHistory = history_[index].samples;
   live_[index] = LiveHistory{};
+  history_[index] = StoredHistory{};
   configs_[index] = SensorConfig{};
   runtime_[index] = SensorRuntime{};
-  lock.unlock();
-  if (history_[index].samples != nullptr) {
-    heap_caps_free(history_[index].samples);
-  }
-  history_[index] = StoredHistory{};
-  if(paged_){
-    lock.relock();
+  if (paged_) {
     memcpy(storageConfigScratch_, configs_, sizeof(storageConfigScratch_));
     pagedConfigDirty_ = false;
-    lock.unlock();
-    paged_->configure(storageConfigScratch_, kMaxSensors);
   }
+  lock.unlock();
+  if (oldLive) heap_caps_free(oldLive);
+  if (oldHistory) heap_caps_free(oldHistory);
+  if (paged_) paged_->configure(storageConfigScratch_, kMaxSensors);
   return true;
 }
 

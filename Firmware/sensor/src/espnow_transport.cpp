@@ -1,4 +1,5 @@
 #include "espnow_transport.h"
+#include "station_assignment.h"
 
 #include <WiFi.h>
 #include <esp_random.h>
@@ -215,6 +216,7 @@ bool EspNowTransport::receiveResponse(ExchangeResult& result,
     if (!lil::protocol::validate(event.packet, sizeof(event.packet),
                                   lil::protocol::MessageType::kConfigResponse) ||
         event.packet.payload.requestSequence != expectedSequence_ ||
+        !usableStationMac(event.sourceMac) ||
         memcmp(event.sourceMac, event.packet.payload.stationMac, 6) != 0 ||
         (memcmp(destination, kBroadcastMac, 6) != 0 &&
          memcmp(destination, event.sourceMac, 6) != 0)) {
@@ -226,6 +228,30 @@ bool EspNowTransport::receiveResponse(ExchangeResult& result,
     return true;
   }
   return false;
+}
+
+namespace {
+bool enrollmentOffer(const ExchangeResult& result) {
+  return result.config.provisioned || (result.config.flags & lil::protocol::kFactoryReset);
+}
+}
+
+void EspNowTransport::preferEnrollmentReply(ExchangeResult& result) {
+  if (enrollmentOffer(result)) return;
+  // A configured station can reply just after an idle neighbour.
+  const TickType_t start = xTaskGetTickCount();
+  const TickType_t budget = pdMS_TO_TICKS(25);
+  for (;;) {
+    const TickType_t elapsed = xTaskGetTickCount() - start;
+    if (elapsed >= budget) return;
+    ExchangeResult other{};
+    if (!receiveResponse(other, kBroadcastMac, budget - elapsed)) continue;
+    if (enrollmentOffer(other) || (other.config.flags & lil::protocol::kEnrollmentActive)) {
+      result.config = other.config;
+      result.stationRssi = other.stationRssi;
+      if (enrollmentOffer(result)) return;
+    }
+  }
 }
 
 bool EspNowTransport::sendPending() const {
@@ -349,38 +375,48 @@ void EspNowTransport::waitForTelemetrySend(ExchangeResult& result,
 
 ExchangeResult EspNowTransport::exchange(
     const lil::protocol::TelemetryPacket& packet,
-    const SensorRuntimeConfig& config, bool trialBoot, bool liveStream) {
+    const SensorRuntimeConfig& config, bool trialBoot, bool liveStream, bool slowDiscovery) {
   ExchangeResult result{};
   PreparedTelemetry prepared(millis());
   expectedSequence_ = packet.header.sequence;
-  const bool configured = config.provisioned && config.stationKnown;
-  const uint8_t* destination =
-      configured ? config.stationMac : kBroadcastMac;
-  const bool useLiveStream = configured && liveStream && !trialBoot;
-
-  if (tryChannel(config.wifiChannel, destination, packet, prepared, result,
-                 config.txPowerQuarterDbm,
-                 useLiveStream ? 1 : (configured ? kKnownChannelAttempts : kBroadcastAttempts),
-                 false, useLiveStream ? kLiveResponseWaitMs : 0)) {
+  if (!hasStationAssignment(config)) {
+    discover(packet, config, prepared, result, slowDiscovery);
     return result;
   }
+  const bool stream = liveStream && !trialBoot;
+  if (tryChannel(config.wifiChannel, config.stationMac, packet, prepared, result,
+                 config.txPowerQuarterDbm, stream ? 1 : kKnownChannelAttempts, false,
+                 stream ? kLiveResponseWaitMs : 0)) return result;
+  // A trial boot requires an application ACK before confirming the image.
+  const uint32_t started = millis();
+  while (trialBoot && millis() - started < 5000UL && !sendPending()) {
+    if (receiveResponse(result, config.stationMac, pdMS_TO_TICKS(50)) ||
+        tryChannel(config.wifiChannel, config.stationMac, packet, prepared, result,
+                   config.txPowerQuarterDbm, 1)) break;
+  }
+  return result;
+}
 
-  // Configured sensors keep the normal radio window short. The caller decides
-  // whether this is a normal bounded recovery or the one-time full recovery
-  // needed while the station moves from its setup AP to the home Wi-Fi channel.
-  if (configured) {
-    // Trial boot needs an application ACK, not just a MAC ACK. Allow a busy
-    // station a bounded retry window before the caller rolls back the image.
-    const uint32_t trialStarted = millis();
-    while (trialBoot && millis() - trialStarted < 5000UL) {
-      if (sendPending()) break;
-      if (receiveResponse(result, destination, pdMS_TO_TICKS(50))) return result;
-      if (tryChannel(config.wifiChannel, destination, packet, prepared, result,
-                     config.txPowerQuarterDbm, 1)) return result;
+void EspNowTransport::discover(const lil::protocol::TelemetryPacket& packet,
+                               const SensorRuntimeConfig& config,
+                               PreparedTelemetry& prepared, ExchangeResult& result, bool slowDiscovery) {
+  const uint8_t preferred = config.wifiChannel >= 1 && config.wifiChannel <= 13 ? config.wifiChannel : 1;
+  ExchangeResult pendingReply{};
+  const bool rotate = (packet.header.sequence & 3U) == 0;
+  const auto selectReply = [&] {
+    preferEnrollmentReply(result);
+    const bool invited = (result.config.flags & lil::protocol::kEnrollmentActive) != 0;
+    if (enrollmentOffer(result) || (!rotate && (invited || !slowDiscovery))) return true;
+    // A slow wake must look past an idle station within the operator's six-minute
+    // window. During rapid discovery do this only on every fourth sequence.
+    if (!pendingReply.configReceived || (invited && !(pendingReply.config.flags & lil::protocol::kEnrollmentActive))) {
+      pendingReply = result;
     }
-    return result;
-  }
-
+    result = {};
+    return false;
+  };
+  if (tryChannel(preferred, kBroadcastMac, packet, prepared, result,
+                 config.txPowerQuarterDbm, kBroadcastAttempts) && selectReply()) return;
   const uint8_t scanStart =
       static_cast<uint8_t>((packet.header.sequence *
                             kDiscoveryChannelStride) % 13U) +
@@ -388,17 +424,27 @@ ExchangeResult EspNowTransport::exchange(
   // An unprovisioned sensor scans the complete 2.4 GHz channel range during
   // every discovery wake. Only the wake interval becomes slower after the
   // initial pairing window; channel coverage must not become incomplete.
-  for (uint8_t offset = 0; offset < 13; ++offset) {
-    const uint8_t channel =
-        static_cast<uint8_t>((scanStart - 1U + offset) % 13U) + 1U;
-    if (channel == config.wifiChannel) {
+  uint8_t channel = scanStart;
+  for (uint8_t remaining = 13; remaining; --remaining, channel = channel == 13 ? 1 : channel + 1) {
+    if (channel == preferred) {
       continue;
     }
     if (tryChannel(channel, kBroadcastMac, packet, prepared, result,
-                   config.txPowerQuarterDbm, kBroadcastAttempts)) {
-      return result;
-    }
+                   config.txPowerQuarterDbm, kBroadcastAttempts, false,
+                   pendingReply.configReceived ? kLiveResponseWaitMs : 0) && selectReply()) return;
   }
+  if (pendingReply.configReceived) result = pendingReply;
+}
+
+ExchangeResult EspNowTransport::acknowledgeReset(
+    const lil::protocol::TelemetryPacket& receipt,
+    const lil::protocol::ConfigResponsePayload& request) {
+  ExchangeResult result{};
+  if (!usableStationMac(request.stationMac) || request.wifiChannel < 1 || request.wifiChannel > 13) return result;
+  expectedSequence_ = receipt.header.sequence;
+  PreparedTelemetry prepared(millis());
+  tryChannel(request.wifiChannel, request.stationMac, receipt, prepared, result,
+             request.txPowerQuarterDbm, 1);
   return result;
 }
 
@@ -407,7 +453,7 @@ ExchangeResult EspNowTransport::exchangeLpChannel(
     const SensorRuntimeConfig& config, uint8_t channel,
     bool recoveryAttempt) {
   ExchangeResult result{};
-  if (!config.provisioned || !config.stationKnown || channel < 1 ||
+  if (!hasStationAssignment(config) || channel < 1 ||
       channel > 13) {
     return result;
   }
@@ -765,7 +811,7 @@ bool EspNowTransport::otaExchangeLarge(const uint8_t mac[6],
 bool EspNowTransport::recordingExchange(const SensorRuntimeConfig& config,
     const void* request, size_t length, uint64_t session, uint32_t sampleMs,
     uint32_t crc, lil::recording::Ack& response, uint32_t responseWaitMs) {
-  if (!responses_ || !config.stationKnown || !config.provisioned ||
+  if (!responses_ || !hasStationAssignment(config) ||
       !request || length < sizeof(lil::protocol::PacketHeader) ||
       length > lil::protocol::kMaxPacketSize) return false;
   // An application ACK can arrive before our MAC callback. Give that send

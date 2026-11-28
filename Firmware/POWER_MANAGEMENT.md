@@ -6,13 +6,13 @@
 | --- | --- | --- |
 | BME280 / BMP280 | Forced measurement with 1x oversampling; battery and radio at the configured report interval | Sensor rail off, Wi-Fi off, ESP32-C3 deep sleep |
 | BME680 / BME688 | BSEC ULP maintenance approximately every 300 seconds; V4 checks the battery first on every wake; radio only when a report is due | Sensor rail off and deep sleep until the next maintenance/report deadline |
-| CCS811 | Paired nodes keep the gas heater powered and report at the configured interval | Radio off between reports, V4 battery protection takes priority |
+| CCS811 | Paired nodes keep the rail powered. Report intervals of 60 s or longer use the 60 s pulsed heater, 10–59 s use the 10 s pulse, and 1–9 s use the 1 s drive | Wi-Fi off and timer Light-sleep between reports and battery checks. V4 checks voltage every 10 s during idle waits |
 | AS7341 / VL53L1X | Two spectral passes or one range acquisition per normal window | Rail off between windows |
 | Battery only | ADC and radio at the configured report interval | Sensor rail off, Wi-Fi off, deep sleep |
 | LSM6DSOX | Normal: fresh 100 ms summary after startup at the configured interval. SW2 recording: continuous 104 Hz FIFO acquisition with faster summaries | Sensor rail off between normal windows; CPU and sensor active during manual recording |
 | TMP117 | Normal: a fresh eight-conversion result at the configured interval. SW2 recording: the existing one-second cycle | Sensor rail off between normal windows; active during manual recording |
 | MAX30102 | SW2-only optical acquisition | Sensor rail off while waiting for a recording |
-| Discovery | Bounded channel scan; ten-second wakes initially, five-minute wakes after ten minutes | Deep sleep |
+| Discovery | One frame per visited channel. Ten-second sleeps initially, five-minute sleeps after ten minutes, up to three short sleeps following an enrollment invitation | Deep sleep |
 | OTA | Download while awake only when an update is offered; bounded retries and session duration | Return to scheduled operation after completion/recovery |
 | V4 battery protection | Below 2.8 V or invalid ADC: no external measurements, one bounded battery reporting window every 24 hours; resume at 2.95 V | Sensor/ADC rails off, Wi-Fi off, deep sleep |
 

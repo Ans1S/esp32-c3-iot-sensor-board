@@ -11,16 +11,21 @@ constexpr bool batteryProtectionRequired(bool paused, bool valid, uint16_t mv,
       (!valid || mv < uint32_t(pauseMv) + (paused ? marginMv : 0));
 }
 
-constexpr uint32_t discoverySleepSeconds(uint64_t ageSeconds,
-                                         uint32_t maximumSeconds = 300) {
-  if (ageSeconds < 600) return maximumSeconds < 10 ? maximumSeconds : 10;
-  uint64_t steps = (ageSeconds - 600) / 3600;
+constexpr uint32_t kInitialDiscoveryMs = 600000;
+
+constexpr uint32_t discoverySleepForAgeMs(uint64_t ageMs, uint32_t maximumSeconds = 300) {
+  if (ageMs < kInitialDiscoveryMs) return maximumSeconds < 10 ? maximumSeconds : 10;
   uint32_t seconds = maximumSeconds < 300 ? maximumSeconds : 300;
-  while (steps > 0 && seconds < maximumSeconds) {
-    --steps;
+  // For the production 300-second ceiling the compiler eliminates this loop.
+  constexpr uint32_t hourMs = 3600000;
+  for (uint64_t next = kInitialDiscoveryMs + hourMs; seconds < maximumSeconds && ageMs >= next; next += hourMs) {
     seconds = seconds > maximumSeconds / 2 ? maximumSeconds : seconds * 2;
   }
   return seconds;
+}
+
+constexpr uint32_t discoverySleepSeconds(uint64_t ageSeconds, uint32_t maximumSeconds = 300) {
+  return discoverySleepForAgeMs(ageSeconds > UINT64_MAX / 1000 ? UINT64_MAX : ageSeconds * 1000, maximumSeconds);
 }
 
 constexpr bool reportDue(bool attempted, uint64_t nowMs, uint64_t lastMs,

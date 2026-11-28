@@ -6,6 +6,7 @@ class TwoWire {
  public:
   std::map<uint8_t,uint8_t> devices;
   std::map<uint8_t,unsigned> readyOnBeginCount;
+  std::map<uint8_t,int> variants;  // A negative value simulates a missing byte.
   std::vector<uint32_t> clocks;
   uint8_t address = 0, reg = 0;
   bool beginFails = false, failNextBegin = false;
@@ -24,9 +25,9 @@ class TwoWire {
   void write(uint8_t selected) { reg = selected; }
   int endTransmission(bool = true) { return hasDevice(address) ? 0 : 2; }
   size_t requestFrom(uint8_t, size_t count) {
-    return hasDevice(address) ? count : 0;
+    return hasDevice(address) && !(reg == 0xF0 && variants[address] < 0) ? count : 0;
   }
   int available() { return 1; }
-  int read() { return devices.at(address); }
+  int read() { return reg == 0xF0 ? variants[address] : devices.at(address); }
 };
 inline TwoWire Wire;

@@ -1,4 +1,5 @@
 #include "sensor_config_store.h"
+#include "station_assignment.h"
 
 #include <esp_app_desc.h>
 #include <esp_attr.h>
@@ -12,7 +13,7 @@ constexpr char kConfigKey[] = "config";
 constexpr char kFirmwareKey[] = "fw_sha";
 constexpr uint32_t kMinSleepSeconds = 1;
 constexpr uint32_t kMaxSleepSeconds = 86400;
-constexpr uint32_t kRtcConfigSignature = 0x43464738UL;  // "CFG8"
+constexpr uint32_t kRtcConfigSignature = 0x43464739UL;  // "CFG9"
 
 struct RtcConfigCache {
   uint32_t signature = 0;
@@ -303,6 +304,18 @@ SensorRuntimeConfig SensorConfigStore::load() {
     }
     recognized |= migrated;
   }
+  // Salvage independent calibration and reporting settings from incomplete
+  // legacy assignments. An unpaired node may retain a valid channel hint.
+  if (recognized && !hasStationAssignment(config) &&
+      (config.stationKnown || config.provisioned ||
+       config.wifiChannel < 1 || config.wifiChannel > 13 ||
+       memcmp(config.stationMac, SensorRuntimeConfig{}.stationMac, 6) != 0)) {
+    config.stationKnown = config.provisioned = false;
+    memset(config.stationMac, 0, sizeof(config.stationMac));
+    if (config.wifiChannel < 1 || config.wifiChannel > 13) config.wifiChannel = 1;
+    config.revision = 0;
+    migrated = true;
+  }
   if (!validRuntimeConfig(config)) {
     config = SensorRuntimeConfig{};
     recognized = migrated = false;
@@ -317,7 +330,8 @@ SensorRuntimeConfig SensorConfigStore::load() {
 }
 
 bool SensorConfigStore::saveIfChanged(const SensorRuntimeConfig& config) {
-  if (!validRuntimeConfig(config)) return false;
+  if (!validRuntimeConfig(config) ||
+      ((config.stationKnown || config.provisioned) && !hasStationAssignment(config))) return false;
   if (hasStoredCopy_ && configEquals(lastStored_, config)) {
     return true;
   }

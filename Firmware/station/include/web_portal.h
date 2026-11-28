@@ -46,6 +46,7 @@ class WebPortal {
   void handleLogout();
   bool verifyCsrf();
   void sendJsonStatus();
+  void sendDiscoveryStatus();
   void sendJsonHistory();
   void sendLegacyJsonHistory(const uint8_t mac[6], uint32_t since);
   void sendPagedHistory(const uint8_t mac[6]);

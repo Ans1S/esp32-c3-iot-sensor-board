@@ -15,8 +15,8 @@ namespace sensor {
 namespace {
 constexpr uint32_t kSensorPowerUpMs = 12;
 // CCS811 datasheet DS000459 specifies t_START <= 20 ms after power-on reset;
-// allow 50 ms for breakout RC reset circuits before the first I2C access.
-constexpr uint32_t kCcs811PowerUpMs = 50;
+// allow 100 ms for breakout RC reset circuits and LDO settling before I2C access.
+constexpr uint32_t kCcs811PowerUpMs = 100;
 constexpr uint32_t kPowerCycleOffMs = 100;
 constexpr uint32_t kPowerCycleRecoveryMs = 200;
 constexpr uint8_t kChipIdRegister = 0xD0;
@@ -125,6 +125,8 @@ EnvironmentalReading EnvironmentalSensor::readForReport(float temperatureOffsetC
   SENSOR_LOG_PRINTF("Report read: initialized=%d valid=%d retryAlreadyUsed=%d budgetExpired=%d\n",
            int(initialized_), int(first.valid), int(recoveryUsed_), int(measurementBudgetExpired()));
   if (first.valid || !initialized_ || recoveryUsed_ || measurementBudgetExpired() ||
+      (type == lil::protocol::EnvironmentalSensorType::kCcs811 &&
+       first.extended.airQuality.errorId == 0x08U) ||
       (type != lil::protocol::EnvironmentalSensorType::kBme280 &&
        type != lil::protocol::EnvironmentalSensorType::kBmp280 &&
        type != lil::protocol::EnvironmentalSensorType::kBme680 &&
@@ -182,13 +184,12 @@ lil::protocol::EnvironmentalSensorType EnvironmentalSensor::probeSensorType(
     SENSOR_LOG_PRINTF("[I2C] Bosch probe: address=0x%02X chip_id=0x%02X\n", address, chipId);
     auto type = lil::protocol::EnvironmentalSensorType::kAutoDetect;
     if (chipId == kBme680ChipId) {
-      uint8_t variant = 0;
       Wire.beginTransmission(address);
       Wire.write(kBme68xVariantRegister);
-      if (Wire.endTransmission(false) == 0 &&
-          Wire.requestFrom(address, static_cast<uint8_t>(1)) == 1) {
-        variant = Wire.read();
-      }
+      if (Wire.endTransmission(false) != 0 ||
+          Wire.requestFrom(address, static_cast<uint8_t>(1)) != 1) continue;
+      const int variant = Wire.read();
+      if (variant != 0 && variant != kBme688VariantId) continue;
       type = (variant == kBme688VariantId)
                  ? lil::protocol::EnvironmentalSensorType::kBme688
                  : lil::protocol::EnvironmentalSensorType::kBme680;
@@ -301,6 +302,15 @@ bool EnvironmentalSensor::beginType(
   return started;
 }
 
+bool EnvironmentalSensor::setCcs811Interval(uint32_t reportSeconds) {
+  auto* ext = std::get_if<ExtendedSensors>(&driver_);
+  if (!initialized_ || !ext) return false;
+  beginMeasurementBudget();
+  const bool configured = ext->setCcs811Interval(reportSeconds);
+  endMeasurementBudget();
+  return configured;
+}
+
 EnvironmentalReading EnvironmentalSensor::readContinuous() {
   if (!initialized_) {
     EnvironmentalReading failed{};
@@ -386,7 +396,16 @@ uint32_t EnvironmentalSensor::bme680RecommendedSleepSeconds(
   return fallbackSeconds;
 }
 
-bool EnvironmentalSensor::clearIaqState() {
+bool EnvironmentalSensor::clearIaqState(bool resetRunningCcs811) {
+  ExtendedSensors::clearCcs811Baseline();
+  if (resetRunningCcs811 && initialized_ &&
+      detectedType_ == lil::protocol::EnvironmentalSensorType::kCcs811) {
+    auto* ext = std::get_if<ExtendedSensors>(&driver_);
+    beginMeasurementBudget();
+    const bool reset = ext && ext->resetCcs811();
+    endMeasurementBudget();
+    if (!reset) return false;
+  }
   if (auto* bme = std::get_if<Bme680Driver>(&driver_)) {
     return bme->clearPersistentState();
   }

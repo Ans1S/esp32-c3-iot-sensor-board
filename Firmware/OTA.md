@@ -8,7 +8,7 @@ must stop before a scheduled OTA transfer starts.
 
 ## Updating the station without resetting settings
 
-Firmware 4.4.10 uses the existing recording partition and NVS layouts. See the
+Firmware 4.4.11 uses the existing recording partition and NVS layouts. See the
 [release archive](releases/README.md) for available signed packages and station
 images. `python Firmware/upload.py station --application-only` builds and
 writes only the installed station application. The distributed station BIN
@@ -232,7 +232,7 @@ for the compiler behavior. Scan the final application and signed package bytes
 with `python Firmware/tools/check_publication.py` before staging them. Never
 publish flash dumps containing device NVS, credentials or recordings.
 
-The [4.4.10 release](releases/README.md) includes the application-only station BIN and both signed sensor packages. Earlier public snapshots and their limitations are documented separately.
+The [4.4.11 release](releases/README.md) includes the application-only station BIN and both signed sensor packages. Earlier public snapshots and their limitations are documented separately.
 
 See [publication scope](PUBLICATION_REVIEW.md). Keys and the trusted public
 header stay local; the public verification key embedded in a signed firmware

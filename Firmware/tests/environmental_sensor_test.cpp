@@ -4,6 +4,7 @@ void testRadioTick() { ++testMillis; }
 bool railEnabled = false, expired = false;
 std::vector<bool> railTransitions;
 unsigned failedConversions = 0, conversions = 0;
+bool ccsResetSucceeded = true;
 sensor::EnvironmentalReading conversion() {
   sensor::EnvironmentalReading reading{};
   reading.valid = ++conversions > failedConversions;
@@ -34,6 +35,9 @@ bool PrecisionSensors::probe(Type type, uint8_t& address) {
   if (!Wire.hasDevice(probeAddress)) return false;
   address = probeAddress; return true;
 }
+void ExtendedSensors::clearCcs811Baseline() {}
+bool ExtendedSensors::resetCcs811() { return ccsResetSucceeded; }
+bool ExtendedSensors::setCcs811Interval(uint32_t) { return true; }
 bool ExtendedSensors::begin(Type type, uint8_t address) { startedAddress = address; startedType = type; return true; }
 EnvironmentalReading ExtendedSensors::read() { return conversion(); }
 EnvironmentalReading ExtendedSensors::readContinuous() { return conversion(); }
@@ -55,6 +59,29 @@ int main() {
   assert(sensor.begin(power,Type::kAutoDetect,0));
   assert(startedAddress == 0x76 && startedType == Type::kBme680);
   sensor.end();
+  Wire.devices = {{0x76,0x61}};
+  for (int variant : {-1, 2, 255, 1, 0}) {
+    Wire.variants[0x76] = variant;
+    const bool expected = variant == 0 || variant == 1;
+    assert(sensor.begin(power,Type::kAutoDetect,0) == expected);
+    if (expected) assert(startedType == (variant == 1 ? Type::kBme688 : Type::kBme680));
+    sensor.end();
+  }
+  struct Module { uint8_t address, chipId, variant; Type type; };
+  const Module modules[] = {
+    {0x76,0x58,0,Type::kBmp280}, {0x77,0x60,0,Type::kBme280},
+    {0x76,0x61,0,Type::kBme680}, {0x77,0x61,1,Type::kBme688},
+    {0x6b,0x6c,0,Type::kLsm6dsox}, {0x48,1,0,Type::kTmp117},
+    {0x57,1,0,Type::kMax30102}, {0x39,1,0,Type::kAs7341},
+    {0x29,1,0,Type::kVl53l1x}, {0x5a,0x81,0,Type::kCcs811}
+  };
+  for (const auto& module : modules) {
+    Wire.devices = {{module.address,module.chipId}};
+    Wire.variants[module.address] = module.variant;
+    assert(sensor.begin(power,Type::kAutoDetect,0) && sensor.detectedType() == module.type);
+    sensor.end();
+  }
+  Wire.variants.clear();
   // A slow selected module must be retried even if a different chip responds.
   Wire.clocks.clear();
   Wire.devices = {{0x76,0x60},{0x48,0x01}};
@@ -98,6 +125,12 @@ int main() {
   assert(padMode[4] == INPUT && padMode[5] == INPUT);
   Wire.beginFails = false;
   assert(sensor.begin(power,Type::kDisabled,0) && !railEnabled && sensor.read().valid);
+  sensor.end();
+  Wire.devices = {{0x5A,0x81}};
+  assert(sensor.begin(power,Type::kCcs811,0));
+  ccsResetSucceeded = false;
+  assert(!sensor.clearIaqState(true));  // Explicit reset requires the running module.
+  assert(sensor.clearIaqState());       // Unpairing/replacement only clears stored state.
   sensor.end();
   for (auto type : {Type::kBme280, Type::kBme680}) {
     Wire.devices = {{0x77, uint8_t(type == Type::kBme280 ? 0x60 : 0x61)}};

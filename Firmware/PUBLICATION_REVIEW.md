@@ -1,5 +1,9 @@
 # Publication and privacy review
 
+## Firmware 4.4.11 - 2026-11-28
+
+The publication scope includes the onboarding changes, release notes, station application, both signed node packages and the update bundle. The onboarding browser test uses a generated session token and synthetic network data. Signing material and local agent instructions stay outside the public tree.
+
 ## Firmware 4.4.10 — 2026-11-22
 
 The release uses the existing installation key. The build and package checks cover the station application, both signed node payloads, ZIP members and checksum manifests. Public dashboard images are rendered locally from synthetic fixtures. Private keys, hardware captures, local guidance and intermediate builds stay outside Git. The publication checker scans the current tree and new Git objects. Earlier historical findings are documented below.

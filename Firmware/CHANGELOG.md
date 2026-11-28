@@ -1,5 +1,15 @@
 # Firmware change inventory
 
+## 4.4.11 / 40411 — 2026-11-28
+
+- Improve station and sensor onboarding, including bounded assisted discovery,
+  multiple nearby stations and deliberate local transfer on PCB V3 and V4.
+- Use a compact commissioning snapshot and a compressed setup page. Preserve
+  form drafts, reconcile interrupted saves and distinguish node confirmation
+  from the first measurement.
+- Repair incomplete assignments, verify the Bosch gas variant and propagate
+  recording-reset failures before acknowledging the station. [Onboarding review](ONBOARDING_REVIEW.md)
+
 ## 4.4.10 / 40410 — 2026-11-22
 
 - **Five new I²C sensors** cover pressure (BMP280), indoor air quality (BME688 and CCS811), distance (VL53L1X) and spectral light (AS7341). Both PCB revisions use the same driver set.

@@ -103,6 +103,7 @@ enum ConfigFlag : uint16_t {
   kResetIaqCalibration = 1U << 1,
   // Additive status bit: packet layout/version remains compatible with V5.
   kStationChannelStable = 1U << 2,
+  kEnrollmentActive = 1U << 3,  // Transient operator presence, never a stored command.
 };
 
 enum TelemetryFlag : uint16_t {

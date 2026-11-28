@@ -5,6 +5,7 @@
 #include <cstring>
 #include <cstdint>
 inline std::map<std::string,std::vector<uint8_t>> recordingPreferences;
+inline bool recordingFailClear = false;
 class Preferences {
  public:
   bool begin(const char*, bool) { return true; }
@@ -23,5 +24,5 @@ class Preferences {
   size_t putULong64(const char* key, uint64_t value) { return put(key,value); }
   size_t putUInt(const char* key, uint32_t value) { return put(key,value); }
   size_t putUChar(const char* key, uint8_t value) { return put(key,value); }
-  bool clear() { recordingPreferences.clear(); return true; }
+  bool clear() { if (recordingFailClear) return false; recordingPreferences.clear(); return true; }
 };

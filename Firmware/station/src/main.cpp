@@ -31,15 +31,17 @@ station::WebPortal webPortal;
 
 // Keep the ~1 KiB StationConfig copy off loop()'s persistent stack frame so
 // every HTTP request has nearly 1 KiB more stack headroom on loopTask.
-[[gnu::noinline]] void persistSetupPortalCompletion() {
-  if (!stationConfig.setupPortalRequired) return;
+[[gnu::noinline]] bool persistSetupPortalCompletion() {
+  if (!stationConfig.setupPortalRequired) return true;
   station::StationConfig updated = stationConfig;
   updated.setupPortalRequired = false;
   if (!configStore.saveStationConfig(updated)) {
     Serial.println("[WARN] Setup portal state could not be saved");
+    return false;
   } else {
     stationConfig = updated;
     Serial.println("Home Wi-Fi connected; setup Wi-Fi was disabled.");
+    return true;
   }
 }
 }  // namespace
@@ -109,8 +111,12 @@ void setup() {
 
 void loop() {
   wifiService.loop();
-  if (wifiService.consumeSetupPortalCompletion()) {
-    persistSetupPortalCompletion();
+  static bool completionPending = false;
+  static uint32_t lastAttemptMs = 0;
+  const bool completed = wifiService.consumeSetupPortalCompletion();
+  if (completed || (completionPending && millis() - lastAttemptMs >= 5000)) {
+    lastAttemptMs = millis();
+    completionPending = !persistSetupPortalCompletion();
   }
   webPortal.loop();
   (void)esp_task_wdt_reset();

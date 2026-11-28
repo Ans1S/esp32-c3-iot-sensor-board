@@ -19,15 +19,20 @@ with tempfile.TemporaryDirectory(prefix="dashboard-gzip-") as tmp:
     generator.generate(source, header)
     generated = header.read_bytes()
     payload = bytes(int(value, 16) for value in re.findall(rb"0x([0-9a-f]{2})", generated))
-    original = generator.dashboard_bytes(source)
+    original = generator.page_bytes(source, "Dashboard")
     assert gzip.decompress(payload) == original
     generator.generate(source, header)
     assert header.read_bytes() == generated
     modified = folder / "web_pages.cpp"
     modified.write_text(source.read_text(encoding="utf-8").replace("W-Charger Dashboard", "Dashboard changed"), encoding="utf-8")
     generator.generate(modified, header)
-    assert gzip.decompress(bytes(int(v, 16) for v in re.findall(rb"0x([0-9a-f]{2})", header.read_bytes()))) == generator.dashboard_bytes(modified)
+    assert gzip.decompress(bytes(int(v, 16) for v in re.findall(rb"0x([0-9a-f]{2})", header.read_bytes()))) == generator.page_bytes(modified, "Dashboard")
     assert header.read_bytes() != generated
+    generator.generate(source, header, "SetupWizard")
+    setup = generator.page_bytes(source, "SetupWizard")
+    packed = bytes(int(v, 16) for v in re.findall(rb"0x([0-9a-f]{2})", header.read_bytes()))
+    assert gzip.decompress(packed) == setup
+    print(f"Setup wizard: {len(setup)} bytes; gzip: {len(packed)} bytes")
     test = folder / "negotiation.cpp"
     test.write_text(r'''
 #include "accept_encoding.h"

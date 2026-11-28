@@ -6,9 +6,12 @@ void testRadioTick() { ++testMillis; }
 void resetBoot(bool cold = true) {
   sensorStarts = batteryReads = otaChecks = otaConfirmations = configWrites = 0;
   radioStarts = normalExchanges = lowPowerExchanges = 0;
+  ccsSleepWaits = ccsPoweredReports = 0;
   radioAvailable = true; stationReplies = false; powerOff = true;
   sensor::otaReplacesBattery = false; sensor::otaBattery = {};
   configPersistenceSucceeded = iaqClearSucceeded = true; iaqClears = 0;
+  buttonPressMs = buttonReleaseMs = 0;
+  sensor::RecordingStore::resetStorageReady = true;
   sensorStartSucceeded = true;
   sensorReadSucceeded = true;
   acquisitionStuck = false;
@@ -34,7 +37,80 @@ void assertProtected() {
   assert(p.payload.temperatureC == 0 && p.payload.motion.sampleCount == 0 && p.payload.live.count == 0);
   assert(lil::protocol::validate(p,sizeof(p),lil::protocol::MessageType::kTelemetry));
 }
+void testOnboarding() {
+  using namespace lil::protocol;
+  resetBoot();
+  auto& saved = sensor::savedConfig;
+  saved.provisioned = saved.stationKnown = false;
+  saved.environmentalSensorType = EnvironmentalSensorType::kAutoDetect;
+  sensor::ExchangeResult pending{};
+  pending.configReceived = true;
+  auto& reply = pending.config;
+  reply.revision = 12; reply.sleepIntervalSeconds = 3600; reply.wifiChannel = 6;
+  reply.txPowerQuarterDbm = 52; reply.stationMac[0] = 2;
+  reply.batteryCalibrationFactor = 1; reply.sensorType = EnvironmentalSensorType::kBme688;
+  const auto wake = [&](bool hear, uint16_t mv) {
+    sensor::batteries.push_back({true,mv});
+    if (hear) sensor::configurationReplies.push_back(pending);
+    return boot();
+  };
+  assert(wake(true,3700) == 10 && saved.environmentalSensorType == EnvironmentalSensorType::kAutoDetect);
+  testMillis += 10000;
+  const int starts = sensorStarts;
+  assert(wake(true,3550) == 10 && sensorStarts == starts && sensor::lastReportVoltage == 3550);
+  testMillis += 7200000;
+  assert(wake(true,3550) == 300);
+  reply.flags = kEnrollmentActive;
+  for (unsigned expected : {10,10,10,300}) {
+    testMillis += 10000;
+    assert(wake(true,3550) == expected);
+  }
+  testMillis += 300000;
+  assert(wake(false,3550) == 300);
+  assert(wake(true,3550) == 300);
+  testMillis += 310000;
+  assert(wake(true,3550) == 10);
+  testMillis += 10000; assert(wake(false,3550) == 10);
+  testMillis += 10000; assert(wake(false,3550) == 10);
+  testMillis += 10000; assert(wake(true,3550) == 300);
+  // A failed archive erase must not clear config or acknowledge the command.
+  reply.flags = kFactoryReset;
+  sensor::RecordingStore::resetStorageReady = false;
+  const int writes = configWrites;
+  assert(!applyStationConfig(reply) && rtcState.acknowledgedResetRevision == 0 && configWrites == writes);
+  sensor::RecordingStore::resetStorageReady = true;
+  try { applyStationConfig(reply); assert(false); } catch (const Slept& s) { assert(s.seconds == 1); }
+  assert(rtcState.acknowledgedResetRevision == 12 && rtcState.discoveryStartedMs == testMillis);
+  assert(!applyStationConfig(reply)); // Duplicate reset only needs another receipt.
+  assert(makeTelemetryPacket({}, {}, SensorOperatingMode::kDiscovery).payload.appliedConfigRevision == 0);
+  reply.flags = 0; reply.revision = 2;
+  reply.stationMac[0] = 4; applyStationConfig(reply);
+  assert(rtcState.acknowledgedResetRevision == 12);
+  reply.stationMac[0] = 2; configPersistenceSucceeded = false; applyStationConfig(reply);
+  assert(rtcState.acknowledgedResetRevision == 12);
+  configPersistenceSucceeded = true; applyStationConfig(reply);
+  assert(rtcState.acknowledgedResetRevision == 0 && runtimeConfig.revision == 2);
+  assert(wake(true,3550) == 10);
+  reply.revision = 14; reply.flags = kFactoryReset;
+  try { applyStationConfig(reply); assert(false); } catch (const Slept& s) { assert(s.seconds == 1); }
+  sensor::directedResetRevision = 0;
+  assert(wake(true,3550) == 10);
+  assert(sensor::lastBroadcastRevision == 0 && sensor::directedResetRevision == 14 &&
+         !memcmp(sensor::directedResetMac,reply.stationMac,6) && rtcState.acknowledgedResetRevision == 0);
+  for (unsigned hold : {0,1000,5500,10500}) {
+    resetBoot(); saved.batteryCalibrationFactor = 1.1F;
+    buttonReleaseMs = testMillis + hold;
+    assert(wake(false,3550) == (hold == 5500 ? 10U : 600U));
+    assert(saved.provisioned == (hold != 5500) && saved.batteryCalibrationFactor == 1.1F);
+  }
+  resetBoot(); buttonPressMs = 600; buttonReleaseMs = 6800;
+  assert(wake(false,3550) == 10 && !saved.provisioned); // Pressed after boot, during the first second.
+  resetBoot(); buttonReleaseMs = testMillis + 5500;
+  assert(wake(false,2799) == 86400 && saved.provisioned && configWrites == 0);
+  puts("Onboarding: old-node sleeps 10/10/10/300 s, bounded intermittent replies, fresh V4 voltage, scoped reset receipt and local transfer passed");
+}
 int main() {
+  testOnboarding();
   resetBoot();
   rtcState.sequence = 1234;
   sensor::EnvironmentalReading prepared{};
@@ -181,9 +257,13 @@ int main() {
   sensorStartSucceeded = false; sensor::batteries.push_back({true,3500});
   assert(boot() == 5 && rtcState.sensorRecoveryPending && rtcState.sensorStartAttemptsRemaining == 2);
   resetBoot(); sensor::savedConfig.environmentalSensorType = lil::protocol::EnvironmentalSensorType::kCcs811;
-  sensor::batteries.push_back({true,3500});
+  sensor::savedConfig.sleepSeconds = 60;
+  // Six 10-second protective checks and one more report while the rail stays on.
+  for (unsigned i = 0; i < 7; ++i) sensor::batteries.push_back({true,3500});
   sensor::batteries.push_back({true,2799});
   assert(boot() == 86400 && powerOff && rtcState.batteryPaused);
+  assert(sensorStarts == 1 && normalExchanges == 2 && batteryReads == 8);
+  assert(ccsSleepWaits == 7 && ccsPoweredReports == 2);
   // Confirmed station contact confirms trial-boot OTA even if deprovisioned.
   resetBoot(); sensor::batteries.push_back({true,3500});
   sensor::ExchangeResult deprov{}; deprov.configReceived = true; deprov.config.provisioned = 0;
@@ -257,6 +337,13 @@ int main() {
     sensor::savedConfig.environmentalSensorType = type;
     sensor::otaReplacesBattery = true; sensor::otaBattery = low;
     sensor::ExchangeResult otaReply{}; otaReply.configReceived = true; otaReply.config.provisioned = 1;
+    otaReply.config.revision = sensor::savedConfig.revision;
+    otaReply.config.sensorType = type;
+    otaReply.config.sleepIntervalSeconds = sensor::savedConfig.sleepSeconds;
+    otaReply.config.temperatureOffsetC = sensor::savedConfig.temperatureOffsetC;
+    otaReply.config.batteryCalibrationFactor = 1;
+    otaReply.config.wifiChannel = sensor::savedConfig.wifiChannel;
+    memcpy(otaReply.config.stationMac, sensor::savedConfig.stationMac, 6);
     sensor::configurationReplies.push_back(otaReply);
     assert(boot() == 86400 && otaChecks == 1 && powerOff && rtcState.batteryPaused);
     assert(sentPackets.back().payload.flags & lil::protocol::kBatteryProtectionActive);

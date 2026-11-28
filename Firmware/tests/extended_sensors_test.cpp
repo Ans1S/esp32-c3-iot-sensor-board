@@ -43,9 +43,17 @@ struct SimBus {
   bool ccsPresent = true;
   uint8_t ccsStatus = 0x10;  // APP_VALID=1, FW_MODE=0 (bootloader)
   uint8_t ccsMeasMode = 0;
+  uint32_t ccsCycleStarted = 0;
+  bool ccsStalled = false;
+  bool ccsShortFrame = false;
+  unsigned ccsModeWrites = 0;
+  unsigned ccsFrames = 0;
   uint16_t ccsEco2 = 612;
   uint16_t ccsTvoc = 42;
   uint8_t ccsError = 0;
+  uint8_t ccsBaseline[2] = {0x9A, 0x34};
+  uint8_t ccsRestoredBaseline[2] = {0, 0};
+  bool ccsBaselineWritten = false;
 
   void initBmp280() {
     memset(bmpRegs, 0, sizeof(bmpRegs));
@@ -85,9 +93,16 @@ struct SimBus {
   void initCcs811() {
     ccsStatus = 0x10;  // APP_VALID=1, FW_MODE=0
     ccsMeasMode = 0;
+    ccsStalled = ccsShortFrame = false;
+    ccsFrames = ccsModeWrites = 0;
     ccsEco2 = 612;
     ccsTvoc = 42;
     ccsError = 0;
+    ccsBaseline[0] = 0x9A;
+    ccsBaseline[1] = 0x34;
+    ccsRestoredBaseline[0] = 0;
+    ccsRestoredBaseline[1] = 0;
+    ccsBaselineWritten = false;
   }
 } bus;
 }  // namespace
@@ -161,8 +176,15 @@ uint8_t TwoWire::endTransmission(bool stop) {
       bus.ccsStatus |= 0x80;  // FW_MODE=1
     } else if (bus.tx.size() >= 2 && bus.tx[0] == 0x01) {
       bus.ccsMeasMode = bus.tx[1];
-      if ((bus.ccsMeasMode & 0x70) == 0x10) bus.ccsStatus |= 0x08;  // DATA_READY
-      else bus.ccsStatus &= ~0x08;
+      ++bus.ccsModeWrites;
+      bus.ccsCycleStarted = millis();
+      bus.ccsStatus &= ~0x08;
+    } else if (bus.tx == std::vector<uint8_t>({0xFF,0x11,0xE5,0x72,0x8A})) {
+      bus.initCcs811();
+    } else if (bus.tx.size() == 3 && bus.tx[0] == 0x11) {
+      bus.ccsRestoredBaseline[0] = bus.tx[1];
+      bus.ccsRestoredBaseline[1] = bus.tx[2];
+      bus.ccsBaselineWritten = true;
     }
     return 0;
   }
@@ -205,9 +227,24 @@ uint8_t TwoWire::requestFrom(uint8_t address, uint8_t quantity) {
   } else if (address == 0x5A && bus.ccsPresent && !bus.tx.empty()) {
     const uint8_t reg = bus.tx[0];
     if (reg == 0x20) bus.rx.push_back(0x81);
-    else if (reg == 0x00) bus.rx.push_back(bus.ccsStatus);
+    else if (reg == 0x00) {
+      const uint32_t period = bus.ccsMeasMode == 0x30 ? 60000 : bus.ccsMeasMode == 0x20 ? 10000 : 1000;
+      const uint32_t elapsed = millis() - bus.ccsCycleStarted;
+      if (bus.ccsMeasMode && !bus.ccsStalled && elapsed >= period) {
+        bus.ccsStatus |= 0x08;
+        bus.ccsCycleStarted += (elapsed / period) * period;
+      }
+      bus.rx.push_back(bus.ccsStatus);
+    }
     else if (reg == 0x01) bus.rx.push_back(bus.ccsMeasMode);
-    else if (reg == 0xE0) bus.rx.push_back(bus.ccsError);
+    else if (reg == 0xE0) {
+      bus.rx.push_back(bus.ccsError);
+      bus.ccsStatus &= ~0x01;
+      bus.ccsError = 0;
+    }
+    else if (reg == 0x11 && quantity == 2) {
+      bus.rx = {bus.ccsBaseline[0], bus.ccsBaseline[1]};
+    }
     else if (reg == 0x02 && quantity == 8) {
       bus.rx = {
           static_cast<uint8_t>(bus.ccsEco2 >> 8), static_cast<uint8_t>(bus.ccsEco2 & 0xFF),
@@ -215,6 +252,9 @@ uint8_t TwoWire::requestFrom(uint8_t address, uint8_t quantity) {
           bus.ccsStatus, bus.ccsError,
           static_cast<uint8_t>((18U << 2) | 0x01U), 0x80U,  // 18 uA, ADC=384
       };
+      ++bus.ccsFrames;
+      bus.ccsStatus &= ~0x08;
+      if (bus.ccsShortFrame) bus.rx.pop_back();
     }
   }
   return static_cast<uint8_t>(bus.rx.size());
@@ -226,6 +266,7 @@ int TwoWire::available() { return static_cast<int>(bus.rx.size() - bus.rxPos); }
 int TwoWire::read() { return bus.rxPos < bus.rx.size() ? bus.rx[bus.rxPos++] : -1; }
 
 namespace sensor {
+uint64_t logicalTimeUs() { return uint64_t(testMillis) * 1000; }
 void beginMeasurementBudget(uint32_t) { budgetExpired = false; }
 void endMeasurementBudget() {}
 bool measurementBudgetExpired() { return budgetExpired; }
@@ -317,47 +358,78 @@ int main() {
   assert(ext.begin(Type::kCcs811, addr));
   assert(bus.clockHz == 50000);
   assert((bus.ccsStatus & 0x80) != 0);  // Transitioned to app mode
-  auto ccsReading = ext.read();
-  assert(ccsReading.valid);
-  assert(ccsReading.sensorType == Type::kCcs811);
+  assert(ext.read().valid && bus.ccsModeWrites == 0);  // Discovery leaves the heater idle.
+  assert(ext.setCcs811Interval(60) && bus.ccsMeasMode == 0x30);
+  const uint32_t start = millis();
+  auto waiting = ext.readContinuous();
+  assert(waiting.valid && waiting.capabilities == 0 && waiting.extended.airQuality.status == 0x90);
+  assert(millis() == start && bus.ccsFrames == 0 && waiting.iaqCalibrationRemainingMinutes == 20);
+  testMillis += 60000;
+  assert(ext.setCcs811Interval(600) && bus.ccsModeWrites == 1);
+  auto warming = ext.readContinuous();
+  assert(warming.valid && warming.capabilities == 0 && warming.iaqCalibrationRemainingMinutes == 19);
+  testMillis = start + 20 * 60000;
+  auto ccsReading = ext.readContinuous();
+  assert(ccsReading.valid && ccsReading.sensorType == Type::kCcs811);
   assert(ccsReading.capabilities == lil::protocol::kAirQualityGas);
-  assert(ccsReading.extended.airQuality.eco2Ppm == 612);
-  assert(ccsReading.extended.airQuality.tvocPpb == 42);
-  assert(ccsReading.extended.airQuality.rawCurrentUa == 18);
-  assert(ccsReading.extended.airQuality.rawAdc == 384);
-  assert(bus.ccsMeasMode == 0x00);  // Returned to idle
-
-  // Continuous CCS811 mode keeps Mode 1 active and treats cold-start eCO2=0 as warm-up.
-  bus.initCcs811();
-  bus.ccsEco2 = 0;
-  bus.ccsTvoc = 0;
-  assert(ext.begin(Type::kCcs811, addr));
-  auto ccsWarmup = ext.readContinuous();
-  assert(ccsWarmup.valid && ccsWarmup.capabilities == 0);
-  assert(bus.ccsMeasMode == 0x10);  // Heater stays active in Mode 1
-  bus.ccsEco2 = 520;
-  bus.ccsTvoc = 18;
-  auto ccsReady = ext.readContinuous();
-  assert(ccsReady.valid && ccsReady.capabilities == lil::protocol::kAirQualityGas);
-  assert(ccsReady.extended.airQuality.eco2Ppm == 520 && ccsReady.extended.airQuality.tvocPpb == 18);
-  assert(bus.ccsMeasMode == 0x10);
-
-  // CCS811 v2.0+ firmware can report TVOC > 1187 ppb and eCO2 > 8192 ppm during burn-in/VOC spikes.
+  assert(ccsReading.extended.airQuality.eco2Ppm == 612 && ccsReading.extended.airQuality.tvocPpb == 42);
+  assert(ccsReading.extended.airQuality.rawCurrentUa == 18 && ccsReading.extended.airQuality.rawAdc == 384);
+  assert(ext.readContinuous().capabilities == 0);  // Cannot duplicate a consumed sample.
+  bus.ccsStalled = true;
+  testMillis += 67000;
+  auto stalled = ext.readContinuous();
+  assert(!stalled.valid && !stalled.capabilities && stalled.extended.airQuality.status == 0x90);
+  bus.ccsStatus |= 0x09;  // Fault with an unread algorithm frame.
+  bus.ccsError = 0x20;
+  auto heaterFault = ext.readContinuous();
+  assert(!heaterFault.valid && heaterFault.extended.airQuality.errorId == 0x20);
+  assert(!(bus.ccsStatus & 0x09) && ext.readContinuous().capabilities == 0);
+  bus.ccsStalled = false;
+  bus.ccsShortFrame = true;
+  assert(!ext.readContinuous().valid);
+  bus.ccsShortFrame = false;
   bus.ccsEco2 = 9500;
   bus.ccsTvoc = 2400;
-  auto ccsHighVoc = ext.readContinuous();
-  assert(ccsHighVoc.valid && ccsHighVoc.capabilities == lil::protocol::kAirQualityGas);
-  assert(ccsHighVoc.extended.airQuality.eco2Ppm == 9500 && ccsHighVoc.extended.airQuality.tvocPpb == 2400);
+  testMillis = start + 86400000;
+  auto highVoc = ext.readContinuous();  // The daily baseline checkpoint is now due.
+  assert(highVoc.valid && highVoc.extended.airQuality.eco2Ppm == 9500 && highVoc.extended.airQuality.tvocPpb == 2400);
+  assert(!bus.ccsBaselineWritten);
+  bus.initCcs811();
+  assert(ext.begin(Type::kCcs811,addr) && ext.setCcs811Interval(60));
+  testMillis += 19 * 60000;
+  assert(ext.readContinuous().capabilities == 0 && !bus.ccsBaselineWritten);
+  testMillis += 60000;
+  auto restored = ext.readContinuous();
+  assert(restored.valid && restored.capabilities == 0 && bus.ccsBaselineWritten);
+  assert(bus.ccsRestoredBaseline[0] == 0x9A && bus.ccsRestoredBaseline[1] == 0x34);
+  testMillis += 60000;
+  assert(ext.readContinuous().capabilities == lil::protocol::kAirQualityGas);
 
-  // Mid-operation rail brownout back to bootloader (FW_MODE=0) recovers in-place without power cycle.
-  bus.ccsStatus = 0x10;  // APP_VALID=1, FW_MODE=0
-  bus.ccsMeasMode = 0x00;
-  bus.ccsEco2 = 480;
-  bus.ccsTvoc = 12;
-  auto ccsRecovered = ext.readContinuous();
-  assert(ccsRecovered.valid && ccsRecovered.capabilities == lil::protocol::kAirQualityGas);
-  assert((bus.ccsStatus & 0x80) != 0 && bus.ccsMeasMode == 0x10);
-  assert(ccsRecovered.extended.airQuality.eco2Ppm == 480);
+  // A faster drive can start immediately. A slower drive requires ten minutes idle.
+  assert(ext.setCcs811Interval(9) && bus.ccsMeasMode == 0x10);
+  bus.ccsBaselineWritten = false;
+  testMillis += 20 * 60000;
+  assert(ext.readContinuous().valid && !bus.ccsBaselineWritten);
+  assert(ext.setCcs811Interval(10) && bus.ccsMeasMode == 0);
+  testMillis += 599999;
+  assert(ext.setCcs811Interval(59) && bus.ccsMeasMode == 0);
+  ++testMillis;
+  assert(ext.setCcs811Interval(59) && bus.ccsMeasMode == 0x20);
+  sensor::ExtendedSensors::clearCcs811Baseline();
+  bus.initCcs811();
+  assert(ext.begin(Type::kCcs811,addr) && ext.setCcs811Interval(60));
+  testMillis += 20 * 60000;
+  assert(ext.readContinuous().capabilities == lil::protocol::kAirQualityGas && !bus.ccsBaselineWritten);
+
+  // A brownout restarts conditioning. Never publish pre-reset data.
+  bus.initCcs811();
+  auto brownout = ext.readContinuous();
+  assert(!brownout.valid && brownout.capabilities == 0 && (bus.ccsStatus & 0x80));
+  assert(ext.setCcs811Interval(60) && bus.ccsMeasMode == 0x30);
+  testMillis += 60000;
+  assert(ext.readContinuous().iaqCalibrationRemainingMinutes == 19);
+  assert(ext.resetCcs811() && bus.ccsMeasMode == 0 && ext.setCcs811Interval(60));
+  assert(ext.readContinuous().iaqCalibrationRemainingMinutes == 20);
 
   puts("Extended sensors (BMP280, AS7341, TOF400C-VL53L1X, CCS811): probe, init, acquisition, faults and power-down passed");
   return 0;

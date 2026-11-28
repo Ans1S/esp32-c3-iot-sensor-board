@@ -17,11 +17,16 @@ inline bool sensorStartSucceeded = true;
 inline bool sensorReadSucceeded = true;
 inline bool acquisitionStuck = false;
 inline int iaqClears = 0;
+inline int ccsSleepWaits = 0, ccsPoweredReports = 0;
 inline std::vector<lil::protocol::TelemetryPacket> sentPackets;
 inline uint32_t esp_random() { return 123; }
 inline int64_t esp_timer_get_time() { return int64_t(testMillis) * 1000; }
 inline void esp_restart() { throw Restarted{}; }
 constexpr int GPIO_NUM_9 = 9, GPIO_INTR_LOW_LEVEL = 0;
+constexpr int INPUT_PULLUP = 1, HIGH = 1, LOW = 0;
+inline uint32_t buttonPressMs = 0, buttonReleaseMs = 0;
+inline int digitalRead(int) { return testMillis >= buttonPressMs && testMillis < buttonReleaseMs ? LOW : HIGH; }
+inline void pinMode(int, int) {}
 constexpr int ESP_SLEEP_WAKEUP_GPIO = 1, ESP_SLEEP_WAKEUP_TIMER = 2;
 inline int gpio_wakeup_enable(int, int) { return 0; }
 inline int gpio_wakeup_disable(int) { return 0; }
@@ -36,13 +41,16 @@ struct BatteryReading { bool valid = false; uint16_t millivolts = 0; };
 inline std::deque<BatteryReading> batteries;
 struct SensorRuntimeConfig {
   uint32_t revision = 7, sleepSeconds = 600;
-  uint8_t wifiChannel = 6, stationMac[6]{1,2,3,4,5,6};
+  uint8_t wifiChannel = 6, stationMac[6]{2,2,3,4,5,6};
   int8_t txPowerQuarterDbm = 52;
   bool provisioned = true, stationKnown = true, bme680QuickStartComplete = true;
   lil::protocol::EnvironmentalSensorType environmentalSensorType = lil::protocol::EnvironmentalSensorType::kBme280;
   float temperatureOffsetC = 0, batteryCalibrationFactor = 1;
 };
 inline SensorRuntimeConfig savedConfig;
+inline uint16_t lastReportVoltage = 0;
+inline uint32_t lastBroadcastRevision = 0, directedResetRevision = 0;
+inline uint8_t directedResetMac[6]{};
 struct Hardware { uint8_t pcbVersion = PCB_VERSION; uint16_t adcSettleMs = 100; };
 inline Hardware kHardware;
 class PowerController {
@@ -76,14 +84,15 @@ class EnvironmentalSensor {
  public:
   bool begin(PowerController&, lil::protocol::EnvironmentalSensorType, float) { ++sensorStarts; powerOff = !sensorStartSucceeded; return sensorStartSucceeded; }
   EnvironmentalReading readForReport(float) { return read(); }
-  EnvironmentalReading readContinuous() { return read(); }
+  bool setCcs811Interval(uint32_t) { return !powerOff; }
+  EnvironmentalReading readContinuous() { assert(!powerOff); ++ccsPoweredReports; return read(); }
   EnvironmentalReading read() {
     EnvironmentalReading r{}; r.valid = sensorStartSucceeded && sensorReadSucceeded; r.sensorType = detectedType();
     if (r.valid) { r.temperatureC = 25; r.capabilities = lil::protocol::kTemperature; }
     return r;
   }
   void end() { powerOff = true; }
-  bool clearIaqState() { ++iaqClears; return iaqClearSucceeded; }
+  bool clearIaqState(bool = false) { ++iaqClears; return iaqClearSucceeded; }
   void prepareForDeepSleep(uint32_t, lil::protocol::EnvironmentalSensorType) {}
   uint32_t bme680RecommendedSleepSeconds(uint32_t fallback) { return fallback; }
   lil::protocol::EnvironmentalSensorType detectedType() {
@@ -101,10 +110,19 @@ class EspNowTransport {
  public:
   bool begin() { ++radioStarts; return radioAvailable; }
   void end() {}
-  ExchangeResult exchange(const lil::protocol::TelemetryPacket&, const SensorRuntimeConfig&, bool, bool = false) {
+  ExchangeResult exchange(const lil::protocol::TelemetryPacket& packet, const SensorRuntimeConfig&, bool, bool = false, bool = false) {
+    lastReportVoltage = packet.payload.batteryMillivolts;
+    if (packet.payload.flags & lil::protocol::kDiscoveryBeacon) lastBroadcastRevision = packet.payload.appliedConfigRevision;
     ++normalExchanges;
     if (configurationReplies.empty()) return {};
     const auto response = configurationReplies.front(); configurationReplies.pop_front(); return response;
+  }
+  ExchangeResult acknowledgeReset(const lil::protocol::TelemetryPacket& packet,
+                                  const lil::protocol::ConfigResponsePayload& request) {
+    directedResetRevision = packet.payload.appliedConfigRevision;
+    memcpy(directedResetMac, request.stationMac, 6);
+    ExchangeResult result; result.configReceived = true; result.config = request; result.config.flags = 0;
+    return result;
   }
   ExchangeResult exchangeLpChannel(const lil::protocol::TelemetryPacket& p, const SensorRuntimeConfig&, uint8_t, bool = false) {
     ++lowPowerExchanges;
@@ -133,7 +151,8 @@ class RecordingStore {
   bool recording() { return false; }
   bool start() { return true; }
   void stop() {}
-  void clearForReset() {}
+  static bool clearForReset() { return resetStorageReady; }
+  inline static bool resetStorageReady = true;
   bool append(uint64_t, const lil::protocol::TelemetryPayload&) { return true; }
   lil::recording::Status status(uint32_t) { return {}; }
   bool next(lil::recording::Upload&) { return false; }
@@ -167,7 +186,13 @@ inline void checkOta(EspNowTransport&, const SensorRuntimeConfig&, AdcReader&, B
 }
 inline void beginDiagnosticLogging() {}
 inline uint64_t logicalTimeMs() { return testMillis; }
-inline void lowPowerSensorWaitUs(uint32_t us) { testMillis += us / 1000; }
+inline void lowPowerSensorWaitUs(uint32_t us) {
+  if (!powerOff && savedConfig.environmentalSensorType == lil::protocol::EnvironmentalSensorType::kCcs811) {
+    assert(us <= 10000000);
+    ++ccsSleepWaits;
+  }
+  testMillis += us / 1000;
+}
 inline void pushLowPowerWaitInhibit() {}
 inline void popLowPowerWaitInhibit() {}
 }

@@ -35,14 +35,15 @@ collide.
 
 Firmware changes are identified by the ELF SHA fingerprint. A new image
 invalidates the RTC configuration cache but preserves station assignment and
-compatible calibration data in NVS. Use an explicit factory reset to clear
-pairing. Signed firmware updates can now be uploaded through the station;
+compatible calibration data in NVS. A station-requested factory reset clears
+pairing, calibration and the node's local recording archive. A local station
+transfer is available when the previous station is unreachable. Signed firmware updates can now be uploaded through the station;
 see [the OTA guide](../OTA.md) for initial USB installation and recovery.
 For each scheduled transmission, the sensor first tries the known
 channel twice. A newly paired sensor retains a commissioning recovery guard: if
 the saved setup-AP channel stops responding, it scans all 12 other channels in
-the same wake. This guarantees recovery when the station joins the configured
-home Wi-Fi network and its radio moves to that network's channel. Once a new
+the same wake. This can recover contact when the station joins the configured
+home Wi-Fi network and the channel change is heard during that sweep. Once a new
 channel is found, later stale-channel events test at most three other channels
 per scheduled report, with one maximum-power attempt each, and continue from a
 retained RTC cursor. This bounds steady-state failure energy without adding a
@@ -210,17 +211,63 @@ reaches 1. Afterwards a permanent compact Accuracy 0-to-3 status remains in the
 normal sensor header. Measurement, radio and cloud operation use the same ULP
 routine from the beginning.
 
+## CCS811 gas measurements
+
+Paired nodes select the slowest CCS811 drive that supports the reporting interval.
+For example, a one-minute report uses Mode 3 with one heater pulse cycle per minute.
+The ESP32-C3 enters timer Light-sleep with the sensor rail held on between radio
+and battery checks. Discovery identifies the module without starting its heater.
+Changing to a slower drive includes ten minutes in idle. After starting a drive,
+the node withholds gas values for 20 minutes of conditioning. A new sensor may
+need 60 minutes of initial operation before its estimates are usable.
+
+STATUS `0x90` means the application is running and no new sample is ready.
+Only a fresh, error-free algorithm frame supplies eCO₂ and TVOC to history.
+A missing frame past the drive period plus timing margin raises a read fault.
+Mode-specific baselines are saved daily in RTC memory. A matching baseline up
+to seven days old is restored after conditioning. The first published reading
+then comes from a subsequent conversion. Full loss of RTC power clears this cache.
+Use the baseline reset when replacing the module at the same address.
+
+J1 carries power, ground, SDA and SCL. The breakout determines the state of
+`nWAKE`. A permanently grounded `nWAKE` allows I²C access and raises standby
+current. Measure the assembled board to determine battery consumption.
+
+[ams CCS811 datasheet, pp. 11–12 and 18–20](https://cdn.sparkfun.com/assets/2/c/c/6/5/CN04-2019_attachment_CCS811_Datasheet_v1-06.pdf)
+· [ams AN000370 baseline save and restore](https://dfimg.dfrobot.com/nobody/wiki/ab83d61ed52c66c2dd4067eed25b0c35.pdf)
+
 ## Discovery and re-adding sensors
 
-An unconfigured sensor, or one deleted from the station, announces itself every
-ten seconds for ten minutes. To avoid operating the sensor heater and ADC
-unnecessarily, its measurement snapshot is refreshed only every five minutes.
-After ten minutes, it enters deep sleep for five minutes between discovery
-attempts. When it is added successfully, the selected BME680 starts with a
-fresh learning state directly in ULP mode. The sensor stores its provisioning
-status persistently in NVS. The station already keeps it in the configured list
-during radio confirmation, so delayed pairing packets from before confirmation
-cannot mark it as a new device again.
+An unpaired node schedules ten-second sleeps in its first ten minutes and
+five-minute sleeps afterwards with the production settings. The radio, boot
+and sensor work add to these intervals. Discovery can reuse an environmental
+snapshot for five minutes. V4 reports the fresh voltage from its protection
+check on each wake. A sleeping node that has been deleted on its station first
+has to transmit on its existing schedule to learn that its pairing was removed.
+
+Opening **Nearby sensors** or clicking **Find sensors** on a station starts a
+six-minute enrollment window. After hearing an invitation, an older unpaired
+node can schedule three ten-second sleeps within 45 seconds. The ten-minute
+cooldown starts with the first invitation. Lost replies do not refill the
+budget. An older V5 station or node continues ordinary discovery. Sensor
+settings take effect after the node saves the assigned revision.
+
+An unpaired node briefly listens for another offer after a pending reply. An
+accepted assignment takes priority. On every fourth fast wake, or on a slow
+wake that hears an idle station, it can search past that station for an
+operator on another channel. A wake sends at most one discovery frame per
+channel. A paired node continues to use its saved station through outages.
+
+**To replace an unreachable station**, power-cycle the paired node with SW2
+released. Immediately after power is applied, press SW2 within the first
+second, hold it for about seven seconds and release. The firmware accepts a
+continuous five-to-ten-second hold measured from when it samples the pressed
+switch. It saves the cleared assignment and enables automatic module
+detection. Local recordings and the battery calibration factor survive the
+transfer. Select the node on the replacement station. Short presses during
+normal precision operation continue to control recordings. V4 battery
+protection and an outstanding OTA trial take precedence. GPIO9 selects the ROM
+bootloader if it is low at reset. [Espressif boot-mode reference](https://docs.espressif.com/projects/esptool/en/latest/esp32c3/advanced-topics/boot-mode-selection.html)
 
 ## Extending the drivers
 
@@ -273,4 +320,4 @@ the normal interval and starts durable replay. See
 
 ## Updating a node
 
-Install the [4.4.10 station application and matching PCB package](../releases/README.md). The normal node update preserves compatible settings. BME280/BMP280 acquisitions with repeated calibration words are rejected before compensation. A module with damaged trim or unstable power still needs hardware diagnosis.
+Install the [4.4.11 station application and matching PCB package](../releases/README.md). The normal node update preserves compatible settings. BME280/BMP280 acquisitions with repeated calibration words are rejected before compensation. A module with damaged trim or unstable power still needs hardware diagnosis.

@@ -53,6 +53,7 @@ struct SensorRuntime {
   uint32_t lastSequence = 0;
   bool hasSequence = false;
   uint32_t receivedPackets = 0;
+  uint32_t measurementRevision = 0;
   int8_t sensorTxPowerQuarterDbm = 52;
   uint8_t strongSignalSamples = 0;
   uint8_t weakSignalSamples = 0;
@@ -65,6 +66,20 @@ struct SensorView {
   SensorConfig config{};
   SensorRuntime runtime{};
   MotionReference motionReference{};
+};
+
+inline bool commissioningConfirmed(const SensorConfig& config, const SensorRuntime& runtime) {
+  return config.provisioned && !(config.pendingFlags & (kAwaitingProvisioningAck | kSensorCommandFlags)) &&
+         runtime.hasTelemetry && !(runtime.telemetry.flags & lil::protocol::kDiscoveryBeacon) &&
+         runtime.telemetry.appliedConfigRevision == config.revision;
+}
+
+struct DiscoveryView {
+  uint8_t mac[6];
+  char name[sizeof(SensorConfig::name)];
+  uint32_t sleepSeconds;
+  uint8_t sensorType, configuredType, pcbVersion, operatingMode;
+  bool provisioned, confirmed, measured, resetPending;
 };
 
 class SensorRegistry {
@@ -86,6 +101,8 @@ class SensorRegistry {
                         const lil::protocol::TelemetryPayload& telemetry,
                         int8_t rssi, uint32_t generation, uint32_t receivedAt);
   size_t views(SensorView* output, size_t capacity) const;
+  size_t discoveryViews(DiscoveryView* output, size_t capacity) const;
+  void openEnrollmentWindow();
   bool updateConfig(const uint8_t mac[6], const String& name,
                     uint32_t sleepSeconds, uint32_t channelId,
                     const String& writeKey, bool uploadEnabled,
@@ -102,7 +119,7 @@ class SensorRegistry {
   bool removeThingSpeakProfile(uint8_t slot);
   bool requestFactoryReset(const uint8_t mac[6]);
   bool requestIaqCalibrationReset(const uint8_t mac[6]);
-  bool deleteSensor(const uint8_t mac[6]);
+  bool deleteSensor(const uint8_t mac[6], bool pendingOnly = false);
   bool setMotionReference(const uint8_t mac[6], bool clear);
   bool channelShared(uint32_t channelId) const;
   bool generationMatches(const uint8_t mac[6], uint32_t generation) const;
@@ -169,6 +186,7 @@ class SensorRegistry {
   ConfigStore* store_ = nullptr;
   PagedHistory* paged_ = nullptr;
   uint32_t defaultSleepSeconds_ = 600;
+  int64_t enrollmentUntilUs_ = 0;
   mutable SemaphoreHandle_t mutex_ = nullptr;
   mutable SemaphoreHandle_t storageMutex_ = nullptr;
   uint32_t generations_[kMaxSensors]{};
