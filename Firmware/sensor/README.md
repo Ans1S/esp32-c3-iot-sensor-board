@@ -21,17 +21,14 @@ pio run -e sensor_pcb_v4 -t upload   # current board
 ```
 
 No Wi-Fi credentials, station MAC address, radio channel or measurement
-interval must be written into the source code. A new sensor scans all 13
-ESP-NOW channels for the station. During the initial ten-minute pairing window,
-it repeats this complete broadcast scan every ten seconds. This continues until
-the sensor is actually added in the dashboard (`provisioned=true`); a station
-response alone does not end discovery mode. After it is added, the sensor
-stores the station MAC address and channel in NVS and normally starts each
-future exchange on that saved channel. After the initial ten-minute window, an
-unprovisioned sensor sleeps for five minutes between discovery attempts but
-still scans all 13 channels on every attempt. A short randomized radio delay is
-used only during discovery so that sensors powered together do not repeatedly
-collide.
+interval must be written into the source code. An unpaired node can visit all 13 channels when no station answers. It sends
+at most one discovery frame per visited channel and can finish early on an
+assignment. After an idle station replies, a slow wake or every fourth rapid
+discovery sequence can continue searching for another station. Initial sleeps
+last ten seconds for ten minutes, then five minutes. Once an older node hears
+an explicit enrollment invitation, it can schedule up to three ten-second
+sleeps within 45 seconds. The first invitation starts a ten-minute cooldown.
+Pairing persists after the node saves the assignment.
 
 Firmware changes are identified by the ELF SHA fingerprint. A new image
 invalidates the RTC configuration cache but preserves station assignment and
@@ -58,11 +55,11 @@ a valid saved channel. In that mode the sensor uses its configured measurement
 interval, addresses only the station and starts on the saved channel. If any
 part of the assignment is absent, or the station returns `provisioned=false`
 after deletion, the sensor clears the station identity and enters discovery
-mode with broadcast traffic and complete channel scans.
+mode with broadcast discovery across the supported channels.
 
 | Scenario | Selected mode | Radio and wake behaviour |
 |---|---|---|
-| Fresh flash, erased NVS or factory reset | Discovery | All 13 channels; 10-second then 5-minute sleep |
+| Fresh flash, erased NVS or factory reset | Discovery | Up to 13 channels per wake, with early completion and invitation timing described below |
 | Deleted by the station and deletion response received | Discovery | Station identity cleared; all-channel broadcast resumes |
 | Incomplete or invalid persisted assignment | Discovery | Safe fallback; energy-saving mode is rejected |
 | Fully provisioned BME280 or no environmental sensor | Energy saving | Configured interval; saved-channel unicast only while communication succeeds |

@@ -114,11 +114,13 @@ external sensor is enabled, including maintenance-only BME680/BME688 wakes. The
 result is reused for a due report. Without the protection preflight, settling
 can overlap acquisition and is skipped when no report is due.
 
-Unprovisioned sensors advertise every ten seconds for the first ten minutes and
-scan all 13 channels during each discovery wake. Afterwards, they wake every
-five minutes but still scan all 13 channels, so commissioning never depends on
-the current rotating subset. Discovery alone uses a short random radio delay to
-prevent sensors powered together from repeatedly colliding.
+An unpaired node can visit all 13 channels when no station answers. It sends
+at most one discovery frame per visited channel and can finish early on an
+assignment. After an idle station replies, a slow wake or every fourth rapid
+discovery sequence can continue searching for another station. Initial sleeps
+last ten seconds for ten minutes, then five minutes. Once an older node hears
+an explicit enrollment invitation, it can schedule up to three ten-second
+sleeps within 45 seconds. The first invitation starts a ten-minute cooldown.
 
 Configured sensors try the saved channel twice. A commissioning recovery guard
 remains active after a sensor is added: if the setup-AP channel stops

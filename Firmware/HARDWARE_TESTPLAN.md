@@ -117,8 +117,9 @@ ordinary builds for current, charge and absolute wake-time measurements.
 
 1. Upload `sensor_pcb_v3`. An unprovisioned sensor must find the station without
    a compiled-in station MAC address or radio channel. Verify this once during
-   the fast pairing window and once after it has expired; every discovery wake
-   must cover all 13 channels.
+   the fast pairing window and once after it has expired. With no responding
+   station, verify one frame on each of the 13 channels. With an assignment,
+   verify that discovery can end on the responding channel.
 2. Confirm that the sensor advertises every ten seconds during the initial
    ten-minute fast-pairing window, but refreshes its sensor/battery snapshot
    only every five minutes. Both the captive setup page and the dashboard's
@@ -264,7 +265,8 @@ Before measuring current, verify the configured-mode radio policy:
    On default PCB V4, capture the battery-protection ADC preflight on every
    intermediate wake, then verify that GPIO6 is low during acquisition/sleep.
 4. Delete the sensor or complete its factory reset and verify the opposite:
-   ten-second discovery and complete 13-channel scans must resume.
+   after the node learns of deletion or completes reset, verify broadcast
+   discovery. Repeat with the station offline to verify a full 13-channel sweep.
 5. Observe `/api/status` for a strong, stationary V4 link. The
    `sensorTxPowerDbm` request may start at 11 dBm and must reduce to 8.5 dBm
    only after eight reports at or above -55 dBm. Attenuate the link: two

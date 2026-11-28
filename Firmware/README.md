@@ -59,7 +59,13 @@ Pulse estimates update once per second. Saved recordings load as complete,
 stable snapshots; full-session CSV retains the original samples. See [operation, accuracy limits and OTA migration](PRECISION_SENSORS.md).
 
 
-## Changes since 4.4.5
+## Commissioning in 4.4.11
+
+The wizard tracks three milestones for each node: settings saved by the station, configuration confirmed by the node, and first valid measurement. After a station-side deletion, a sleeping node learns of the change at its next scheduled contact. A factory reset also clears the node's local recordings. To move a paired node away from an unreachable station while retaining its recordings, use the local SW2 transfer procedure.
+
+[Station setup](station/README.md#first-start) · [Node discovery and transfer](sensor/README.md#discovery-and-re-adding-sensors) · [Timing and verification results](ONBOARDING_REVIEW.md)
+
+## Features introduced in 4.4.10
 
 - **Five new I²C sensors** cover pressure (BMP280), indoor air quality (BME688 and CCS811), distance (VL53L1X) and spectral light (AS7341). Both PCB revisions use the same driver set.
 - **Sensor nodes** reject repeated Bosch factory calibration data, retry failed acquisitions within a bounded window and recover the radio channel after a link change. The V4 low-battery cutoff also applies to continuous CCS811 operation.
